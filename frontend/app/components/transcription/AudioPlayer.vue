@@ -37,6 +37,8 @@
         <div
           class="h-2 bg-gray-200 rounded-full cursor-pointer"
           @click="seekToPosition"
+          @mousemove="onProgressMouseMove"
+          @mouseleave="onProgressMouseLeave"
         >
           <div
             class="h-2 bg-blue-600 rounded-full transition-all duration-100"
@@ -321,7 +323,7 @@ onUnmounted(() => {
 
 // Watch for prop changes
 watch(() => props.currentTime, (newTime) => {
-  if (audioRef.value && Math.abs(audioRef.value.currentTime - newTime) > 0.5) {
+  if (audioRef.value && newTime !== undefined && Math.abs(audioRef.value.currentTime - newTime) > 0.5) {
     audioRef.value.currentTime = newTime
   }
 })

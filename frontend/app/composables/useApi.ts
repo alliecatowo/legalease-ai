@@ -18,8 +18,13 @@ export const useApi = () => {
     },
   })
 
+  // Create a typed wrapper
+  const typedApiFetch = <T = any>(url: string, options?: any): Promise<T> => {
+    return apiFetch(url, options)
+  }
+
   return {
-    apiFetch,
+    apiFetch: typedApiFetch,
     apiBase,
   }
 }

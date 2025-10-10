@@ -197,7 +197,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { debounce } from '@vueuse/core'
+import { useDebounceFn } from '@vueuse/core'
 
 // Composables
 const { apiFetch } = useApi()
@@ -251,7 +251,7 @@ const searchSuggestions = computed(() => {
 })
 
 // Debounced search
-const debouncedSearch = debounce(async () => {
+const debouncedSearch = useDebounceFn(async () => {
   await performSearch()
 }, 300)
 

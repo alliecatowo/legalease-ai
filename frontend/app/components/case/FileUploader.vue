@@ -292,10 +292,10 @@ async function uploadFiles() {
     }
 
     // Upload files
-    const response = await $fetch(`/api/cases/${props.caseId}/upload`, {
+    await $fetch(`/api/cases/${props.caseId}/upload`, {
       method: 'POST',
       body: formData,
-      onUploadProgress: (progress) => {
+      onUploadProgress: (progress: { loaded: number; total: number }) => {
         // Update progress for all files (simplified)
         const percent = Math.round((progress.loaded / progress.total) * 100)
         pendingFiles.forEach(file => {
@@ -343,14 +343,14 @@ function getFileIcon(mimeType: string): string {
   }
 }
 
-function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    pending: 'gray',
-    uploading: 'blue',
-    completed: 'green',
-    error: 'red'
+function getStatusColor(status: string): "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral" {
+  const colors: Record<string, "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral"> = {
+    pending: 'neutral',
+    uploading: 'info',
+    completed: 'success',
+    error: 'error'
   }
-  return colors[status] || 'gray'
+  return colors[status] || 'neutral'
 }
 
 function getStatusLabel(status: string): string {

@@ -277,8 +277,6 @@ async function initializeGraph() {
 
     // Prepare nodes data
     const nodesData = props.nodes.map(node => ({
-      id: node.id,
-      label: node.label,
       color: getNodeColor(node),
       size: getNodeSize(node),
       font: { size: 12 },
@@ -287,9 +285,6 @@ async function initializeGraph() {
 
     // Prepare edges data
     const edgesData = props.edges.map(edge => ({
-      from: edge.from,
-      to: edge.to,
-      label: edge.label,
       width: edge.width || 1,
       color: getEdgeColor(edge),
       arrows: edge.type === 'cites' ? 'to' : undefined,
@@ -297,8 +292,8 @@ async function initializeGraph() {
     }))
 
     // Create datasets
-    const nodesDataset = new DataSet(nodesData)
-    const edgesDataset = new DataSet(edgesData)
+    const nodesDataset = new DataSet(nodesData as any)
+    const edgesDataset = new DataSet(edgesData as any)
 
     // Network options
     const options = {

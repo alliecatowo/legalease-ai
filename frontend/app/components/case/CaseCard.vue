@@ -80,11 +80,11 @@
           View
         </UButton>
 
-        <UDropdown :items="getActionMenu()" mode="click">
+        <UDropdownMenu :items="getActionMenu()">
           <UButton variant="link" size="sm">
             <UIcon name="i-heroicons-ellipsis-vertical-20-solid" class="w-4 h-4" />
           </UButton>
-        </UDropdown>
+        </UDropdownMenu>
       </div>
 
       <!-- Status Actions -->
@@ -93,7 +93,7 @@
           v-if="props.case.status === 'unloaded'"
           variant="outline"
           size="sm"
-          color="green"
+          color="success"
           @click.stop="$emit('load', props.case)"
         >
           <UIcon name="i-heroicons-play-20-solid" class="w-4 h-4 mr-1" />
@@ -104,7 +104,7 @@
           v-if="props.case.status === 'active'"
           variant="outline"
           size="sm"
-          color="yellow"
+          color="warning"
           @click.stop="$emit('unload', props.case)"
         >
           <UIcon name="i-heroicons-pause-20-solid" class="w-4 h-4 mr-1" />
@@ -116,7 +116,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 
 interface Props {
   case: {
@@ -146,14 +145,14 @@ const emit = defineEmits<{
 }>()
 
 // Methods
-function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    active: 'green',
-    unloaded: 'yellow',
-    archived: 'gray',
-    processing: 'blue'
+function getStatusColor(status: string): "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral" {
+  const colors: Record<string, "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral"> = {
+    active: 'success',
+    unloaded: 'warning',
+    archived: 'neutral',
+    processing: 'info'
   }
-  return colors[status] || 'gray'
+  return colors[status] || 'neutral'
 }
 
 function getStatusLabel(status: string): string {

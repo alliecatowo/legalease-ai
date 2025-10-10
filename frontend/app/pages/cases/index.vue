@@ -146,8 +146,37 @@ import { ref, computed, onMounted } from 'vue'
 
 const { apiFetch } = useApi()
 
+// Types
+interface CaseItem {
+  id: string
+  name: string
+  case_number?: string
+  client?: string
+  matter_type?: string
+  status: string
+  created_at: string
+  last_activity?: string
+  document_count?: number
+  total_size?: number
+  entity_count?: number
+  progress?: number
+}
+
+interface CasesResponse {
+  cases: CaseItem[]
+  has_more: boolean
+}
+
+interface StatsResponse {
+  stats: {
+    total: number
+    active: number
+    archived: number
+  }
+}
+
 // Reactive state
-const cases = ref([])
+const cases = ref<CaseItem[]>([])
 const loading = ref(true)
 const searchQuery = ref('')
 const filterStatus = ref('')
@@ -197,7 +226,7 @@ const filteredCases = computed(() => {
 async function loadCases() {
   loading.value = true
   try {
-    const response = await apiFetch('/cases', {
+    const response = await apiFetch<CasesResponse>('/cases', {
       params: {
         page: currentPage.value,
         limit: 20
@@ -221,7 +250,7 @@ async function loadCases() {
 
 async function loadStats() {
   try {
-    const response = await apiFetch('/cases/stats')
+    const response = await apiFetch<StatsResponse>('/cases/stats')
     stats.value = response.stats || stats.value
   } catch (error) {
     console.error('Failed to load stats:', error)
