@@ -1,5 +1,9 @@
 <template>
-  <div class="bg-gray-50 rounded-lg p-4">
+  <UCard>
+    <template #header>
+      <h3 class="text-lg font-semibold">Audio Player</h3>
+    </template>
+
     <!-- Audio Element (hidden) -->
     <audio
       ref="audioRef"
@@ -13,110 +17,95 @@
     />
 
     <!-- Player Controls -->
-    <div class="flex items-center space-x-4">
-      <!-- Play/Pause Button -->
-      <UButton
-        variant="outline"
-        size="sm"
-        @click="togglePlay"
-        :disabled="!url"
-      >
-        <UIcon
-          :name="isPlaying ? 'i-heroicons-pause-20-solid' : 'i-heroicons-play-20-solid'"
-          class="w-5 h-5"
-        />
-      </UButton>
-
-      <!-- Current Time -->
-      <span class="text-sm font-mono text-gray-600 min-w-[60px]">
-        {{ formatTime(currentTime) }}
-      </span>
-
-      <!-- Progress Bar -->
-      <div class="flex-1 relative">
-        <div
-          class="h-2 bg-gray-200 rounded-full cursor-pointer"
-          @click="seekToPosition"
-          @mousemove="onProgressMouseMove"
-          @mouseleave="onProgressMouseLeave"
-        >
-          <div
-            class="h-2 bg-blue-600 rounded-full transition-all duration-100"
-            :style="{ width: progressPercent + '%' }"
-          />
-        </div>
-
-        <!-- Time Tooltip (on hover) -->
-        <div
-          v-if="showTimeTooltip"
-          class="absolute -top-8 px-2 py-1 bg-gray-800 text-white text-xs rounded transform -translate-x-1/2"
-          :style="{ left: tooltipPosition + '%' }"
-        >
-          {{ formatTime(tooltipTime) }}
-        </div>
-      </div>
-
-      <!-- Duration -->
-      <span class="text-sm font-mono text-gray-600 min-w-[60px]">
-        {{ formatTime(duration) }}
-      </span>
-
-      <!-- Volume Control -->
-      <div class="flex items-center space-x-2">
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <!-- Play/Pause Button -->
         <UButton
-          variant="ghost"
-          size="sm"
-          @click="toggleMute"
+          variant="outline"
+          size="lg"
+          @click="togglePlay"
+          :disabled="!url"
+          :color="isPlaying ? 'primary' : 'gray'"
         >
           <UIcon
-            :name="isMuted ? 'i-heroicons-speaker-x-mark-20-solid' : 'i-heroicons-speaker-wave-20-solid'"
-            class="w-4 h-4"
+            :name="isPlaying ? 'i-heroicons-pause-20-solid' : 'i-heroicons-play-20-solid'"
+            class="w-6 h-6"
           />
         </UButton>
 
-        <div class="w-20 relative">
-          <div
-            class="h-1 bg-gray-200 rounded-full cursor-pointer"
-            @click="setVolume"
-          >
-            <div
-              class="h-1 bg-gray-400 rounded-full transition-all duration-100"
-              :style="{ width: volumePercent + '%' }"
-            />
-          </div>
+        <!-- Time Display -->
+        <div class="flex items-center space-x-2">
+          <UBadge variant="outline" size="sm">
+            {{ formatTime(currentTime) }}
+          </UBadge>
+          <span class="text-muted">/</span>
+          <UBadge variant="outline" size="sm">
+            {{ formatTime(duration) }}
+          </UBadge>
         </div>
       </div>
 
-      <!-- Playback Speed -->
-      <USelectMenu
-        v-model="playbackRate"
-        :options="speedOptions"
-        size="sm"
-        class="w-20"
-        @update:model-value="setPlaybackRate"
-      />
+      <!-- Progress Bar -->
+      <div class="space-y-2">
+        <USlider
+          v-model="currentTime"
+          :min="0"
+          :max="duration"
+          :step="0.1"
+          size="sm"
+          @update:model-value="seekToTime"
+          tooltip
+        />
 
-      <!-- Fullscreen Toggle (if applicable) -->
-      <UButton
-        variant="ghost"
-        size="sm"
-        @click="toggleFullscreen"
-        v-if="false" <!-- Disabled for now -->
-      >
-        <UIcon name="i-heroicons-arrows-pointing-out-20-solid" class="w-4 h-4" />
-      </UButton>
+      </div>
+
+      <!-- Volume & Speed Controls -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <UButton
+            variant="ghost"
+            size="sm"
+            @click="toggleMute"
+          >
+            <UIcon
+              :name="isMuted ? 'i-heroicons-speaker-x-mark-20-solid' : 'i-heroicons-speaker-wave-20-solid'"
+              class="w-4 h-4"
+            />
+          </UButton>
+
+          <USlider
+            v-model="volume"
+            :min="0"
+            :max="1"
+            :step="0.1"
+            size="xs"
+            class="w-16"
+            @update:model-value="setVolume"
+          />
+        </div>
+
+        <USelectMenu
+          v-model="playbackRate"
+          :options="speedOptions"
+          size="sm"
+          class="w-24"
+          @update:model-value="setPlaybackRate"
+        />
+      </div>
     </div>
 
     <!-- Additional Info -->
-    <div class="mt-2 flex items-center justify-between text-xs text-gray-500">
-      <span v-if="url">
-        {{ getFileName(url) }}
-      </span>
-      <span v-if="isPlaying">
-        Playing • {{ formatTime(remainingTime) }} remaining
-      </span>
-    </div>
-  </div>
+    <template #footer>
+      <div class="flex items-center justify-between text-xs text-muted">
+        <span v-if="url">
+          {{ getFileName(url) }}
+        </span>
+        <span v-if="isPlaying">
+          Playing • {{ formatTime(remainingTime) }} remaining
+        </span>
+      </div>
+    </template>
+  </UCard>
 </template>
 
 <script setup lang="ts">
@@ -154,9 +143,6 @@ const duration = ref(0)
 const volume = ref(1)
 const isMuted = ref(false)
 const playbackRate = ref(1)
-const showTimeTooltip = ref(false)
-const tooltipTime = ref(0)
-const tooltipPosition = ref(0)
 
 // Options
 const speedOptions = [
@@ -169,14 +155,6 @@ const speedOptions = [
 ]
 
 // Computed
-const progressPercent = computed(() => {
-  return duration.value > 0 ? (currentTime.value / duration.value) * 100 : 0
-})
-
-const volumePercent = computed(() => {
-  return (isMuted.value ? 0 : volume.value) * 100
-})
-
 const remainingTime = computed(() => {
   return Math.max(0, duration.value - currentTime.value)
 })
@@ -219,17 +197,6 @@ function setPlaybackRate(rate: number) {
   audioRef.value.playbackRate = rate
 }
 
-function seekToPosition(event: MouseEvent) {
-  if (!audioRef.value || duration.value === 0) return
-
-  const rect = (event.target as HTMLElement).getBoundingClientRect()
-  const percent = (event.clientX - rect.left) / rect.width
-  const time = percent * duration.value
-
-  audioRef.value.currentTime = time
-  currentTime.value = time
-  emit('seek', time)
-}
 
 function onTimeUpdate() {
   if (!audioRef.value) return
@@ -272,25 +239,6 @@ function getFileName(url: string): string {
   return url.split('/').pop() || 'Audio File'
 }
 
-function toggleFullscreen() {
-  // Could implement fullscreen for video files
-  console.log('Fullscreen toggle')
-}
-
-// Mouse events for tooltip
-function onProgressMouseMove(event: MouseEvent) {
-  if (!duration.value) return
-
-  const rect = (event.target as HTMLElement).getBoundingClientRect()
-  const percent = (event.clientX - rect.left) / rect.width
-  tooltipPosition.value = percent * 100
-  tooltipTime.value = percent * duration.value
-  showTimeTooltip.value = true
-}
-
-function onProgressMouseLeave() {
-  showTimeTooltip.value = false
-}
 
 // Keyboard shortcuts
 function handleKeydown(event: KeyboardEvent) {

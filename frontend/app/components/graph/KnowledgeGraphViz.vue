@@ -1,41 +1,34 @@
 <template>
-  <div class="bg-white rounded-lg border border-gray-200 p-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h3 class="text-lg font-semibold text-gray-900">Knowledge Graph</h3>
-        <p class="text-sm text-gray-600">
-          Visual representation of entity relationships and citations
-        </p>
-      </div>
-
-      <div class="flex items-center space-x-3">
+  <UPageCard
+    class="h-full"
+    title="Knowledge Graph"
+    description="Visual representation of entity relationships and citations"
+  >
+    <template #header>
+      <div class="flex items-center space-x-2">
         <USelectMenu
           v-model="selectedView"
           :options="viewOptions"
           size="sm"
           class="w-32"
+          placeholder="View"
         />
 
         <UButton
           variant="outline"
           size="sm"
           @click="fitToScreen"
-        >
-          <UIcon name="i-heroicons-arrows-pointing-in-20-solid" class="w-4 h-4 mr-2" />
-          Fit
-        </UButton>
+          icon="i-heroicons-arrows-pointing-in-20-solid"
+        />
 
         <UButton
           variant="outline"
           size="sm"
           @click="resetView"
-        >
-          <UIcon name="i-heroicons-arrow-path-20-solid" class="w-4 h-4 mr-2" />
-          Reset
-        </UButton>
+          icon="i-heroicons-arrow-path-20-solid"
+        />
       </div>
-    </div>
+    </template>
 
     <!-- Graph Container -->
     <div class="relative">
@@ -66,124 +59,139 @@
       </div>
 
       <!-- Graph Legend -->
-      <div v-if="nodes.length > 0" class="absolute top-4 left-4 bg-white rounded-lg border border-gray-200 p-3 shadow-lg">
-        <h4 class="text-sm font-medium text-gray-900 mb-2">Legend</h4>
-        <div class="space-y-1">
-          <div class="flex items-center space-x-2">
-            <div class="w-3 h-3 bg-blue-500 rounded-full" />
-            <span class="text-xs text-gray-600">Document</span>
+      <UCard v-if="nodes.length > 0" class="absolute top-4 left-4 shadow-lg max-w-xs">
+        <template #header>
+          <h4 class="text-sm font-semibold text-gray-900">Legend</h4>
+        </template>
+
+        <div class="space-y-3">
+          <div class="flex items-center space-x-3">
+            <div class="w-4 h-4 bg-blue-500 rounded-full flex-shrink-0" />
+            <span class="text-sm text-gray-700">Document</span>
           </div>
-          <div class="flex items-center space-x-2">
-            <div class="w-3 h-3 bg-green-500 rounded-full" />
-            <span class="text-xs text-gray-600">Entity</span>
+          <div class="flex items-center space-x-3">
+            <div class="w-4 h-4 bg-green-500 rounded-full flex-shrink-0" />
+            <span class="text-sm text-gray-700">Entity</span>
           </div>
-          <div class="flex items-center space-x-2">
-            <div class="w-3 h-3 bg-purple-500 rounded" />
-            <span class="text-xs text-gray-600">Citation</span>
+          <div class="flex items-center space-x-3">
+            <div class="w-4 h-4 bg-purple-500 rounded flex-shrink-0" />
+            <span class="text-sm text-gray-700">Citation</span>
           </div>
         </div>
-      </div>
+      </UCard>
 
       <!-- Node Info Panel -->
-      <div
+      <UCard
         v-if="selectedNode"
-        class="absolute top-4 right-4 bg-white rounded-lg border border-gray-200 p-4 shadow-lg max-w-xs"
+        class="absolute top-4 right-4 shadow-lg max-w-xs"
       >
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="text-sm font-medium text-gray-900">Node Info</h4>
-          <UButton
-            variant="ghost"
-            size="xs"
-            @click="selectedNode = null"
-          >
-            <UIcon name="i-heroicons-x-mark-20-solid" class="w-3 h-3" />
-          </UButton>
-        </div>
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold text-gray-900">Node Info</h4>
+            <UButton
+              variant="ghost"
+              size="xs"
+              @click="selectedNode = null"
+              icon="i-heroicons-x-mark-20-solid"
+            />
+          </div>
+        </template>
 
-        <div class="space-y-2">
+        <div class="space-y-3">
           <div>
-            <label class="text-xs font-medium text-gray-500">Type</label>
-            <p class="text-sm text-gray-900">{{ selectedNode.type }}</p>
+            <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">Type</label>
+            <p class="text-sm text-gray-900 font-medium">{{ selectedNode.type }}</p>
           </div>
 
           <div>
-            <label class="text-xs font-medium text-gray-500">Label</label>
+            <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">Label</label>
             <p class="text-sm text-gray-900">{{ selectedNode.label }}</p>
           </div>
 
           <div v-if="selectedNode.properties">
-            <label class="text-xs font-medium text-gray-500">Properties</label>
-            <div class="text-xs text-gray-600 mt-1">
+            <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">Properties</label>
+            <div class="text-xs text-gray-600 mt-2 space-y-1">
               <div
                 v-for="[key, value] in Object.entries(selectedNode.properties)"
                 :key="key"
+                class="flex justify-between"
               >
-                <span class="font-medium">{{ key }}:</span> {{ String(value) }}
+                <span class="font-medium">{{ key }}:</span>
+                <span>{{ String(value) }}</span>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </UCard>
     </div>
 
     <!-- Graph Stats -->
-    <div v-if="nodes.length > 0" class="mt-4 grid grid-cols-4 gap-4 text-center">
-      <div class="p-3 bg-gray-50 rounded-lg">
-        <div class="text-2xl font-bold text-gray-900">{{ nodes.length }}</div>
-        <div class="text-xs text-gray-600">Nodes</div>
-      </div>
-      <div class="p-3 bg-gray-50 rounded-lg">
-        <div class="text-2xl font-bold text-gray-900">{{ edges.length }}</div>
-        <div class="text-xs text-gray-600">Relationships</div>
-      </div>
-      <div class="p-3 bg-gray-50 rounded-lg">
-        <div class="text-2xl font-bold text-gray-900">{{ entityTypes.length }}</div>
-        <div class="text-xs text-gray-600">Entity Types</div>
-      </div>
-      <div class="p-3 bg-gray-50 rounded-lg">
-        <div class="text-2xl font-bold text-gray-900">{{ connectedComponents }}</div>
-        <div class="text-xs text-gray-600">Components</div>
-      </div>
+    <div v-if="nodes.length > 0" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+      <UChip
+        :text="nodes.length.toString()"
+        :description="'Nodes'"
+        icon="i-heroicons-circle-stack-20-solid"
+        color="primary"
+        size="lg"
+      />
+      <UChip
+        :text="edges.length.toString()"
+        :description="'Relationships'"
+        icon="i-heroicons-arrow-right-20-solid"
+        color="secondary"
+        size="lg"
+      />
+      <UChip
+        :text="entityTypes.length.toString()"
+        :description="'Entity Types'"
+        icon="i-heroicons-users-20-solid"
+        color="success"
+        size="lg"
+      />
+      <UChip
+        :text="connectedComponents.toString()"
+        :description="'Components'"
+        icon="i-heroicons-share-20-solid"
+        color="info"
+        size="lg"
+      />
     </div>
 
-    <!-- Controls -->
-    <div class="mt-4 flex items-center justify-between">
-      <div class="flex items-center space-x-4">
-        <div class="flex items-center space-x-2">
-          <label class="text-sm text-gray-600">Layout:</label>
-          <USelectMenu
-            v-model="layout"
-            :options="layoutOptions"
-            size="sm"
-            class="w-32"
-            @update:model-value="updateLayout"
-          />
+    <template #footer>
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-6 border-t border-gray-100">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div class="flex items-center space-x-3">
+            <span class="text-sm font-medium text-gray-700">Layout:</span>
+            <USelectMenu
+              v-model="layout"
+              :options="layoutOptions"
+              size="sm"
+              class="w-32"
+              @update:model-value="updateLayout"
+            />
+          </div>
+
+          <div class="flex items-center space-x-3">
+            <span class="text-sm font-medium text-gray-700">Physics:</span>
+            <USwitch
+              v-model="physicsEnabled"
+              size="sm"
+              @update:model-value="togglePhysics"
+            />
+          </div>
         </div>
 
-        <div class="flex items-center space-x-2">
-          <label class="text-sm text-gray-600">Physics:</label>
-          <UButton
-            :variant="physicsEnabled ? 'primary' : 'outline'"
-            size="sm"
-            @click="togglePhysics"
-          >
-            {{ physicsEnabled ? 'On' : 'Off' }}
-          </UButton>
-        </div>
-      </div>
-
-      <div class="flex items-center space-x-2">
         <UButton
           variant="outline"
           size="sm"
           @click="exportGraph"
+          icon="i-heroicons-arrow-down-tray-20-solid"
         >
-          <UIcon name="i-heroicons-arrow-down-tray-20-solid" class="w-4 h-4 mr-2" />
-          Export
+          Export Graph
         </UButton>
       </div>
-    </div>
-  </div>
+    </template>
+  </UPageCard>
 </template>
 
 <script setup lang="ts">
@@ -292,8 +300,8 @@ async function initializeGraph() {
     }))
 
     // Create datasets
-    const nodesDataset = new DataSet(nodesData as any)
-    const edgesDataset = new DataSet(edgesData as any)
+    const nodesDataset = new DataSet(nodesData as any[])
+    const edgesDataset = new DataSet(edgesData as any[])
 
     // Network options
     const options = {

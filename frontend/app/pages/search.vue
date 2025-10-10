@@ -1,197 +1,204 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <!-- Search Header -->
-    <div class="bg-white border-b border-gray-200">
-      <div class="container mx-auto px-4 py-4">
-        <div class="flex items-center justify-between">
-          <div class="flex-1 max-w-2xl">
-            <div class="relative">
-              <UInput
-                v-model="searchQuery"
-                placeholder="Search legal documents..."
-                size="lg"
-                class="w-full"
-                @input="debouncedSearch"
-              >
-                <template #leading>
-                  <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-5 h-5 text-gray-400" />
-                </template>
-                <template #trailing>
-                  <UButton
-                    v-if="searchQuery"
-                    variant="link"
-                    size="sm"
-                    @click="clearSearch"
-                  >
-                    <UIcon name="i-heroicons-x-mark-20-solid" class="w-4 h-4" />
-                  </UButton>
-                </template>
-              </UInput>
-            </div>
-          </div>
-
-          <!-- Search Filters -->
-          <div class="flex items-center space-x-4 ml-6">
-            <USelectMenu
-              v-model="selectedCase"
-              :options="caseOptions"
-              placeholder="All Cases"
-              class="w-48"
-            />
-            <USelectMenu
-              v-model="selectedType"
-              :options="typeOptions"
-              placeholder="All Types"
-              class="w-40"
-            />
-            <UButton
-              variant="outline"
-              @click="showAdvancedFilters = !showAdvancedFilters"
+    <UPageSection class="bg-white border-b border-gray-200">
+      <div class="flex flex-col lg:flex-row items-start lg:items-center gap-6">
+        <div class="flex-1 max-w-2xl w-full">
+          <UFormField>
+            <UInput
+              v-model="searchQuery"
+              placeholder="Search legal documents..."
+              size="lg"
+              @input="debouncedSearch"
             >
-              <UIcon name="i-heroicons-adjustments-horizontal-20-solid" class="w-4 h-4 mr-2" />
-              Filters
-            </UButton>
-          </div>
+              <template #leading>
+                <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-5 h-5 text-gray-400" />
+              </template>
+              <template #trailing>
+                <UButton
+                  v-if="searchQuery"
+                  variant="link"
+                  size="sm"
+                  @click="clearSearch"
+                >
+                  <UIcon name="i-heroicons-x-mark-20-solid" class="w-4 h-4" />
+                </UButton>
+              </template>
+            </UInput>
+          </UFormField>
         </div>
 
-        <!-- Advanced Filters -->
-        <div v-if="showAdvancedFilters" class="mt-4 pt-4 border-t border-gray-200">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- Quick Filters -->
+        <div class="flex items-center space-x-3">
+          <USelectMenu
+            v-model="selectedCase"
+            :options="caseOptions"
+            placeholder="All Cases"
+            class="w-40"
+          />
+          <USelectMenu
+            v-model="selectedType"
+            :options="typeOptions"
+            placeholder="All Types"
+            class="w-36"
+          />
+          <UButton
+            variant="outline"
+            @click="showAdvancedFilters = !showAdvancedFilters"
+            :color="showAdvancedFilters ? 'primary' : 'gray'"
+          >
+            <UIcon name="i-heroicons-adjustments-horizontal-20-solid" class="w-4 h-4 mr-2" />
+            Filters
+          </UButton>
+        </div>
+      </div>
+
+      <!-- Advanced Filters -->
+      <div v-if="showAdvancedFilters" class="mt-6 pt-6 border-t border-gray-200">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <UFormField label="Entities">
             <USelectMenu
               v-model="selectedEntity"
               :options="entityOptions"
               placeholder="Filter by Entity"
               multiple
             />
+          </UFormField>
+          <UFormField label="Tags">
             <USelectMenu
               v-model="selectedTag"
               :options="tagOptions"
               placeholder="Filter by Tag"
               multiple
             />
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
-              <div class="flex space-x-2">
-                <UInput
-                  v-model="dateFrom"
-                  type="date"
-                  size="sm"
-                />
-                <UInput
-                  v-model="dateTo"
-                  type="date"
-                  size="sm"
-                />
-              </div>
-            </div>
-            <div class="flex items-end">
-              <UButton
-                variant="outline"
+          </UFormField>
+          <UFormField label="Date Range">
+            <div class="flex space-x-2">
+              <UInput
+                v-model="dateFrom"
+                type="date"
                 size="sm"
-                @click="clearFilters"
-              >
-                Clear Filters
-              </UButton>
+                placeholder="From"
+              />
+              <UInput
+                v-model="dateTo"
+                type="date"
+                size="sm"
+                placeholder="To"
+              />
             </div>
+          </UFormField>
+          <div class="flex items-end">
+            <UButton
+              variant="outline"
+              size="sm"
+              @click="clearFilters"
+            >
+              Clear Filters
+            </UButton>
           </div>
         </div>
       </div>
-    </div>
+    </UPageSection>
 
     <!-- Search Results -->
-    <div class="container mx-auto px-4 py-6">
+    <UPageSection>
       <!-- Results Header -->
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div class="flex items-center space-x-4">
-          <h2 class="text-xl font-semibold text-gray-900">
+          <h2 class="text-2xl font-bold text-gray-900">
             Search Results
           </h2>
-          <USBadge
-            :color="results.length > 0 ? 'green' : 'gray'"
-            variant="subtle"
+          <UBadge
+            :color="results.length > 0 ? 'success' : 'neutral'"
+            variant="soft"
+            size="lg"
           >
             {{ results.length }} results
-          </USBadge>
+          </UBadge>
           <span v-if="searchTime" class="text-sm text-gray-500">
             ({{ searchTime }}ms)
           </span>
         </div>
 
-        <div class="flex items-center space-x-2">
+        <UFormField label="Sort by">
           <USelectMenu
             v-model="sortBy"
             :options="sortOptions"
             size="sm"
-            class="w-40"
+            class="w-48"
           />
-        </div>
+        </UFormField>
       </div>
 
-      <!-- Results Grid -->
-      <div class="grid grid-cols-1 gap-4">
+      <!-- Results Content -->
+      <div class="space-y-6">
         <!-- Loading State -->
-        <div v-if="loading" class="text-center py-12">
-          <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p class="text-gray-600">Searching...</p>
-        </div>
+        <UCard v-if="loading" class="text-center py-12">
+          <UIcon name="i-heroicons-arrow-path-20-solid" class="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Searching...</h3>
+          <p class="text-gray-500">Finding relevant legal documents</p>
+        </UCard>
 
         <!-- No Results -->
-        <div v-else-if="!loading && results.length === 0 && searchQuery" class="text-center py-12">
-          <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-16 h-16 text-gray-300 mx-auto mb-4" />
+        <UCard v-else-if="!loading && results.length === 0 && searchQuery" class="text-center py-12">
+          <template #header>
+            <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-16 h-16 text-gray-300 mx-auto" />
+          </template>
           <h3 class="text-lg font-medium text-gray-900 mb-2">No results found</h3>
-          <p class="text-gray-500 mb-4">
+          <p class="text-gray-500 mb-6">
             Try adjusting your search terms or filters
           </p>
-          <div class="space-y-2">
-            <p class="text-sm text-gray-600">Suggestions:</p>
+          <div class="space-y-4">
+            <p class="text-sm font-medium text-gray-700">Suggestions:</p>
             <div class="flex flex-wrap justify-center gap-2">
               <UBadge
                 v-for="suggestion in searchSuggestions"
                 :key="suggestion"
                 variant="outline"
-                class="cursor-pointer hover:bg-blue-50"
+                class="cursor-pointer hover:bg-primary/5 transition-colors"
                 @click="applySuggestion(suggestion)"
               >
                 {{ suggestion }}
               </UBadge>
             </div>
           </div>
-        </div>
+        </UCard>
 
         <!-- Results -->
-        <div
-          v-else-if="results.length > 0"
-          class="space-y-4"
-        >
+        <UPageGrid v-else-if="results.length > 0">
           <SearchResultCard
             v-for="result in results"
             :key="result.id"
             :result="result"
-            @click="openDocument(result)"
           />
-        </div>
+        </UPageGrid>
 
         <!-- Empty State -->
-        <div v-else class="text-center py-12">
-          <UIcon name="i-heroicons-document-text-20-solid" class="w-16 h-16 text-gray-300 mx-auto mb-4" />
+        <UCard v-else class="text-center py-12">
+          <template #header>
+            <UIcon name="i-heroicons-document-text-20-solid" class="w-16 h-16 text-gray-300 mx-auto" />
+          </template>
           <h3 class="text-lg font-medium text-gray-900 mb-2">Start searching</h3>
           <p class="text-gray-500">
             Enter a search query to find legal documents
           </p>
-        </div>
+        </UCard>
       </div>
 
       <!-- Load More -->
-      <div v-if="hasMoreResults" class="text-center mt-8">
+      <div v-if="hasMoreResults" class="text-center mt-12">
         <UButton
           variant="outline"
+          size="lg"
           :loading="loadingMore"
           @click="loadMore"
         >
+          <UIcon name="i-heroicons-arrow-down-20-solid" class="w-4 h-4 mr-2" />
           Load More Results
         </UButton>
       </div>
-    </div>
+    </UPageSection>
   </div>
 </template>
 
@@ -201,6 +208,23 @@ import { useDebounceFn } from '@vueuse/core'
 
 // Composables
 const { apiFetch } = useApi()
+
+// Types
+interface SearchResult {
+  id: string
+  filename: string
+  case_name: string
+  content: string
+  score: number
+  highlights: string[]
+  created_at: string
+}
+
+interface SearchResponse {
+  results: SearchResult[]
+  has_more: boolean
+  total: number
+}
 
 // Reactive state
 const searchQuery = ref('')
@@ -213,7 +237,7 @@ const dateTo = ref('')
 const sortBy = ref('relevance')
 const showAdvancedFilters = ref(false)
 
-const results = ref([])
+const results = ref<SearchResult[]>([])
 const loading = ref(false)
 const loadingMore = ref(false)
 const searchTime = ref(0)
@@ -286,7 +310,7 @@ async function performSearch(resetPage = true) {
     const response = await apiFetch('/search', {
       method: 'GET',
       params
-    })
+    }) as any
 
     if (resetPage) {
       results.value = response.results || []
@@ -334,15 +358,12 @@ function applySuggestion(suggestion: string) {
   performSearch()
 }
 
-function openDocument(result: any) {
-  navigateTo(`/documents/${result.id}`)
-}
 
 // Load initial data
 onMounted(async () => {
   try {
     // Load cases
-    const casesResponse = await apiFetch('/cases')
+    const casesResponse = await apiFetch('/cases') as any
     caseOptions.value = casesResponse.cases?.map((c: any) => ({
       label: c.name,
       value: c.id
@@ -354,12 +375,12 @@ onMounted(async () => {
       apiFetch('/tags/stats')
     ])
 
-    entityOptions.value = entitiesResponse.entities?.map((e: any) => ({
+    entityOptions.value = (entitiesResponse as any).entities?.map((e: any) => ({
       label: e.text,
       value: e.text
     })) || []
 
-    tagOptions.value = tagsResponse.tags?.map((t: any) => ({
+    tagOptions.value = (tagsResponse as any).tags?.map((t: any) => ({
       label: t.name,
       value: t.name
     })) || []

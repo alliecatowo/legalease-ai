@@ -1,96 +1,109 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <div class="container mx-auto px-4 py-8">
+  <div class="min-h-screen">
+    <UPageSection>
       <header class="mb-8">
-        <h1 class="text-4xl font-bold text-gray-900">
+        <h1 class="text-4xl font-bold">
           LegalEase Dashboard
         </h1>
-        <p class="mt-2 text-gray-600">
+        <p class="mt-2 text-muted">
           AI-powered legal document analysis and compliance checking
         </p>
       </header>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <UPageGrid>
         <!-- Search Documents Card -->
-        <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-          <div class="flex items-center mb-4">
-            <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-8 h-8 text-blue-600 mr-3" />
-            <h2 class="text-xl font-semibold">Search Documents</h2>
-          </div>
-          <p class="text-gray-600 mb-4">
-            Hybrid search with AI-powered semantic understanding
-          </p>
-          <NuxtLink to="/search" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 inline-block text-center">
-            Start Searching
-          </NuxtLink>
-        </div>
+        <UPageCard
+          title="Search Documents"
+          description="Hybrid search with AI-powered semantic understanding"
+          icon="i-heroicons-magnifying-glass-20-solid"
+          to="/search"
+        >
+          <template #footer>
+            <UButton color="primary" block>
+              Start Searching
+            </UButton>
+          </template>
+        </UPageCard>
 
         <!-- Case Management Card -->
-        <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-          <div class="flex items-center mb-4">
-            <UIcon name="i-heroicons-folder-20-solid" class="w-8 h-8 text-green-600 mr-3" />
-            <h2 class="text-xl font-semibold">Case Management</h2>
-          </div>
-          <p class="text-gray-600 mb-4">
-            Organize documents by cases with load/unload capabilities
-          </p>
-          <NuxtLink to="/cases" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 inline-block text-center">
-            Manage Cases
-          </NuxtLink>
-        </div>
+        <UPageCard
+          title="Case Management"
+          description="Organize documents by cases with load/unload capabilities"
+          icon="i-heroicons-folder-20-solid"
+          to="/cases"
+        >
+          <template #footer>
+            <UButton color="success" block>
+              Manage Cases
+            </UButton>
+          </template>
+        </UPageCard>
 
         <!-- Transcription Card -->
-        <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-          <div class="flex items-center mb-4">
-            <UIcon name="i-heroicons-chat-bubble-left-right-20-solid" class="w-8 h-8 text-purple-600 mr-3" />
-            <h2 class="text-xl font-semibold">Transcription</h2>
-          </div>
-          <p class="text-gray-600 mb-4">
-            AI-powered audio/video transcription with speaker diarization
-          </p>
-          <button class="w-full bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700">
-            Upload Audio/Video
-          </button>
-        </div>
+        <UPageCard
+          title="Transcription"
+          description="AI-powered audio/video transcription with speaker diarization"
+          icon="i-heroicons-chat-bubble-left-right-20-solid"
+        >
+          <template #footer>
+            <UButton color="info" block @click="showTranscriptionModal">
+              Upload Audio/Video
+            </UButton>
+          </template>
+        </UPageCard>
 
         <!-- Knowledge Graph Card -->
-        <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-          <div class="flex items-center mb-4">
-            <UIcon name="i-heroicons-share-20-solid" class="w-8 h-8 text-orange-600 mr-3" />
-            <h2 class="text-xl font-semibold">Knowledge Graph</h2>
-          </div>
-          <p class="text-gray-600 mb-4">
-            Visualize entity relationships and citation networks
-          </p>
-          <button class="w-full bg-orange-600 text-white py-2 px-4 rounded hover:bg-orange-700">
-            Explore Graph
-          </button>
-        </div>
-      </div>
+        <UPageCard
+          title="Knowledge Graph"
+          description="Visualize entity relationships and citation networks"
+          icon="i-heroicons-share-20-solid"
+        >
+          <template #footer>
+            <UButton color="warning" block @click="showKnowledgeGraphModal">
+              Explore Graph
+            </UButton>
+          </template>
+        </UPageCard>
+      </UPageGrid>
 
       <!-- Quick Stats -->
-      <div class="mt-8 bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-4">System Overview</h3>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div class="text-center">
-            <div class="text-2xl font-bold text-blue-600">{{ totalDocuments }}</div>
-            <div class="text-sm text-gray-600">Total Documents</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-green-600">{{ activeCases }}</div>
-            <div class="text-sm text-gray-600">Active Cases</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-purple-600">{{ totalTranscripts }}</div>
-            <div class="text-sm text-gray-600">Transcripts</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-orange-600">{{ knowledgeGraphNodes }}</div>
-            <div class="text-sm text-gray-600">Graph Nodes</div>
-          </div>
+      <UCard class="mt-8">
+        <template #header>
+          <h3 class="text-lg font-semibold">System Overview</h3>
+        </template>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <UChip
+            :text="totalDocuments.toString()"
+            :description="'Total Documents'"
+            icon="i-heroicons-document-text-20-solid"
+            color="primary"
+            size="lg"
+          />
+          <UChip
+            :text="activeCases.toString()"
+            :description="'Active Cases'"
+            icon="i-heroicons-folder-20-solid"
+            color="success"
+            size="lg"
+          />
+          <UChip
+            :text="totalTranscripts.toString()"
+            :description="'Transcripts'"
+            icon="i-heroicons-chat-bubble-left-right-20-solid"
+            color="info"
+            size="lg"
+          />
+          <UChip
+            :text="knowledgeGraphNodes.toString()"
+            :description="'Graph Nodes'"
+            icon="i-heroicons-share-20-solid"
+            color="warning"
+            size="lg"
+          />
         </div>
-      </div>
-    </div>
+      </UCard>
+    </UPageSection>
   </div>
 </template>
 
@@ -117,19 +130,19 @@ async function loadStats() {
     ])
 
     if (docsResponse.status === 'fulfilled') {
-      totalDocuments.value = docsResponse.value.total || 0
+      totalDocuments.value = (docsResponse.value as any)?.total || 0
     }
 
     if (casesResponse.status === 'fulfilled') {
-      activeCases.value = casesResponse.value.active || 0
+      activeCases.value = (casesResponse.value as any)?.active || 0
     }
 
     if (transcriptsResponse.status === 'fulfilled') {
-      totalTranscripts.value = transcriptsResponse.value.total || 0
+      totalTranscripts.value = (transcriptsResponse.value as any)?.total || 0
     }
 
     if (graphResponse.status === 'fulfilled') {
-      knowledgeGraphNodes.value = graphResponse.value.nodes || 0
+      knowledgeGraphNodes.value = (graphResponse.value as any)?.nodes || 0
     }
 
   } catch (error) {
