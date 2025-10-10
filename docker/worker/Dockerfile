@@ -6,30 +6,24 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     libpq-dev \
+    libxml2-dev \
+    libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-ENV POETRY_VERSION=1.8.3
-ENV POETRY_HOME=/opt/poetry
-ENV POETRY_NO_INTERACTION=1
-ENV POETRY_VIRTUALENVS_IN_PROJECT=false
-ENV POETRY_VIRTUALENVS_CREATE=false
-
-RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    cd /usr/local/bin && \
-    ln -s /opt/poetry/bin/poetry
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Set working directory
 WORKDIR /app
 
 # Copy dependency files
-COPY backend/pyproject.toml backend/poetry.lock* ./
+COPY backend/pyproject.toml backend/uv.lock* ./
 
 # Development stage
 FROM base AS development
 
 # Install all dependencies including dev dependencies
-RUN poetry install --no-root
+RUN uv sync
 
 # Copy application code
 COPY backend/ ./
@@ -38,13 +32,13 @@ COPY backend/ ./
 RUN mkdir -p /root/.cache
 
 # Start Celery worker
-CMD ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=2"]
+CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
 
 # Production dependencies stage
 FROM base AS dependencies
 
 # Install production dependencies only
-RUN poetry install --no-root --only main
+RUN uv sync --no-dev
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -55,11 +49,13 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 WORKDIR /app
 
 # Copy installed dependencies from dependencies stage
-COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=dependencies /usr/local/bin /usr/local/bin
+COPY --from=dependencies /app/.venv /app/.venv
 
 # Copy application code
 COPY backend/ ./
@@ -75,4 +71,4 @@ USER legalease
 ENV HOME=/home/legalease
 
 # Start Celery worker with optimized settings
-CMD ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=4", "--max-tasks-per-child=100"]
+CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=4", "--max-tasks-per-child=100"]

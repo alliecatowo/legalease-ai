@@ -17,8 +17,10 @@
     "@unovis/ts": "^1.6.1",
     "@unovis/vue": "^1.6.1",
     "@vueuse/nuxt": "^13.9.0",
+    "cytoscape": "^3.33.1",
     "date-fns": "^4.1.0",
     "nuxt": "^4.1.2",
+    "wavesurfer.js": "^7.11.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {
