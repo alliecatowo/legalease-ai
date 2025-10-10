@@ -1,0 +1,32 @@
+[tools]
+node = "22.0.0"
+pnpm = "9.0.0"
+python = "3.11.8"
+
+[env]
+NUXT_PUBLIC_API_BASE = "http://localhost:8000"
+DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/legalease"
+REDIS_URL = "redis://localhost:6379/0"
+QDRANT_URL = "http://localhost:6333"
+MINIO_ENDPOINT = "localhost:9000"
+NEO4J_URI = "bolt://localhost:7687"
+OLLAMA_BASE_URL = "http://localhost:11434"
+
+[tasks]
+# Development
+dev-frontend = "cd frontend && pnpm dev"
+dev-backend = "cd backend && uv run uvicorn app.main:app --reload"
+dev-worker = "cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info"
+
+# Docker
+up = "docker compose up -d"
+down = "docker compose down"
+logs = "docker compose logs -f"
+build = "docker compose build"
+
+# Database
+db-migrate = "cd backend && uv run alembic upgrade head"
+db-rollback = "cd backend && uv run alembic downgrade -1"
+
+# Models
+download-models = "./scripts/download_models.sh"

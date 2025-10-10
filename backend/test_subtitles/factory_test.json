@@ -1,0 +1,18 @@
+{
+  "segments": [
+    {
+      "index": 0,
+      "text": "This is a test of the factory function",
+      "start": 0.0,
+      "end": 3.0,
+      "duration": 3.0,
+      "speaker": "Tester",
+      "confidence": null
+    }
+  ],
+  "metadata": {
+    "total_segments": 1,
+    "total_duration": 3.0,
+    "chars_per_caption": 35
+  }
+}
