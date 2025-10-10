@@ -48,7 +48,7 @@ const topSearchTerms = [
 
     <div class="overflow-y-auto h-[calc(100vh-64px)]">
       <div class="max-w-7xl mx-auto p-6 space-y-6">
-      <!-- Overview Stats -->
+        <!-- Overview Stats -->
       <UPageGrid>
         <UPageCard
           title="Total Searches"
@@ -135,7 +135,7 @@ const topSearchTerms = [
                 <span>{{ item.type }}</span>
                 <span class="font-medium">{{ item.count }}</span>
               </div>
-              <UProgress :value="item.percentage" />
+              <UProgress :model-value="item.percentage" />
             </div>
           </div>
         </UCard>

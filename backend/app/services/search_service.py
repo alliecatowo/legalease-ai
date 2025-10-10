@@ -109,6 +109,99 @@ class HybridSearchEngine:
         embedding = self.embed_pipeline.generate_single_embedding(text)
         return embedding.tolist()
 
+    def _normalize_and_boost_scores(
+        self,
+        results: List[Dict[str, Any]],
+        raw_scores: List[float],
+        fusion_method: str,
+        bm25_scores: Dict[str, float],
+    ) -> List[Dict[str, Any]]:
+        """
+        Normalize RRF/DBSF scores to 0-1 range and boost keyword matches.
+
+        RRF scores are rank-based (1/(rank+k)) and typically range 0-0.02 for k=60.
+        We need to:
+        1. Normalize to 0-1 range using min-max scaling
+        2. Boost results with strong BM25 scores (keyword matches)
+        3. Apply non-linear scaling to spread out the top results
+
+        Args:
+            results: Search results with raw scores
+            raw_scores: List of raw fusion scores
+            fusion_method: Fusion method used (rrf or dbsf)
+            bm25_scores: Dictionary of BM25 scores by point ID
+
+        Returns:
+            Results with normalized and boosted scores
+        """
+        if not results or not raw_scores:
+            return results
+
+        # Calculate score statistics
+        min_score = min(raw_scores)
+        max_score = max(raw_scores)
+        score_range = max_score - min_score
+
+        # Avoid division by zero
+        if score_range < 1e-9:
+            # All scores are the same, assign uniform scores
+            for result in results:
+                result["score"] = 0.7
+            return results
+
+        # Step 1: Min-max normalization to 0-1
+        for i, result in enumerate(results):
+            normalized_score = (raw_scores[i] - min_score) / score_range
+
+            # Step 2: Boost keyword matches
+            point_id = result["id"]
+            bm25_score = bm25_scores.get(point_id, 0.0)
+
+            # Keyword boost: High BM25 scores indicate strong keyword matches
+            # BM25 scores typically range 0-20+ for good matches
+            keyword_boost = 0.0
+            if bm25_score > 0:
+                # Normalize BM25 score and apply as boost
+                # Strong keyword matches (BM25 > 5) get significant boost
+                bm25_normalized = min(bm25_score / 10.0, 1.0)  # Cap at 1.0
+                keyword_boost = bm25_normalized * 0.3  # Up to +0.3 boost
+
+            # Step 3: Apply non-linear scaling for better score distribution
+            # Use power scaling to spread out top results
+            if fusion_method == "rrf":
+                # RRF benefits from square root scaling to spread scores
+                boosted_score = (normalized_score ** 0.7) + keyword_boost
+            else:
+                # DBSF is already normalized, apply lighter scaling
+                boosted_score = (normalized_score ** 0.85) + keyword_boost
+
+            # Step 4: Ensure keyword-only matches get high scores
+            # If BM25 score is very high and it's a top result, boost to 0.85+
+            if bm25_score > 5.0 and i < 5:
+                boosted_score = max(boosted_score, 0.85 + (bm25_normalized * 0.1))
+
+            # Clamp to 0-1 range
+            boosted_score = max(0.0, min(1.0, boosted_score))
+
+            result["score"] = boosted_score
+
+            # Add debug info
+            result["_score_debug"] = {
+                "raw_score": raw_scores[i],
+                "normalized": normalized_score,
+                "bm25_score": bm25_score,
+                "keyword_boost": keyword_boost,
+                "final_score": boosted_score,
+            }
+
+        logger.info(
+            f"Score normalization complete: "
+            f"raw range [{min_score:.4f}, {max_score:.4f}] -> "
+            f"normalized range [0.0, 1.0]"
+        )
+
+        return results
+
     def search_with_query_api(
         self,
         request: HybridSearchRequest,
@@ -122,7 +215,7 @@ class HybridSearchEngine:
             request: Search request
 
         Returns:
-            List of search results
+            List of search results with normalized scores
         """
         try:
             # Build filters
@@ -136,6 +229,7 @@ class HybridSearchEngine:
             prefetch_queries = []
 
             # Add BM25 sparse prefetch if enabled
+            bm25_results = {}  # Track BM25-only results for boosting
             if request.use_bm25:
                 sparse_vector = self._create_sparse_vector(request.query)
                 prefetch_queries.append(
@@ -146,6 +240,22 @@ class HybridSearchEngine:
                         limit=request.top_k * 2,  # Get more for fusion
                     )
                 )
+
+                # Get BM25-only results for keyword match detection
+                try:
+                    bm25_only = self.client.query_points(
+                        collection_name=self.collection_name,
+                        query=sparse_vector,
+                        using="bm25",
+                        filter=filters,
+                        limit=request.top_k * 2,
+                        with_payload=False,
+                    )
+                    # Store BM25 scores by point ID for boosting
+                    for point in bm25_only.points:
+                        bm25_results[str(point.id)] = point.score if point.score else 0.0
+                except Exception as e:
+                    logger.warning(f"Failed to get BM25-only results: {e}")
 
             # Add dense vector prefetch if enabled
             if request.use_dense:
@@ -176,20 +286,37 @@ class HybridSearchEngine:
                 collection_name=self.collection_name,
                 prefetch=prefetch_queries,
                 query=FusionQuery(fusion=fusion),  # Fusion combines prefetch results
-                limit=request.top_k * 2 if self.enable_reranking else request.top_k,
+                limit=request.top_k * 3,  # Get more for score normalization and filtering
                 with_payload=True,
             )
 
-            # Convert to standard format
+            # Convert to standard format with score normalization
             formatted_results = []
+            raw_scores = []
+
             for point in results.points:
+                score = point.score if point.score is not None else 0.0
+                raw_scores.append(score)
+
                 formatted_results.append({
                     "id": str(point.id),  # Convert to string to handle UUIDs
-                    "score": point.score if point.score is not None else 0.0,
+                    "score": score,
                     "payload": point.payload if point.payload else {},
+                    "bm25_score": bm25_results.get(str(point.id), 0.0),  # Track BM25 score
                 })
 
-            logger.info(f"Query API returned {len(formatted_results)} results")
+            # Normalize and boost scores
+            formatted_results = self._normalize_and_boost_scores(
+                formatted_results,
+                raw_scores,
+                request.fusion_method,
+                bm25_results,
+            )
+
+            logger.info(
+                f"Query API returned {len(formatted_results)} results "
+                f"(before threshold filtering)"
+            )
             return formatted_results
 
         except Exception as e:
@@ -201,27 +328,48 @@ class HybridSearchEngine:
         request: HybridSearchRequest,
     ) -> HybridSearchResponse:
         """
-        Main search method with reranking.
+        Main search method with reranking and score filtering.
 
         Pipeline:
         1. Hybrid search with Query API (BM25 + Dense + Fusion)
-        2. Cross-encoder reranking (optional)
-        3. Format results
+        2. Score normalization and boosting
+        3. Score threshold filtering
+        4. Cross-encoder reranking (optional)
+        5. Format results
 
         Args:
             request: Search request
 
         Returns:
-            Search response
+            Search response with normalized scores
         """
         import time
         start_time = time.time()
 
         try:
-            # Stage 1: Hybrid search
+            # Stage 1: Hybrid search with score normalization
             search_results = self.search_with_query_api(request)
 
-            # Stage 2: Reranking (optional)
+            # Stage 2: Apply score threshold filtering
+            score_threshold = request.score_threshold if request.score_threshold is not None else 0.3
+            results_before_filtering = len(search_results)
+
+            search_results = [
+                result for result in search_results
+                if result["score"] >= score_threshold
+            ]
+
+            filtered_count = results_before_filtering - len(search_results)
+            if filtered_count > 0:
+                logger.info(
+                    f"Filtered out {filtered_count} results below "
+                    f"threshold {score_threshold:.2f}"
+                )
+
+            # Stage 3: Limit to top_k after filtering
+            search_results = search_results[:request.top_k]
+
+            # Stage 4: Reranking (optional)
             if self.enable_reranking and self.reranker and len(search_results) > 0:
                 logger.info(f"Reranking {len(search_results)} results")
                 search_results = self.reranker.rerank_search_results(
@@ -231,7 +379,7 @@ class HybridSearchEngine:
                     text_key="payload.text",  # Nested key
                 )
 
-            # Stage 3: Format results
+            # Stage 5: Format results
             formatted_results = []
             for result in search_results:
                 payload = result.get("payload", {})
@@ -253,6 +401,8 @@ class HybridSearchEngine:
                             "chunk_type": payload.get("chunk_type"),
                             "page_number": payload.get("page_number"),
                             "position": payload.get("position"),
+                            "bm25_score": result.get("bm25_score", 0.0),
+                            "score_debug": result.get("_score_debug"),
                         },
                         highlights=highlights,
                         vector_type=payload.get("chunk_type"),
@@ -271,6 +421,8 @@ class HybridSearchEngine:
                     "search_time_ms": search_time_ms,
                     "fusion_method": request.fusion_method,
                     "reranking_enabled": self.enable_reranking,
+                    "score_threshold": score_threshold,
+                    "results_filtered": filtered_count,
                     "filters_applied": {
                         "case_ids": request.case_ids,
                         "document_ids": request.document_ids,
@@ -281,7 +433,7 @@ class HybridSearchEngine:
 
             logger.info(
                 f"Hybrid search completed in {search_time_ms}ms: "
-                f"{len(formatted_results)} results"
+                f"{len(formatted_results)} results (filtered {filtered_count})"
             )
 
             return response

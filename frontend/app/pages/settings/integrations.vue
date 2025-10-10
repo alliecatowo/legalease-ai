@@ -388,12 +388,8 @@ function copyToClipboard(text: string) {
     </UPageCard>
 
     <!-- New API Key Modal -->
-    <UModal v-model="showNewKeyModal">
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold text-highlighted">Create API Key</h3>
-        </template>
-
+    <UModal v-model:open="showNewKeyModal" title="Create API Key">
+      <template #body>
         <div class="space-y-4">
           <UFormField label="Key Name" required>
             <UInput
@@ -417,34 +413,30 @@ function copyToClipboard(text: string) {
             description="Once created, you won't be able to see the full key again. Store it securely."
           />
         </div>
+      </template>
 
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton
-              label="Cancel"
-              color="neutral"
-              variant="ghost"
-              @click="showNewKeyModal = false"
-            />
-            <UButton
-              label="Create Key"
-              icon="i-lucide-key"
-              color="primary"
-              :disabled="!newKeyName || newKeyPermissions.length === 0"
-              @click="createAPIKey"
-            />
-          </div>
-        </template>
-      </UCard>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showNewKeyModal = false"
+          />
+          <UButton
+            label="Create Key"
+            icon="i-lucide-key"
+            color="primary"
+            :disabled="!newKeyName || newKeyPermissions.length === 0"
+            @click="createAPIKey"
+          />
+        </div>
+      </template>
     </UModal>
 
     <!-- New Webhook Modal -->
-    <UModal v-model="showNewWebhookModal">
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold text-highlighted">Add Webhook</h3>
-        </template>
-
+    <UModal v-model:open="showNewWebhookModal" title="Add Webhook">
+      <template #body>
         <div class="space-y-4">
           <UFormField label="Webhook URL" required>
             <UInput
@@ -461,25 +453,25 @@ function copyToClipboard(text: string) {
             />
           </UFormField>
         </div>
+      </template>
 
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton
-              label="Cancel"
-              color="neutral"
-              variant="ghost"
-              @click="showNewWebhookModal = false"
-            />
-            <UButton
-              label="Create Webhook"
-              icon="i-lucide-webhook"
-              color="primary"
-              :disabled="!newWebhookUrl || newWebhookEvents.length === 0"
-              @click="createWebhook"
-            />
-          </div>
-        </template>
-      </UCard>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showNewWebhookModal = false"
+          />
+          <UButton
+            label="Create Webhook"
+            icon="i-lucide-webhook"
+            color="primary"
+            :disabled="!newWebhookUrl || newWebhookEvents.length === 0"
+            @click="createWebhook"
+          />
+        </div>
+      </template>
     </UModal>
   </div>
 </template>
