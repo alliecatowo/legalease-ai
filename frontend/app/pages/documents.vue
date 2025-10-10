@@ -47,7 +47,7 @@ const viewMode = ref<'list' | 'grid'>('list')
 const selectedDocuments = ref<Set<string>>(new Set())
 const showUploadModal = ref(false)
 const showBulkActionsModal = ref(false)
-const uploadingFiles = ref<File[]>([])
+const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
 
 const typeOptions = [
@@ -149,24 +149,11 @@ function toggleSelect(docId: string) {
   }
 }
 
-// File upload handling
-function handleFileSelect(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (input.files) {
-    uploadingFiles.value = Array.from(input.files)
-    showUploadModal.value = true
-  }
-}
-
-function handleDrop(event: DragEvent) {
-  event.preventDefault()
-  if (event.dataTransfer?.files) {
-    uploadingFiles.value = Array.from(event.dataTransfer.files)
-    showUploadModal.value = true
-  }
-}
+// File upload handling - now handled by UFileUpload component
 
 async function uploadDocuments() {
+  if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
+
   // TODO: Implement actual upload with progress tracking
   uploadProgress.value = 0
 
@@ -190,7 +177,7 @@ async function uploadDocuments() {
     await new Promise(resolve => setTimeout(resolve, 2000))
 
     showUploadModal.value = false
-    uploadingFiles.value = []
+    uploadingFiles.value = null
     refresh()
   } catch (error) {
     console.error('Upload failed:', error)
@@ -287,7 +274,7 @@ const documentTypeIcons: Record<string, string> = {
 
     <div class="overflow-y-auto h-[calc(100vh-64px)]">
       <div class="max-w-7xl mx-auto p-6 space-y-6">
-      <!-- Bulk Actions Banner -->
+        <!-- Bulk Actions Banner -->
       <div v-if="selectedDocuments.size > 0" class="bg-primary/10 border border-primary rounded-lg p-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
@@ -329,7 +316,7 @@ const documentTypeIcons: Record<string, string> = {
               size="sm"
               @click="handleBulkAction('delete')"
             />
-            <UDivider orientation="vertical" class="h-6" />
+            <USeparator orientation="vertical" class="h-6" />
             <UButton
               label="Clear"
               color="neutral"
@@ -571,71 +558,24 @@ const documentTypeIcons: Record<string, string> = {
           {{ searchQuery ? 'Try adjusting your search or filters' : 'Upload your first document to get started' }}
         </p>
         <UButton v-if="!searchQuery" icon="i-lucide-upload" label="Upload Document" color="primary" @click="showUploadModal = true" />
-      </div>
+        </div>
       </div>
     </div>
 
     <!-- Upload Modal -->
-    <UModal v-model="showUploadModal">
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold text-highlighted">Upload Documents</h3>
-        </template>
-
+    <UModal v-model:open="showUploadModal" title="Upload Documents">
+      <template #body>
         <div class="space-y-4">
-          <!-- Drop Zone -->
-          <div
-            class="border-2 border-dashed border-default rounded-lg p-8 text-center transition-colors hover:border-primary hover:bg-primary/5"
-            @drop="handleDrop"
-            @dragover.prevent
-          >
-            <UIcon name="i-lucide-upload-cloud" class="size-12 text-muted mx-auto mb-3" />
-            <p class="text-sm font-medium text-highlighted mb-2">
-              Drag and drop files here, or click to browse
-            </p>
-            <p class="text-xs text-muted mb-4">
-              Supported: PDF, DOCX, TXT (max 100MB each)
-            </p>
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.docx,.txt"
-              class="hidden"
-              id="fileInput"
-              @change="handleFileSelect"
-            />
-            <UButton
-              label="Browse Files"
-              color="primary"
-              variant="outline"
-              @click="() => document.getElementById('fileInput')?.click()"
-            />
-          </div>
-
-          <!-- Selected Files -->
-          <div v-if="uploadingFiles.length > 0" class="space-y-2">
-            <h4 class="text-sm font-medium text-highlighted">Selected Files ({{ uploadingFiles.length }})</h4>
-            <div class="space-y-2 max-h-48 overflow-y-auto">
-              <div
-                v-for="(file, index) in uploadingFiles"
-                :key="index"
-                class="flex items-center justify-between p-2 rounded-lg bg-muted/10"
-              >
-                <div class="flex items-center gap-2 flex-1 min-w-0">
-                  <UIcon name="i-lucide-file" class="size-4 text-muted shrink-0" />
-                  <span class="text-sm truncate">{{ file.name }}</span>
-                  <span class="text-xs text-dimmed shrink-0">{{ formatBytes(file.size) }}</span>
-                </div>
-                <UButton
-                  icon="i-lucide-x"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  @click="uploadingFiles.splice(index, 1)"
-                />
-              </div>
-            </div>
-          </div>
+          <!-- File Upload Component -->
+          <UFileUpload
+            v-model="uploadingFiles"
+            multiple
+            accept=".pdf,.docx,.txt"
+            label="Drop your documents here"
+            description="PDF, DOCX, TXT (max 100MB each)"
+            icon="i-lucide-upload-cloud"
+            class="min-h-48"
+          />
 
           <!-- Upload Progress -->
           <div v-if="uploadProgress > 0 && uploadProgress < 100" class="space-y-2">
@@ -651,25 +591,25 @@ const documentTypeIcons: Record<string, string> = {
             </div>
           </div>
         </div>
+      </template>
 
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton
-              label="Cancel"
-              color="neutral"
-              variant="ghost"
-              @click="showUploadModal = false; uploadingFiles = []"
-            />
-            <UButton
-              label="Upload"
-              icon="i-lucide-upload"
-              color="primary"
-              :disabled="uploadingFiles.length === 0"
-              @click="uploadDocuments"
-            />
-          </div>
-        </template>
-      </UCard>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showUploadModal = false; uploadingFiles = null"
+          />
+          <UButton
+            label="Upload"
+            icon="i-lucide-upload"
+            color="primary"
+            :disabled="!uploadingFiles || uploadingFiles.length === 0"
+            @click="uploadDocuments"
+          />
+        </div>
+      </template>
     </UModal>
   </UDashboardPanel>
 </template>

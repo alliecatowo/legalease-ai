@@ -28,6 +28,17 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2024-07-11',
 
+  icon: {
+    serverBundle: {
+      collections: ['lucide', 'simple-icons']
+    },
+    clientBundle: {
+      // Include all icons in client bundle to prevent loading issues
+      scan: true,
+      includeCustomCollections: true
+    }
+  },
+
   eslint: {
     config: {
       stylistic: {

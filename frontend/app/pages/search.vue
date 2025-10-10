@@ -7,6 +7,7 @@ const api = useApi()
 const searchQuery = ref('')
 const searchResults = ref<any[]>([])
 const isLoading = ref(false)
+const isSearching = ref(false) // Track if search is in progress
 const showSettings = ref(false)
 
 // Search settings
@@ -15,8 +16,38 @@ const searchSettings = ref({
   use_bm25: true,
   use_dense: true,
   fusion_method: 'rrf' as 'rrf' | 'weighted' | 'max',
-  top_k: 20
+  top_k: 50, // Increased from 20 to fetch more results
+  chunk_types: [] as string[], // Filter by chunk types
+  document_ids: [] as number[], // Filter by document IDs
+  case_ids: [] as number[] // Filter by case IDs
 })
+
+// Case filters - fetch available cases
+const { data: casesData } = await useAsyncData('search-cases', () => useApi().cases.list())
+const availableCases = computed(() => casesData.value?.cases || [])
+
+// Filter state
+const selectedCases = ref<number[]>([])
+const selectedDocumentTypes = ref<string[]>([])
+
+const documentTypeOptions = [
+  { value: 'contract', label: 'Contracts', icon: 'i-lucide-file-text' },
+  { value: 'court_filing', label: 'Court Filings', icon: 'i-lucide-gavel' },
+  { value: 'transcript', label: 'Transcripts', icon: 'i-lucide-mic' },
+  { value: 'brief', label: 'Briefs', icon: 'i-lucide-file-pen' },
+  { value: 'motion', label: 'Motions', icon: 'i-lucide-file-check' },
+  { value: 'correspondence', label: 'Correspondence', icon: 'i-lucide-mail' }
+]
+
+// Chunk type filters
+const selectedChunkTypes = ref<string[]>([])
+const chunkTypeOptions = [
+  { value: 'summary', label: 'Summaries', description: 'Document overviews' },
+  { value: 'section', label: 'Sections', description: 'Major document sections' },
+  { value: 'microblock', label: 'Microblocks', description: 'Detailed paragraphs' },
+  { value: 'paragraph', label: 'Paragraphs', description: 'Individual paragraphs' },
+  { value: 'page', label: 'Pages', description: 'Full pages' }
+]
 
 // Watch search mode and update settings
 watch(searchMode, (mode) => {
@@ -36,109 +67,311 @@ watch(searchMode, (mode) => {
 const performSearch = async () => {
   if (!searchQuery.value.trim()) {
     searchResults.value = []
+    isSearching.value = false
     return
   }
 
   isLoading.value = true
+  isSearching.value = true
   try {
-    // Use hybrid endpoint by default
-    const response = await api.search.hybrid({
+    // Build search request with filters
+    const request = {
       query: searchQuery.value,
-      ...searchSettings.value
-    })
+      use_bm25: searchSettings.value.use_bm25,
+      use_dense: searchSettings.value.use_dense,
+      fusion_method: searchSettings.value.fusion_method,
+      top_k: searchSettings.value.top_k,
+      chunk_types: selectedChunkTypes.value.length > 0 ? selectedChunkTypes.value : undefined,
+      case_ids: selectedCases.value.length > 0 ? selectedCases.value : undefined,
+      document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
+    }
+
+    // Use hybrid endpoint by default
+    const response = await api.search.hybrid(request)
 
     // Transform backend response to frontend format
-    searchResults.value = (response.results || []).map((result: any) => ({
+    let results = (response.results || []).map((result: any) => ({
       id: result.id,
       title: extractTitle(result),
       excerpt: formatExcerpt(result),
-      documentType: result.metadata?.chunk_type || result.vector_type || 'document',
-      date: result.metadata?.created_at || new Date().toISOString(),
-      jurisdiction: 'N/A',
+      documentType: determineDocumentType(result),
+      date: result.metadata?.created_at || result.metadata?.uploaded_at || new Date().toISOString(),
+      jurisdiction: result.metadata?.jurisdiction || null,
       relevanceScore: result.score,
-      entities: [], // TODO: Extract from metadata
-      caseNumber: result.metadata?.case_id ? `Case #${result.metadata.case_id}` : 'N/A',
+      entities: extractEntities(result.metadata), // Extract from metadata
+      caseNumber: result.metadata?.case_id ? `Case #${result.metadata.case_id}` : null,
       metadata: result.metadata,
-      highlights: result.highlights
+      highlights: result.highlights,
+      vectorType: result.vector_type, // Pass through for highlighting logic
+      chunkType: result.metadata?.chunk_type,
+      pageNumber: result.metadata?.page_number,
+      filename: result.metadata?.filename
     }))
+
+    // Client-side filter by document type if selected
+    if (selectedDocumentTypes.value.length > 0) {
+      results = results.filter(r => selectedDocumentTypes.value.includes(r.documentType))
+    }
+
+    searchResults.value = results
   } catch (error) {
     console.error('Search error:', error)
     searchResults.value = []
   } finally {
     isLoading.value = false
+    isSearching.value = false
   }
 }
 
-// Extract title from result
-function extractTitle(result: any): string {
-  // Try to extract a meaningful title from the text
-  const text = result.text || ''
-  const lines = text.split('\n').filter((l: string) => l.trim())
+// Determine document type from metadata
+function determineDocumentType(result: any): string {
+  // Priority: explicit document_type > inferred from filename > chunk_type > default
+  if (result.metadata?.document_type) {
+    return result.metadata.document_type
+  }
 
-  // Look for common title patterns
-  if (lines.length > 0) {
-    const firstLine = lines[0].trim()
-    // If first line is short and in caps or has common document keywords, use it
-    if (firstLine.length < 100 && (
-      firstLine === firstLine.toUpperCase() ||
-      /^(AGREEMENT|CONTRACT|NOTICE|LETTER|MEMORANDUM|REPORT)/i.test(firstLine)
-    )) {
-      return firstLine
+  // Infer from filename
+  const filename = (result.metadata?.filename || '').toLowerCase()
+  if (filename.includes('contract') || filename.includes('agreement')) return 'contract'
+  if (filename.includes('filing') || filename.includes('complaint')) return 'court_filing'
+  if (filename.includes('transcript')) return 'transcript'
+  if (filename.includes('brief')) return 'brief'
+  if (filename.includes('motion')) return 'motion'
+  if (filename.includes('email') || filename.includes('letter')) return 'correspondence'
+
+  // Fallback to chunk type or generic
+  return result.metadata?.chunk_type || 'document'
+}
+
+// Extract entities from metadata
+function extractEntities(metadata: any): Array<{ type: string; text: string }> {
+  if (!metadata) return []
+
+  const entities: Array<{ type: string; text: string }> = []
+
+  // Extract from various metadata fields
+  if (metadata.entities && Array.isArray(metadata.entities)) {
+    entities.push(...metadata.entities)
+  }
+
+  // Extract parties as PERSON entities
+  if (metadata.parties && Array.isArray(metadata.parties)) {
+    metadata.parties.forEach((party: string) => {
+      entities.push({ type: 'PERSON', text: party })
+    })
+  }
+
+  // Extract court as COURT entity
+  if (metadata.court) {
+    entities.push({ type: 'COURT', text: metadata.court })
+  }
+
+  // Extract dates
+  if (metadata.filing_date) {
+    entities.push({ type: 'DATE', text: new Date(metadata.filing_date).toLocaleDateString() })
+  }
+
+  return entities
+}
+
+// Extract title from result with enhanced logic
+function extractTitle(result: any): string {
+  const metadata = result.metadata || {}
+
+  // Priority 1: Explicit title from metadata
+  if (metadata.title && metadata.title.length > 3) {
+    return metadata.title
+  }
+
+  // Priority 2: Filename without extension
+  if (metadata.filename) {
+    const filename = metadata.filename.replace(/\.(pdf|docx?|txt)$/i, '')
+    // Clean up common patterns like underscores, dates
+    const cleaned = filename
+      .replace(/_/g, ' ')
+      .replace(/\d{4}-\d{2}-\d{2}/g, '') // Remove ISO dates
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    if (cleaned.length > 3) {
+      return cleaned
     }
   }
 
-  // Fallback to metadata or generic title
-  return result.metadata?.title ||
-         result.metadata?.filename ||
-         `Document ${result.metadata?.document_id || result.id}`
+  // Priority 3: Extract from first line of text
+  const text = result.text || ''
+  const lines = text.split('\n').filter((l: string) => l.trim())
+
+  if (lines.length > 0) {
+    const firstLine = lines[0].trim()
+
+    // Check for common legal document headers
+    const legalHeaders = /^(AGREEMENT|CONTRACT|NOTICE|LETTER|MEMORANDUM|MEMO|REPORT|ORDER|MOTION|BRIEF|COMPLAINT|PETITION|AFFIDAVIT|DECLARATION|DEPOSITION|TRANSCRIPT)/i
+
+    if (firstLine.length < 150) {
+      // If it matches legal header pattern, use it
+      if (legalHeaders.test(firstLine)) {
+        return firstLine
+      }
+
+      // If it's all caps or title case and short, likely a header
+      const isAllCaps = firstLine === firstLine.toUpperCase() && firstLine.length > 5
+      const hasCapitalizedWords = /^[A-Z][a-z]+(?: [A-Z][a-z]+)*/.test(firstLine)
+
+      if (isAllCaps || hasCapitalizedWords) {
+        return firstLine
+      }
+    }
+
+    // Look at second line if first is too generic
+    if (lines.length > 1 && firstLine.length < 30) {
+      const secondLine = lines[1].trim()
+      if (secondLine.length > 10 && secondLine.length < 150) {
+        return `${firstLine} - ${secondLine}`
+      }
+    }
+  }
+
+  // Priority 4: Use chunk type and document ID
+  const chunkType = metadata.chunk_type || 'Section'
+  const docId = metadata.document_id || result.id
+
+  return `${chunkType.charAt(0).toUpperCase() + chunkType.slice(1)} from Document #${docId}`
 }
 
-// Format excerpt with highlights
+// Format excerpt with highlights - dual color for keyword vs semantic
 function formatExcerpt(result: any): string {
+  const isKeywordMatch = result.vector_type === 'bm25' || searchMode.value === 'keyword'
+  const isSemanticMatch = result.vector_type !== 'bm25' || searchMode.value === 'semantic'
+
   if (result.highlights && result.highlights.length > 0) {
-    // Join highlights with ellipsis and add HTML marks
+    // Join highlights with ellipsis
     return result.highlights
-      .slice(0, 2)
-      .map((h: string) => highlightText(h, searchQuery.value))
-      .join(' ... ')
+      .slice(0, 3) // Show up to 3 highlights
+      .map((h: string) => highlightText(h, searchQuery.value, isKeywordMatch, isSemanticMatch))
+      .join(' <span class="text-dimmed">...</span> ')
   }
 
   // Fallback to text snippet
   const text = result.text || ''
-  const snippet = text.substring(0, 300).trim()
-  return snippet ? highlightText(snippet, searchQuery.value) : 'No preview available'
+  // Try to find a good snippet around keywords
+  const snippet = findBestSnippet(text, searchQuery.value)
+  return snippet ? highlightText(snippet, searchQuery.value, isKeywordMatch, isSemanticMatch) : '<span class="text-muted italic">No preview available</span>'
 }
 
-// Highlight search terms in text
-function highlightText(text: string, query: string): string {
+// Find best snippet containing search terms
+function findBestSnippet(text: string, query: string, maxLength = 400): string {
+  if (!text) return ''
+
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
+  if (terms.length === 0) {
+    return text.substring(0, maxLength).trim() + (text.length > maxLength ? '...' : '')
+  }
+
+  // Find first occurrence of any term
+  const lowerText = text.toLowerCase()
+  let bestIndex = -1
+  let bestTerm = ''
+
+  for (const term of terms) {
+    const index = lowerText.indexOf(term)
+    if (index !== -1 && (bestIndex === -1 || index < bestIndex)) {
+      bestIndex = index
+      bestTerm = term
+    }
+  }
+
+  if (bestIndex === -1) {
+    // No terms found, return beginning
+    return text.substring(0, maxLength).trim() + (text.length > maxLength ? '...' : '')
+  }
+
+  // Extract snippet around the term
+  const snippetStart = Math.max(0, bestIndex - 100)
+  const snippetEnd = Math.min(text.length, bestIndex + bestTerm.length + 300)
+  let snippet = text.substring(snippetStart, snippetEnd).trim()
+
+  // Add ellipsis if needed
+  if (snippetStart > 0) snippet = '...' + snippet
+  if (snippetEnd < text.length) snippet = snippet + '...'
+
+  return snippet
+}
+
+// Advanced highlighting with dual colors: yellow for keywords, blue for semantic
+function highlightText(text: string, query: string, isKeywordMatch: boolean, isSemanticMatch: boolean): string {
   if (!query) return text
 
   const terms = query.toLowerCase().split(/\s+/)
   let highlighted = text
 
+  // Escape special regex characters in terms
+  const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
   terms.forEach(term => {
     if (term.length > 2) { // Only highlight terms longer than 2 chars
-      const regex = new RegExp(`(${term})`, 'gi')
-      highlighted = highlighted.replace(regex, '<mark class="bg-primary/20 text-primary font-medium">$1</mark>')
+      const escapedTerm = escapeRegex(term)
+      const regex = new RegExp(`(${escapedTerm})`, 'gi')
+
+      // Choose highlight color based on match type
+      if (isKeywordMatch && !isSemanticMatch) {
+        // Pure keyword match - yellow/amber
+        highlighted = highlighted.replace(regex, '<mark class="bg-warning/30 text-warning-600 dark:text-warning-400 font-medium px-0.5 rounded">$1</mark>')
+      } else if (isSemanticMatch && !isKeywordMatch) {
+        // Pure semantic match - blue/primary
+        highlighted = highlighted.replace(regex, '<mark class="bg-primary/20 text-primary-600 dark:text-primary-400 font-medium px-0.5 rounded">$1</mark>')
+      } else {
+        // Hybrid match - gradient or purple
+        highlighted = highlighted.replace(regex, '<mark class="bg-gradient-to-r from-warning/30 to-primary/20 text-highlighted font-semibold px-0.5 rounded">$1</mark>')
+      }
     }
   })
 
   return highlighted
 }
 
-// Debounced search
-const debouncedSearch = useDebounceFn(performSearch, 300)
+// Debounced search - increased to 500ms for better UX
+const debouncedSearch = useDebounceFn(performSearch, 500)
 
 // Watch search query
-watch(searchQuery, debouncedSearch)
+watch(searchQuery, () => {
+  // Set isSearching immediately when user types
+  if (searchQuery.value.trim()) {
+    isSearching.value = true
+  }
+  debouncedSearch()
+})
 
-// Keyboard shortcuts
-const searchInput = useTemplateRef('searchInput')
+// Keyboard shortcuts - manage two refs for hero and compact inputs
+const heroSearchInput = useTemplateRef('heroSearchInput')
+const compactSearchInput = useTemplateRef('compactSearchInput')
+
+// Helper to focus the visible input
+const focusVisibleInput = () => {
+  if (searchResults.value.length > 0 || isSearching.value) {
+    // Results view is visible, focus compact input
+    compactSearchInput.value?.inputRef?.focus()
+  } else {
+    // Hero view is visible, focus hero input
+    heroSearchInput.value?.inputRef?.focus()
+  }
+}
+
+// Watch for view changes and transfer focus
+watch([searchResults, isSearching], ([results, searching]) => {
+  if (searching || results.length > 0) {
+    // Switching to results view - transfer focus to compact input
+    nextTick(() => {
+      compactSearchInput.value?.inputRef?.focus()
+    })
+  }
+})
 
 defineShortcuts({
   '/': {
+    usingInput: false,
     handler: () => {
-      searchInput.value?.inputRef?.focus()
+      focusVisibleInput()
     }
   },
   'meta_k': {
@@ -175,9 +408,9 @@ defineShortcuts({
     <div class="flex h-[calc(100vh-64px)]">
       <!-- Main Content Area -->
       <div class="flex-1 overflow-y-auto">
-        <!-- Hero Search (when not searching) -->
+        <!-- Hero Search (when not searching or no results yet) -->
         <div
-          v-if="searchResults.length === 0 && !searchQuery"
+          v-show="searchResults.length === 0 && !isSearching"
           class="flex items-center justify-center min-h-full px-6 py-12"
         >
           <div class="w-full max-w-4xl mx-auto text-center space-y-8">
@@ -196,7 +429,7 @@ defineShortcuts({
             <!-- Hero Search Bar - Centered -->
             <div class="w-full max-w-3xl mx-auto">
               <UInput
-                ref="searchInput"
+                ref="heroSearchInput"
                 v-model="searchQuery"
                 icon="i-lucide-search"
                 placeholder="Search for legal terms, clauses, concepts, or natural language queries..."
@@ -251,12 +484,12 @@ defineShortcuts({
         </div>
 
         <!-- Search Results -->
-        <div v-else class="p-6">
+        <div v-show="searchResults.length > 0 || isSearching" class="p-6">
           <UContainer>
-            <!-- Compact Search Bar -->
+            <!-- Compact Search Bar (kept in DOM to prevent focus loss) -->
             <div class="mb-6">
               <UInput
-                ref="searchInput"
+                ref="compactSearchInput"
                 v-model="searchQuery"
                 icon="i-lucide-search"
                 placeholder="Search for legal terms, clauses, concepts..."
@@ -277,14 +510,26 @@ defineShortcuts({
             </div>
 
             <!-- Results Header -->
-            <div v-if="searchResults.length > 0" class="mb-6 flex items-center justify-between">
-              <div class="flex items-center gap-3">
+            <div v-if="searchResults.length > 0" class="mb-6 flex items-center justify-between flex-wrap gap-3">
+              <div class="flex items-center gap-3 flex-wrap">
                 <p class="text-sm text-muted">
                   About <span class="font-semibold text-highlighted">{{ searchResults.length }}</span> results
                 </p>
                 <UBadge :label="searchMode" color="primary" variant="soft" size="sm" />
                 <UBadge v-if="searchSettings.fusion_method !== 'rrf'" :label="`Fusion: ${searchSettings.fusion_method}`" color="neutral" variant="outline" size="sm" />
+                <UBadge v-if="selectedCases.length > 0" :label="`${selectedCases.length} case${selectedCases.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
+                <UBadge v-if="selectedDocumentTypes.length > 0" :label="`${selectedDocumentTypes.length} type filter${selectedDocumentTypes.length > 1 ? 's' : ''}`" color="info" variant="outline" size="sm" />
+                <UBadge v-if="selectedChunkTypes.length > 0" :label="`${selectedChunkTypes.length} chunk filter${selectedChunkTypes.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
               </div>
+              <UButton
+                v-if="selectedCases.length > 0 || selectedDocumentTypes.length > 0 || selectedChunkTypes.length > 0"
+                label="Clear Filters"
+                icon="i-lucide-x"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                @click="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+              />
             </div>
 
             <!-- Search Results List -->
@@ -396,6 +641,132 @@ defineShortcuts({
 
           <USeparator />
 
+          <USeparator />
+
+          <!-- Case Filter -->
+          <UFormField label="Cases" help="Filter results by specific cases">
+            <div class="space-y-2 max-h-48 overflow-y-auto">
+              <UCheckbox
+                v-for="case_ in availableCases"
+                :key="case_.id"
+                v-model="selectedCases"
+                :value="case_.id"
+              >
+                <template #label>
+                  <div class="flex flex-col">
+                    <span class="font-medium text-sm">{{ case_.name }}</span>
+                    <span class="text-xs text-muted">{{ case_.case_number }}</span>
+                  </div>
+                </template>
+              </UCheckbox>
+              <div v-if="availableCases.length === 0" class="text-sm text-muted py-2">
+                No cases available
+              </div>
+            </div>
+          </UFormField>
+
+          <USeparator />
+
+          <!-- Document Type Filter -->
+          <UFormField label="Document Types" help="Filter results by document type">
+            <div class="space-y-2">
+              <UCheckbox
+                v-for="option in documentTypeOptions"
+                :key="option.value"
+                v-model="selectedDocumentTypes"
+                :value="option.value"
+                :label="option.label"
+              >
+                <template #label>
+                  <div class="flex items-center gap-2">
+                    <UIcon :name="option.icon" class="size-4" />
+                    <span>{{ option.label }}</span>
+                  </div>
+                </template>
+              </UCheckbox>
+            </div>
+          </UFormField>
+
+          <USeparator />
+
+          <!-- Chunk Type Filter -->
+          <UFormField label="Content Granularity" help="Filter by content chunk size">
+            <div class="space-y-2">
+              <UCheckbox
+                v-for="option in chunkTypeOptions"
+                :key="option.value"
+                v-model="selectedChunkTypes"
+                :value="option.value"
+              >
+                <template #label>
+                  <div class="flex flex-col">
+                    <span class="font-medium">{{ option.label }}</span>
+                    <span class="text-xs text-muted">{{ option.description }}</span>
+                  </div>
+                </template>
+              </UCheckbox>
+            </div>
+          </UFormField>
+
+          <USeparator />
+
+          <!-- Active Filters Summary -->
+          <div v-if="selectedCases.length > 0 || selectedDocumentTypes.length > 0 || selectedChunkTypes.length > 0" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-highlighted">Active Filters</span>
+              <UButton
+                label="Clear All"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                @click="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+              />
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <UBadge
+                v-for="caseId in selectedCases"
+                :key="caseId"
+                :label="availableCases.find(c => c.id === caseId)?.name || `Case #${caseId}`"
+                color="secondary"
+                variant="soft"
+                size="sm"
+                @click="selectedCases = selectedCases.filter(id => id !== caseId)"
+              >
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />
+                </template>
+              </UBadge>
+              <UBadge
+                v-for="type in selectedDocumentTypes"
+                :key="type"
+                :label="documentTypeOptions.find(o => o.value === type)?.label || type"
+                color="primary"
+                variant="soft"
+                size="sm"
+                @click="selectedDocumentTypes = selectedDocumentTypes.filter(t => t !== type)"
+              >
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />
+                </template>
+              </UBadge>
+              <UBadge
+                v-for="type in selectedChunkTypes"
+                :key="type"
+                :label="chunkTypeOptions.find(o => o.value === type)?.label || type"
+                color="info"
+                variant="soft"
+                size="sm"
+                @click="selectedChunkTypes = selectedChunkTypes.filter(t => t !== type)"
+              >
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />
+                </template>
+              </UBadge>
+            </div>
+          </div>
+
+          <USeparator />
+
           <!-- Info Card -->
           <UCard :ui="{ body: 'space-y-2' }">
             <div class="flex items-start gap-2">
@@ -406,6 +777,8 @@ defineShortcuts({
                   <li>• Use <strong>hybrid</strong> for best results</li>
                   <li>• Try <strong>semantic</strong> for concept searches</li>
                   <li>• Use <strong>keyword</strong> for exact terms</li>
+                  <li>• <span class="bg-warning/30 px-1 rounded">Yellow</span> = Keyword match</li>
+                  <li>• <span class="bg-primary/20 px-1 rounded">Blue</span> = Semantic match</li>
                 </ul>
               </div>
             </div>

@@ -1,385 +1,916 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watchEffect } from 'vue'
 
 definePageMeta({
   layout: 'default'
 })
 
 const route = useRoute()
-const caseId = route.params.id
+const router = useRouter()
+const api = useApi()
+const toast = useToast()
 
-// Mock case data - TODO: Fetch from API based on caseId
-const caseData = ref({
-  id: caseId,
-  name: 'Acme Corp v. Global Tech Inc',
-  caseNumber: '2024-CV-12345',
-  type: 'Civil Litigation',
-  status: 'active',
-  court: 'Superior Court of California',
-  jurisdiction: 'California',
-  openedDate: '2024-01-15',
-  lastActivity: '2024-03-10',
-  description: 'Breach of contract dispute involving software licensing agreements between Acme Corporation and Global Tech Inc. The plaintiff alleges breach of a master services agreement and seeks damages of $2.5M plus attorney fees.',
-  tags: ['contract', 'software', 'licensing', 'breach'],
-  parties: [
-    { id: '1', name: 'Acme Corporation', role: 'Plaintiff', type: 'organization', email: 'legal@acmecorp.com' },
-    { id: '2', name: 'Global Tech Inc', role: 'Defendant', type: 'organization', email: 'legal@globaltech.com' },
-    { id: '3', name: 'Jane Smith', role: 'Plaintiff Attorney', type: 'person', email: 'jsmith@lawfirm.com' },
-    { id: '4', name: 'John Doe', role: 'Defendant Attorney', type: 'person', email: 'jdoe@defense.com' }
-  ],
-  documents: [
-    { id: '1', name: 'Master Services Agreement.pdf', type: 'contract', uploadedDate: '2024-01-15', size: '2.3 MB', status: 'analyzed' },
-    { id: '2', name: 'Complaint.pdf', type: 'court_filing', uploadedDate: '2024-01-16', size: '1.8 MB', status: 'analyzed' },
-    { id: '3', name: 'Answer to Complaint.pdf', type: 'court_filing', uploadedDate: '2024-02-01', size: '1.5 MB', status: 'analyzing' },
-    { id: '4', name: 'Discovery Request.pdf', type: 'motion', uploadedDate: '2024-02-15', size: '892 KB', status: 'pending' },
-    { id: '5', name: 'Email Correspondence.pdf', type: 'correspondence', uploadedDate: '2024-03-01', size: '654 KB', status: 'analyzed' }
-  ],
-  timeline: [
-    { date: '2024-01-15', event: 'Case Filed', description: 'Complaint filed with Superior Court', type: 'filing' },
-    { date: '2024-01-20', event: 'Summons Served', description: 'Defendant served with summons and complaint', type: 'service' },
-    { date: '2024-02-01', event: 'Answer Filed', description: 'Defendant filed answer to complaint', type: 'filing' },
-    { date: '2024-02-15', event: 'Discovery Initiated', description: 'Plaintiff served initial discovery requests', type: 'discovery' },
-    { date: '2024-03-15', event: 'Discovery Response Due', description: 'Defendant responses to discovery due', type: 'deadline' },
-    { date: '2024-04-01', event: 'Case Management Conference', description: 'Scheduled CMC with Judge Anderson', type: 'hearing' }
-  ],
-  deadlines: [
-    { date: '2024-03-15', title: 'Discovery Response Due', priority: 'high', completed: false },
-    { date: '2024-04-01', title: 'Case Management Conference', priority: 'high', completed: false },
-    { date: '2024-04-15', title: 'Expert Designation Due', priority: 'medium', completed: false }
-  ],
-  notes: [
-    { id: '1', author: 'Jane Smith', date: '2024-03-10', content: 'Client meeting scheduled for next week to review discovery responses' },
-    { id: '2', author: 'John Doe', date: '2024-03-08', content: 'Opposing counsel requested extension on discovery - denied' }
-  ]
+// Get case ID from route
+const caseId = computed(() => route.params.id as string)
+
+// State
+const loading = ref(true)
+const error = ref<string | null>(null)
+const showEditModal = ref(false)
+const showAddDocumentModal = ref(false)
+const showArchiveConfirm = ref(false)
+const uploadingFiles = ref<File[] | null>(null)
+const uploadProgress = ref(0)
+
+// Fetch case data
+const { data: caseData, pending, error: fetchError, refresh: refreshCase } = await useAsyncData(
+  `case-${caseId.value}`,
+  () => api.cases.get(caseId.value),
+  {
+    default: () => null,
+    watch: [caseId]
+  }
+)
+
+// Fetch documents for this case
+const { data: documentsData, refresh: refreshDocuments } = await useAsyncData(
+  `case-${caseId.value}-documents`,
+  () => api.documents.listByCase(caseId.value),
+  {
+    default: () => ({ documents: [], total: 0 }),
+    watch: [caseId]
+  }
+)
+
+// Update loading state based on pending
+watchEffect(() => {
+  loading.value = pending.value
 })
 
-const activeTab = ref('overview')
+// Update error state
+watchEffect(() => {
+  if (fetchError.value) {
+    error.value = fetchError.value.message || 'Failed to load case'
+  }
+})
 
-const tabs = [
-  { label: 'Overview', value: 'overview', icon: 'i-lucide-layout-dashboard' },
-  { label: 'Documents', value: 'documents', icon: 'i-lucide-files', badge: caseData.value.documents.length },
-  { label: 'Timeline', value: 'timeline', icon: 'i-lucide-calendar' },
-  { label: 'Parties', value: 'parties', icon: 'i-lucide-users' },
-  { label: 'Graph', value: 'graph', icon: 'i-lucide-network' },
-  { label: 'Notes', value: 'notes', icon: 'i-lucide-sticky-note' }
-]
+// Transform case data
+const case_ = computed(() => {
+  if (!caseData.value) return null
 
+  return {
+    id: String(caseData.value.id),
+    name: caseData.value.name,
+    caseNumber: caseData.value.case_number,
+    type: caseData.value.matter_type || 'General',
+    status: caseData.value.status?.toLowerCase() || 'active',
+    client: caseData.value.client || 'Unknown Client',
+    opposingParty: caseData.value.opposing_party || 'N/A',
+    court: caseData.value.court || 'N/A',
+    jurisdiction: caseData.value.jurisdiction || 'N/A',
+    openedDate: caseData.value.created_at,
+    lastActivity: caseData.value.updated_at,
+    description: caseData.value.description || `${caseData.value.matter_type || 'Legal'} case for ${caseData.value.client}`,
+    notes: caseData.value.notes,
+    tags: caseData.value.tags || [],
+    documentCount: documentsData.value?.documents?.length || 0
+  }
+})
+
+// Transform documents
+const documents = computed(() => {
+  if (!documentsData.value?.documents) return []
+
+  return documentsData.value.documents.map((d: any) => ({
+    id: String(d.id),
+    filename: d.filename,
+    title: d.meta_data?.title || d.filename,
+    type: d.meta_data?.document_type || 'general',
+    size: d.size || 0,
+    uploadedAt: d.uploaded_at,
+    status: d.status || 'indexed',
+    summary: d.meta_data?.summary,
+    pageCount: d.meta_data?.page_count
+  }))
+})
+
+// Status configuration
 const statusColors: Record<string, string> = {
   active: 'success',
+  staging: 'warning',
   pending: 'warning',
-  closed: 'neutral'
+  unloaded: 'neutral',
+  closed: 'neutral',
+  archived: 'neutral'
 }
 
+const statusLabels: Record<string, string> = {
+  active: 'Active',
+  staging: 'Staging',
+  pending: 'Pending',
+  unloaded: 'Closed',
+  closed: 'Closed',
+  archived: 'Archived'
+}
+
+// Document type configuration
 const documentTypeIcons: Record<string, string> = {
   contract: 'i-lucide-file-text',
+  agreement: 'i-lucide-handshake',
+  transcript: 'i-lucide-mic',
   court_filing: 'i-lucide-gavel',
+  brief: 'i-lucide-file-pen',
   motion: 'i-lucide-file-check',
   correspondence: 'i-lucide-mail',
-  transcript: 'i-lucide-mic'
+  general: 'i-lucide-file'
 }
 
-const timelineTypeColors: Record<string, string> = {
-  filing: 'primary',
-  service: 'info',
-  discovery: 'warning',
-  deadline: 'error',
-  hearing: 'success'
+const documentTypeLabels: Record<string, string> = {
+  contract: 'Contract',
+  agreement: 'Agreement',
+  transcript: 'Transcript',
+  court_filing: 'Court Filing',
+  brief: 'Brief',
+  motion: 'Motion',
+  correspondence: 'Correspondence',
+  general: 'Document'
 }
 
-const upcomingDeadlines = computed(() => {
-  return caseData.value.deadlines
-    .filter(d => !d.completed && new Date(d.date) >= new Date())
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+// Stats computation
+const stats = computed(() => {
+  if (!case_.value) return { documents: 0, recentDocs: 0, totalSize: 0 }
+
+  const now = new Date()
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+  const recentDocs = documents.value.filter(d =>
+    new Date(d.uploadedAt) >= thirtyDaysAgo
+  ).length
+
+  const totalSize = documents.value.reduce((acc, d) => acc + (d.size || 0), 0)
+
+  return {
+    documents: documents.value.length,
+    recentDocs,
+    totalSize
+  }
 })
+
+// Activity timeline (mock data for now - can be enhanced with real API)
+const activityTimeline = computed(() => {
+  const activities = []
+
+  // Add case creation
+  if (case_.value?.openedDate) {
+    activities.push({
+      id: 'created',
+      type: 'case_created',
+      title: 'Case Opened',
+      description: `Case ${case_.value.caseNumber} was created`,
+      date: getRelativeTime(case_.value.openedDate),
+      icon: 'i-lucide-folder-plus',
+      _timestamp: case_.value.openedDate
+    })
+  }
+
+  // Add document uploads
+  documents.value.slice(0, 5).forEach((doc, idx) => {
+    activities.push({
+      id: `doc-${doc.id}`,
+      type: 'document_uploaded',
+      title: 'Document Uploaded',
+      description: doc.title,
+      date: getRelativeTime(doc.uploadedAt),
+      icon: 'i-lucide-file-plus',
+      _timestamp: doc.uploadedAt
+    })
+  })
+
+  // Sort by timestamp descending, then remove temporary timestamp field
+  return activities
+    .sort((a, b) => new Date(b._timestamp).getTime() - new Date(a._timestamp).getTime())
+    .slice(0, 10)
+    .map(({ _timestamp, ...rest }) => rest)
+})
+
+// Actions
+async function handleLoadCase() {
+  try {
+    await api.cases.load(caseId.value)
+    toast.add({
+      title: 'Success',
+      description: 'Case loaded successfully',
+      color: 'success'
+    })
+    await refreshCase()
+  } catch (err) {
+    toast.add({
+      title: 'Error',
+      description: 'Failed to load case',
+      color: 'error'
+    })
+  }
+}
+
+async function handleUnloadCase() {
+  try {
+    await api.cases.unload(caseId.value)
+    toast.add({
+      title: 'Success',
+      description: 'Case unloaded successfully',
+      color: 'success'
+    })
+    await refreshCase()
+  } catch (err) {
+    toast.add({
+      title: 'Error',
+      description: 'Failed to unload case',
+      color: 'error'
+    })
+  }
+}
+
+async function handleArchiveCase() {
+  try {
+    await api.cases.archive(caseId.value)
+    toast.add({
+      title: 'Success',
+      description: 'Case archived successfully',
+      color: 'success'
+    })
+    showArchiveConfirm.value = false
+    router.push('/cases')
+  } catch (err) {
+    toast.add({
+      title: 'Error',
+      description: 'Failed to archive case',
+      color: 'error'
+    })
+  }
+}
+
+async function handleUploadDocuments() {
+  if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
+
+  uploadProgress.value = 0
+
+  try {
+    const formData = new FormData()
+    uploadingFiles.value.forEach(file => {
+      formData.append('files', file)
+    })
+
+    // Simulate progress
+    const progressInterval = setInterval(() => {
+      uploadProgress.value += 10
+      if (uploadProgress.value >= 90) {
+        clearInterval(progressInterval)
+      }
+    }, 200)
+
+    await api.documents.upload(caseId.value, formData)
+
+    clearInterval(progressInterval)
+    uploadProgress.value = 100
+
+    toast.add({
+      title: 'Success',
+      description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
+      color: 'success'
+    })
+
+    uploadingFiles.value = null
+    uploadProgress.value = 0
+    showAddDocumentModal.value = false
+
+    await refreshDocuments()
+  } catch (err) {
+    toast.add({
+      title: 'Error',
+      description: 'Failed to upload documents',
+      color: 'error'
+    })
+    uploadProgress.value = 0
+  }
+}
+
+async function handleDeleteDocument(docId: string) {
+  if (!confirm('Are you sure you want to delete this document?')) return
+
+  try {
+    await api.documents.delete(docId)
+    toast.add({
+      title: 'Success',
+      description: 'Document deleted successfully',
+      color: 'success'
+    })
+    await refreshDocuments()
+  } catch (err) {
+    toast.add({
+      title: 'Error',
+      description: 'Failed to delete document',
+      color: 'error'
+    })
+  }
+}
+
+// Utility functions
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+}
+
+function formatDateTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function getRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (diffInSeconds < 60) return 'just now'
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`
+  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
+
+  return formatDate(dateStr)
+}
 </script>
 
 <template>
   <UDashboardPanel>
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar :title="case_?.name || 'Loading...'">
         <template #leading>
-          <div class="flex items-center gap-3">
-            <UButton
-              icon="i-lucide-arrow-left"
-              color="neutral"
-              variant="ghost"
-              to="/cases"
-            />
-            <div>
-              <h1 class="font-semibold text-lg">{{ caseData.name }}</h1>
-              <p class="text-sm text-dimmed">{{ caseData.caseNumber }}</p>
-            </div>
-          </div>
+          <UButton
+            icon="i-lucide-arrow-left"
+            color="neutral"
+            variant="ghost"
+            @click="router.push('/cases')"
+          />
         </template>
         <template #trailing>
-          <UButtonGroup>
+          <div class="flex items-center gap-2">
             <UButton
-              icon="i-lucide-brain"
+              v-if="case_?.status === 'staging'"
+              label="Load Case"
+              icon="i-lucide-play"
+              color="success"
+              variant="soft"
+              @click="handleLoadCase"
+            />
+            <UButton
+              v-if="case_?.status === 'active'"
+              label="Unload Case"
+              icon="i-lucide-pause"
+              color="warning"
+              variant="soft"
+              @click="handleUnloadCase"
+            />
+            <UButton
+              label="Add Document"
+              icon="i-lucide-file-plus"
               color="primary"
-              variant="solid"
-              label="Deep Research"
-              :to="`/cases/${caseId}/research`"
+              @click="showAddDocumentModal = true"
+            />
+            <UDropdownMenu
+              :items="[
+                [
+                  { label: 'Edit Case', icon: 'i-lucide-edit', click: () => showEditModal = true },
+                  { label: 'Export Documents', icon: 'i-lucide-download' }
+                ],
+                [
+                  { label: 'Archive Case', icon: 'i-lucide-archive', color: 'warning', click: () => showArchiveConfirm = true }
+                ]
+              ]"
             >
-              <template #leading>
-                <UIcon name="i-lucide-sparkles" class="animate-pulse" />
-              </template>
-            </UButton>
-            <UButton icon="i-lucide-share" color="neutral" variant="outline" label="Share" />
-            <UButton icon="i-lucide-download" color="neutral" variant="outline" label="Export" />
-            <UDropdownMenu>
-              <UButton icon="i-lucide-more-vertical" color="neutral" variant="ghost" />
-              <template #content>
-                <div class="p-1">
-                  <UButton label="Edit Case" icon="i-lucide-pencil" color="neutral" variant="ghost" block />
-                  <UButton label="Close Case" icon="i-lucide-folder-x" color="neutral" variant="ghost" block />
-                  <USeparator class="my-1" />
-                  <UButton label="Delete Case" icon="i-lucide-trash-2" color="error" variant="ghost" block />
-                </div>
-              </template>
+              <UButton
+                icon="i-lucide-more-vertical"
+                color="neutral"
+                variant="ghost"
+              />
             </UDropdownMenu>
-          </UButtonGroup>
+          </div>
         </template>
       </UDashboardNavbar>
     </template>
 
-    <!-- Case Header -->
-    <div class="p-6 border-b border-default">
-      <div class="flex flex-col lg:flex-row gap-6">
-        <div class="flex-1 space-y-4">
-          <div class="flex items-start gap-3">
-            <UIcon name="i-lucide-briefcase" class="size-12 text-primary" />
-            <div class="flex-1">
-              <div class="flex items-center gap-2 mb-2">
-                <UBadge :label="caseData.status" :color="statusColors[caseData.status]" variant="soft" class="capitalize" />
-                <UBadge :label="caseData.type" color="neutral" variant="outline" />
-              </div>
-              <p class="text-default">{{ caseData.description }}</p>
-              <div class="flex flex-wrap gap-2 mt-3">
-                <UBadge v-for="tag in caseData.tags" :key="tag" :label="tag" size="sm" variant="outline" />
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p class="text-xs text-muted mb-1">Court</p>
-              <p class="font-medium text-sm">{{ caseData.court }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-muted mb-1">Jurisdiction</p>
-              <p class="font-medium text-sm">{{ caseData.jurisdiction }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-muted mb-1">Filed</p>
-              <p class="font-medium text-sm">{{ new Date(caseData.openedDate).toLocaleDateString() }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-muted mb-1">Last Activity</p>
-              <p class="font-medium text-sm">{{ new Date(caseData.lastActivity).toLocaleDateString() }}</p>
-            </div>
-          </div>
+    <div class="overflow-y-auto h-[calc(100vh-64px)]">
+      <div class="max-w-7xl mx-auto p-6 space-y-6">
+        <!-- Loading State -->
+        <div v-if="loading" class="flex items-center justify-center py-20">
+          <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin" />
         </div>
 
-        <div class="lg:w-80 space-y-3">
-          <UCard v-if="upcomingDeadlines.length" :ui="{ body: 'p-4' }">
-            <div class="flex items-center gap-2 mb-3">
-              <UIcon name="i-lucide-alert-circle" class="size-5 text-error" />
-              <h3 class="font-semibold">Upcoming Deadlines</h3>
-            </div>
-            <div class="space-y-2">
-              <div v-for="deadline in upcomingDeadlines.slice(0, 3)" :key="deadline.date" class="flex items-start justify-between gap-2">
-                <div class="flex-1">
-                  <p class="text-sm font-medium">{{ deadline.title }}</p>
-                  <p class="text-xs text-muted">{{ new Date(deadline.date).toLocaleDateString() }}</p>
-                </div>
-                <UBadge :label="deadline.priority" :color="deadline.priority === 'high' ? 'error' : 'warning'" size="xs" />
-              </div>
-            </div>
-          </UCard>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tabs Navigation -->
-    <div class="border-b border-default">
-      <UContainer>
-        <UTabs v-model="activeTab" :items="tabs" class="w-full">
-          <template #default="{ item }">
-            <div class="flex items-center gap-2">
-              <UIcon :name="item.icon" class="size-4" />
-              <span>{{ item.label }}</span>
-              <UBadge v-if="item.badge" :label="String(item.badge)" size="xs" variant="soft" />
-            </div>
-          </template>
-        </UTabs>
-      </UContainer>
-    </div>
-
-    <!-- Tab Content -->
-    <div class="p-6">
-      <UContainer>
-        <!-- Overview Tab -->
-        <div v-if="activeTab === 'overview'" class="space-y-6">
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Quick Stats -->
-            <UCard>
-              <template #header>
-                <h3 class="font-semibold">Quick Stats</h3>
-              </template>
-              <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-sm text-muted">Documents</span>
-                  <span class="font-semibold">{{ caseData.documents.length }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-sm text-muted">Parties</span>
-                  <span class="font-semibold">{{ caseData.parties.length }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-sm text-muted">Timeline Events</span>
-                  <span class="font-semibold">{{ caseData.timeline.length }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-sm text-muted">Open Deadlines</span>
-                  <span class="font-semibold">{{ upcomingDeadlines.length }}</span>
-                </div>
-              </div>
-            </UCard>
-
-            <!-- Recent Documents -->
-            <UCard class="lg:col-span-2">
-              <template #header>
-                <div class="flex items-center justify-between">
-                  <h3 class="font-semibold">Recent Documents</h3>
-                  <UButton label="View All" size="xs" color="neutral" variant="ghost" @click="activeTab = 'documents'" />
-                </div>
-              </template>
-              <div class="space-y-2">
-                <div v-for="doc in caseData.documents.slice(0, 4)" :key="doc.id" class="flex items-center gap-3 p-2 rounded-lg hover:bg-elevated/50 transition-colors">
-                  <UIcon :name="documentTypeIcons[doc.type] || 'i-lucide-file'" class="size-5 text-primary" />
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium truncate">{{ doc.name }}</p>
-                    <p class="text-xs text-dimmed">{{ doc.size }} • {{ new Date(doc.uploadedDate).toLocaleDateString() }}</p>
-                  </div>
-                  <UBadge :label="doc.status" size="xs" variant="soft" />
-                </div>
-              </div>
-            </UCard>
-          </div>
-
-          <!-- Recent Activity Timeline -->
-          <UCard>
-            <template #header>
-              <h3 class="font-semibold">Recent Activity</h3>
-            </template>
-            <UTimeline :items="caseData.timeline.slice(-4).reverse().map(t => ({
-              date: new Date(t.date).toLocaleDateString(),
-              title: t.event,
-              description: t.description,
-              icon: 'i-lucide-calendar'
-            }))" />
-          </UCard>
-        </div>
-
-        <!-- Documents Tab -->
-        <div v-else-if="activeTab === 'documents'" class="space-y-4">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-2xl font-bold">Documents ({{ caseData.documents.length }})</h2>
-            <UButton label="Upload Document" icon="i-lucide-upload" color="primary" />
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <UCard v-for="doc in caseData.documents" :key="doc.id" :ui="{ body: 'space-y-3' }">
-              <div class="flex items-start gap-3">
-                <UIcon :name="documentTypeIcons[doc.type] || 'i-lucide-file'" class="size-8 text-primary" />
-                <div class="flex-1 min-w-0">
-                  <h3 class="font-medium truncate mb-1">{{ doc.name }}</h3>
-                  <p class="text-sm text-dimmed capitalize">{{ doc.type.replace('_', ' ') }}</p>
-                </div>
-              </div>
-              <div class="flex items-center justify-between text-xs text-muted">
-                <span>{{ doc.size }}</span>
-                <span>{{ new Date(doc.uploadedDate).toLocaleDateString() }}</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <UBadge :label="doc.status" size="sm" variant="soft" class="flex-1 justify-center" />
-                <UButton icon="i-lucide-eye" size="sm" color="neutral" variant="outline" />
-                <UButton icon="i-lucide-download" size="sm" color="neutral" variant="outline" />
-              </div>
-            </UCard>
-          </div>
-        </div>
-
-        <!-- Timeline Tab -->
-        <div v-else-if="activeTab === 'timeline'">
-          <h2 class="text-2xl font-bold mb-6">Case Timeline</h2>
-          <UTimeline
-            :items="caseData.timeline.map(t => ({
-              date: new Date(t.date).toLocaleDateString(),
-              title: t.event,
-              description: t.description,
-              icon: 'i-lucide-calendar'
-            }))"
+        <!-- Error State -->
+        <div v-else-if="error || !case_" class="text-center py-20">
+          <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto mb-4 opacity-50" />
+          <h3 class="text-xl font-semibold mb-2">Error Loading Case</h3>
+          <p class="text-muted mb-6">{{ error || 'Case not found' }}</p>
+          <UButton
+            label="Back to Cases"
+            icon="i-lucide-arrow-left"
             color="primary"
+            @click="router.push('/cases')"
           />
         </div>
 
-        <!-- Parties Tab -->
-        <div v-else-if="activeTab === 'parties'" class="space-y-4">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-2xl font-bold">Case Parties ({{ caseData.parties.length }})</h2>
-            <UButton label="Add Party" icon="i-lucide-user-plus" color="primary" />
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <UCard v-for="party in caseData.parties" :key="party.id" :ui="{ body: 'flex items-start gap-4' }">
-              <UAvatar :text="party.name[0]" size="lg" />
-              <div class="flex-1">
-                <h3 class="font-semibold mb-1">{{ party.name }}</h3>
-                <p class="text-sm text-muted mb-2">{{ party.role }}</p>
-                <div class="flex items-center gap-2 text-sm text-dimmed">
-                  <UIcon name="i-lucide-mail" class="size-4" />
-                  <span>{{ party.email }}</span>
+        <!-- Case Content -->
+        <template v-else-if="case_">
+          <!-- Hero Section -->
+          <div class="bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent rounded-xl p-8 border border-default">
+            <div class="flex items-start justify-between gap-6 flex-wrap">
+              <div class="flex items-start gap-4 flex-1 min-w-0">
+                <div class="p-4 bg-primary/20 rounded-xl">
+                  <UIcon name="i-lucide-briefcase" class="size-10 text-primary" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-3 flex-wrap mb-2">
+                    <h1 class="text-3xl font-bold text-highlighted">{{ case_.name }}</h1>
+                    <UBadge
+                      :label="statusLabels[case_.status]"
+                      :color="statusColors[case_.status]"
+                      variant="soft"
+                      size="lg"
+                      class="capitalize"
+                    />
+                  </div>
+                  <div class="flex items-center gap-4 text-muted mb-3 flex-wrap">
+                    <div class="flex items-center gap-2">
+                      <UIcon name="i-lucide-hash" class="size-4" />
+                      <span class="font-mono">{{ case_.caseNumber }}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <UIcon name="i-lucide-tag" class="size-4" />
+                      <span>{{ case_.type }}</span>
+                    </div>
+                  </div>
+                  <p class="text-base text-muted max-w-3xl">{{ case_.description }}</p>
                 </div>
               </div>
-            </UCard>
-          </div>
-        </div>
 
-        <!-- Graph Tab -->
-        <div v-else-if="activeTab === 'graph'">
-          <h2 class="text-2xl font-bold mb-6">Knowledge Graph</h2>
-          <div class="text-center py-20 bg-elevated/30 rounded-lg">
-            <UIcon name="i-lucide-network" class="size-20 text-muted mx-auto mb-6 opacity-30" />
-            <h3 class="text-xl font-semibold mb-3 text-highlighted">Interactive Knowledge Graph</h3>
-            <p class="text-muted mb-6 max-w-md mx-auto">
-              Visualize relationships between cases, documents, parties, and entities
-            </p>
-            <UButton label="Open Full Graph Explorer" icon="i-lucide-expand" color="primary" to="/graph" />
+              <!-- Quick Actions -->
+              <div class="flex flex-col gap-2 min-w-[160px]">
+                <UButton
+                  label="Search Documents"
+                  icon="i-lucide-search"
+                  color="neutral"
+                  variant="outline"
+                  block
+                  @click="router.push(`/search?case_id=${case_.id}`)"
+                />
+                <UButton
+                  label="View Analytics"
+                  icon="i-lucide-bar-chart"
+                  color="neutral"
+                  variant="outline"
+                  block
+                  to="/analytics"
+                />
+              </div>
+            </div>
           </div>
-        </div>
 
-        <!-- Notes Tab -->
-        <div v-else-if="activeTab === 'notes'" class="space-y-4">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-2xl font-bold">Case Notes</h2>
-            <UButton label="Add Note" icon="i-lucide-plus" color="primary" />
-          </div>
-
-          <div class="space-y-3">
-            <UCard v-for="note in caseData.notes" :key="note.id" :ui="{ body: 'space-y-2' }">
+          <!-- Stats Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <UCard :ui="{ body: 'space-y-2' }">
               <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <UAvatar :text="note.author[0]" size="sm" />
-                  <span class="font-medium">{{ note.author }}</span>
-                </div>
-                <span class="text-sm text-dimmed">{{ new Date(note.date).toLocaleDateString() }}</span>
+                <UIcon name="i-lucide-files" class="size-8 text-primary" />
+                <UBadge :label="String(stats.documents)" size="lg" variant="soft" color="primary" />
               </div>
-              <p class="text-default">{{ note.content }}</p>
+              <div>
+                <p class="text-sm text-muted">Total Documents</p>
+                <p class="text-2xl font-bold">{{ stats.documents }}</p>
+              </div>
+            </UCard>
+
+            <UCard :ui="{ body: 'space-y-2' }">
+              <div class="flex items-center justify-between">
+                <UIcon name="i-lucide-clock" class="size-8 text-info" />
+                <UBadge :label="`+${stats.recentDocs}`" size="lg" variant="soft" color="info" />
+              </div>
+              <div>
+                <p class="text-sm text-muted">Added Last 30 Days</p>
+                <p class="text-2xl font-bold">{{ stats.recentDocs }}</p>
+              </div>
+            </UCard>
+
+            <UCard :ui="{ body: 'space-y-2' }">
+              <div class="flex items-center justify-between">
+                <UIcon name="i-lucide-hard-drive" class="size-8 text-success" />
+              </div>
+              <div>
+                <p class="text-sm text-muted">Total Storage</p>
+                <p class="text-2xl font-bold">{{ formatBytes(stats.totalSize) }}</p>
+              </div>
+            </UCard>
+
+            <UCard :ui="{ body: 'space-y-2' }">
+              <div class="flex items-center justify-between">
+                <UIcon name="i-lucide-calendar" class="size-8 text-warning" />
+              </div>
+              <div>
+                <p class="text-sm text-muted">Last Activity</p>
+                <p class="text-lg font-bold">{{ getRelativeTime(case_.lastActivity) }}</p>
+              </div>
             </UCard>
           </div>
-        </div>
-      </UContainer>
+
+          <!-- Main Content Grid -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Column - Case Details & Documents -->
+            <div class="lg:col-span-2 space-y-6">
+              <!-- Case Information -->
+              <UCard>
+                <template #header>
+                  <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-highlighted flex items-center gap-2">
+                      <UIcon name="i-lucide-info" class="size-5" />
+                      Case Information
+                    </h2>
+                    <UButton
+                      icon="i-lucide-edit"
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      @click="showEditModal = true"
+                    />
+                  </div>
+                </template>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-sm text-muted">
+                      <UIcon name="i-lucide-user" class="size-4" />
+                      <span>Client</span>
+                    </div>
+                    <p class="font-medium text-highlighted">{{ case_.client }}</p>
+                  </div>
+
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-sm text-muted">
+                      <UIcon name="i-lucide-users" class="size-4" />
+                      <span>Opposing Party</span>
+                    </div>
+                    <p class="font-medium text-highlighted">{{ case_.opposingParty }}</p>
+                  </div>
+
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-sm text-muted">
+                      <UIcon name="i-lucide-landmark" class="size-4" />
+                      <span>Court</span>
+                    </div>
+                    <p class="font-medium text-highlighted">{{ case_.court }}</p>
+                  </div>
+
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-sm text-muted">
+                      <UIcon name="i-lucide-map-pin" class="size-4" />
+                      <span>Jurisdiction</span>
+                    </div>
+                    <p class="font-medium text-highlighted">{{ case_.jurisdiction }}</p>
+                  </div>
+
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-sm text-muted">
+                      <UIcon name="i-lucide-calendar-plus" class="size-4" />
+                      <span>Opened Date</span>
+                    </div>
+                    <p class="font-medium text-highlighted">{{ formatDate(case_.openedDate) }}</p>
+                  </div>
+
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-sm text-muted">
+                      <UIcon name="i-lucide-activity" class="size-4" />
+                      <span>Last Updated</span>
+                    </div>
+                    <p class="font-medium text-highlighted">{{ formatDate(case_.lastActivity) }}</p>
+                  </div>
+                </div>
+
+                <div v-if="case_.notes" class="mt-6 pt-6 border-t border-default">
+                  <div class="flex items-center gap-2 text-sm text-muted mb-2">
+                    <UIcon name="i-lucide-sticky-note" class="size-4" />
+                    <span>Notes</span>
+                  </div>
+                  <p class="text-muted whitespace-pre-wrap">{{ case_.notes }}</p>
+                </div>
+              </UCard>
+
+              <!-- Documents Section -->
+              <UCard>
+                <template #header>
+                  <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-highlighted flex items-center gap-2">
+                      <UIcon name="i-lucide-folder" class="size-5" />
+                      Documents
+                      <UBadge :label="String(documents.length)" variant="soft" color="primary" />
+                    </h2>
+                    <UButton
+                      label="Add Document"
+                      icon="i-lucide-plus"
+                      color="primary"
+                      size="sm"
+                      @click="showAddDocumentModal = true"
+                    />
+                  </div>
+                </template>
+
+                <!-- Documents List -->
+                <div v-if="documents.length > 0" class="space-y-3">
+                  <div
+                    v-for="doc in documents"
+                    :key="doc.id"
+                    class="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/5 transition-colors cursor-pointer group"
+                    @click="router.push(`/documents/${doc.id}`)"
+                  >
+                    <div class="p-2 bg-primary/10 rounded-lg">
+                      <UIcon
+                        :name="documentTypeIcons[doc.type] || 'i-lucide-file'"
+                        class="size-5 text-primary"
+                      />
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="flex-1 min-w-0">
+                          <h3 class="font-medium text-highlighted truncate">{{ doc.title }}</h3>
+                          <div class="flex items-center gap-3 mt-1 text-sm text-muted flex-wrap">
+                            <UBadge
+                              :label="documentTypeLabels[doc.type] || 'Document'"
+                              variant="outline"
+                              size="xs"
+                            />
+                            <span>{{ formatBytes(doc.size) }}</span>
+                            <span>•</span>
+                            <span>{{ formatDate(doc.uploadedAt) }}</span>
+                            <UBadge
+                              v-if="doc.status === 'processing'"
+                              label="Processing"
+                              color="warning"
+                              variant="soft"
+                              size="xs"
+                            />
+                            <UBadge
+                              v-else-if="doc.status === 'indexed'"
+                              label="Indexed"
+                              color="success"
+                              variant="soft"
+                              size="xs"
+                            />
+                          </div>
+                          <p v-if="doc.summary" class="text-sm text-muted mt-1 line-clamp-2">
+                            {{ doc.summary }}
+                          </p>
+                        </div>
+
+                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <UTooltip text="View Document">
+                            <UButton
+                              icon="i-lucide-eye"
+                              variant="ghost"
+                              color="neutral"
+                              size="xs"
+                              @click.stop="router.push(`/documents/${doc.id}`)"
+                            />
+                          </UTooltip>
+                          <UDropdownMenu
+                            :items="[
+                              [
+                                { label: 'Download', icon: 'i-lucide-download' },
+                                { label: 'Share', icon: 'i-lucide-share' }
+                              ],
+                              [
+                                { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => handleDeleteDocument(doc.id) }
+                              ]
+                            ]"
+                          >
+                            <UButton
+                              icon="i-lucide-more-vertical"
+                              variant="ghost"
+                              color="neutral"
+                              size="xs"
+                              @click.stop
+                            />
+                          </UDropdownMenu>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Empty State -->
+                <div v-else class="text-center py-12">
+                  <UIcon name="i-lucide-folder-open" class="size-12 text-muted mx-auto mb-4 opacity-30" />
+                  <h3 class="text-lg font-semibold mb-2">No documents yet</h3>
+                  <p class="text-sm text-muted mb-4">Upload documents to get started</p>
+                  <UButton
+                    label="Add Document"
+                    icon="i-lucide-plus"
+                    color="primary"
+                    size="sm"
+                    @click="showAddDocumentModal = true"
+                  />
+                </div>
+              </UCard>
+            </div>
+
+            <!-- Right Column - Activity Timeline -->
+            <div class="space-y-6">
+              <!-- Activity Timeline -->
+              <UCard>
+                <template #header>
+                  <h2 class="text-xl font-semibold text-highlighted flex items-center gap-2">
+                    <UIcon name="i-lucide-history" class="size-5" />
+                    Recent Activity
+                  </h2>
+                </template>
+
+                <UTimeline
+                  v-if="activityTimeline.length > 0"
+                  :items="activityTimeline"
+                  size="xs"
+                  color="primary"
+                />
+
+                <div v-else class="text-center py-8">
+                  <UIcon name="i-lucide-activity" class="size-10 text-muted mx-auto mb-3 opacity-30" />
+                  <p class="text-sm text-muted">No recent activity</p>
+                </div>
+              </UCard>
+
+              <!-- Quick Links -->
+              <UCard>
+                <template #header>
+                  <h2 class="text-xl font-semibold text-highlighted flex items-center gap-2">
+                    <UIcon name="i-lucide-zap" class="size-5" />
+                    Quick Actions
+                  </h2>
+                </template>
+
+                <div class="space-y-2">
+                  <UButton
+                    label="Search in Case"
+                    icon="i-lucide-search"
+                    color="neutral"
+                    variant="outline"
+                    block
+                    @click="router.push(`/search?case_id=${case_.id}`)"
+                  />
+                  <UButton
+                    label="Upload Documents"
+                    icon="i-lucide-upload"
+                    color="neutral"
+                    variant="outline"
+                    block
+                    @click="showAddDocumentModal = true"
+                  />
+                  <UButton
+                    label="Generate Report"
+                    icon="i-lucide-file-text"
+                    color="neutral"
+                    variant="outline"
+                    block
+                  />
+                  <UButton
+                    label="View Timeline"
+                    icon="i-lucide-clock"
+                    color="neutral"
+                    variant="outline"
+                    block
+                  />
+                </div>
+              </UCard>
+
+              <!-- Case Tags (if any) -->
+              <UCard v-if="case_.tags && case_.tags.length > 0">
+                <template #header>
+                  <h2 class="text-xl font-semibold text-highlighted flex items-center gap-2">
+                    <UIcon name="i-lucide-tags" class="size-5" />
+                    Tags
+                  </h2>
+                </template>
+
+                <div class="flex flex-wrap gap-2">
+                  <UBadge
+                    v-for="tag in case_.tags"
+                    :key="tag"
+                    :label="tag"
+                    variant="soft"
+                    color="primary"
+                  />
+                </div>
+              </UCard>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
+
+    <!-- Add Document Modal -->
+    <UModal
+      v-model:open="showAddDocumentModal"
+      title="Add Documents to Case"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <!-- File Upload Component -->
+          <UFileUpload
+            v-model="uploadingFiles"
+            multiple
+            accept=".pdf,.docx,.txt"
+            label="Drop your documents here"
+            description="PDF, DOCX, TXT (max 100MB each)"
+            icon="i-lucide-upload-cloud"
+            class="min-h-48"
+          />
+
+          <!-- Upload Progress -->
+          <div v-if="uploadProgress > 0 && uploadProgress < 100" class="space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted">Uploading...</span>
+              <span class="font-medium text-highlighted">{{ uploadProgress }}%</span>
+            </div>
+            <UProgress :model-value="uploadProgress" color="primary" />
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showAddDocumentModal = false; uploadingFiles = null; uploadProgress = 0"
+          />
+          <UButton
+            label="Upload"
+            icon="i-lucide-upload"
+            color="primary"
+            :disabled="!uploadingFiles || uploadingFiles.length === 0 || uploadProgress > 0"
+            @click="handleUploadDocuments"
+          />
+        </div>
+      </template>
+    </UModal>
+
+    <!-- Archive Confirmation Modal -->
+    <UModal
+      v-model:open="showArchiveConfirm"
+      title="Archive Case"
+      icon="i-lucide-archive"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <p class="text-muted">
+            Are you sure you want to archive this case? The case and all its documents will be moved to the archive.
+          </p>
+
+          <UAlert
+            color="warning"
+            variant="soft"
+            icon="i-lucide-alert-triangle"
+            title="This action can be reversed"
+            description="You can unarchive this case later from the archived cases section."
+          />
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showArchiveConfirm = false"
+          />
+          <UButton
+            label="Archive Case"
+            icon="i-lucide-archive"
+            color="warning"
+            @click="handleArchiveCase"
+          />
+        </div>
+      </template>
+    </UModal>
   </UDashboardPanel>
 </template>

@@ -18,12 +18,12 @@ const filters = ref({
 })
 
 const nodeTypes = [
-  { label: 'Cases', value: 'case', icon: 'i-lucide-briefcase', color: 'primary', count: 45 },
-  { label: 'Documents', value: 'document', icon: 'i-lucide-file-text', color: 'info', count: 189 },
-  { label: 'People', value: 'person', icon: 'i-lucide-user', color: 'success', count: 67 },
-  { label: 'Organizations', value: 'organization', icon: 'i-lucide-building', color: 'warning', count: 34 },
-  { label: 'Courts', value: 'court', icon: 'i-lucide-landmark', color: 'error', count: 12 },
-  { label: 'Citations', value: 'citation', icon: 'i-lucide-link', color: 'neutral', count: 98 }
+  { label: 'Cases', value: 'case', icon: 'i-lucide-briefcase', color: 'primary', iconClass: 'text-primary', bgClass: 'bg-primary', count: 45 },
+  { label: 'Documents', value: 'document', icon: 'i-lucide-file-text', color: 'info', iconClass: 'text-info', bgClass: 'bg-info', count: 189 },
+  { label: 'People', value: 'person', icon: 'i-lucide-user', color: 'success', iconClass: 'text-success', bgClass: 'bg-success', count: 67 },
+  { label: 'Organizations', value: 'organization', icon: 'i-lucide-building', color: 'warning', iconClass: 'text-warning', bgClass: 'bg-warning', count: 34 },
+  { label: 'Courts', value: 'court', icon: 'i-lucide-landmark', color: 'error', iconClass: 'text-error', bgClass: 'bg-error', count: 12 },
+  { label: 'Citations', value: 'citation', icon: 'i-lucide-link', color: 'neutral', iconClass: 'text-neutral', bgClass: 'bg-neutral', count: 98 }
 ]
 
 const relationshipTypes = [
@@ -152,7 +152,7 @@ const selectedRelationshipTypes = computed({
                 <div v-for="type in nodeTypes" :key="type.value" class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <UCheckbox :value="type.value" />
-                    <UIcon :name="type.icon" class="size-4" :class="`text-${type.color}`" />
+                    <UIcon :name="type.icon" class="size-4" :class="type.iconClass" />
                     <span class="text-sm">{{ type.label }}</span>
                   </div>
                   <span class="text-xs text-dimmed">{{ type.count }}</span>
@@ -189,7 +189,7 @@ const selectedRelationshipTypes = computed({
             <h3 class="text-sm font-medium text-highlighted">Legend</h3>
             <div class="space-y-2">
               <div v-for="type in nodeTypes.filter(t => selectedNodeTypes.includes(t.value))" :key="type.value" class="flex items-center gap-2">
-                <div class="size-3 rounded-full" :class="`bg-${type.color}`" />
+                <div class="size-3 rounded-full" :class="type.bgClass" />
                 <span class="text-sm text-muted">{{ type.label }}</span>
               </div>
             </div>
@@ -309,7 +309,7 @@ const selectedRelationshipTypes = computed({
             <UIcon
               :name="nodeTypes.find(t => t.value === selectedNode?.type)?.icon || 'i-lucide-circle'"
               class="size-6"
-              :class="`text-${nodeTypes.find(t => t.value === selectedNode?.type)?.color || 'neutral'}`"
+              :class="nodeTypes.find(t => t.value === selectedNode?.type)?.iconClass || 'text-neutral'"
             />
             <div>
               <h3 class="font-semibold">{{ selectedNode?.label }}</h3>
@@ -340,7 +340,7 @@ const selectedRelationshipTypes = computed({
                     <UIcon
                       :name="nodeTypes.find(t => t.value === node.type)?.icon || 'i-lucide-circle'"
                       class="size-5"
-                      :class="`text-${nodeTypes.find(t => t.value === node.type)?.color || 'neutral'}`"
+                      :class="nodeTypes.find(t => t.value === node.type)?.iconClass || 'text-neutral'"
                     />
                     <div class="flex-1 min-w-0">
                       <p class="font-medium text-sm truncate">{{ node.label }}</p>

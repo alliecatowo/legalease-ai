@@ -19,6 +19,12 @@ async def search_documents(
     q: str = Query(..., description="Search query"),
     case_ids: Optional[List[int]] = Query(None, description="Filter by case IDs"),
     limit: int = Query(10, ge=1, le=100, description="Number of results to return"),
+    min_score: Optional[float] = Query(
+        0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum score threshold. Use 0.0 for 'Show More Results' functionality"
+    ),
 ):
     """
     Simple search endpoint using hybrid search.
@@ -26,13 +32,24 @@ async def search_documents(
     This endpoint provides a simplified interface for quick searches.
     For more advanced options, use the /hybrid endpoint.
 
+    Score Interpretation:
+    - 0.85-1.0: Strong keyword matches (exact or near-exact terms)
+    - 0.6-0.85: Good semantic matches
+    - 0.3-0.6: Weak matches (may still be relevant)
+    - Below 0.3: Very weak matches (filtered by default)
+
+    To implement "Show More Results" functionality:
+    - Default request: min_score=0.3 (shows high-quality results)
+    - "Show More" request: min_score=0.0 (shows all results)
+
     Args:
         q: Search query string
         case_ids: Optional list of case IDs to filter results
         limit: Maximum number of results to return
+        min_score: Minimum relevance score threshold (default: 0.3)
 
     Returns:
-        Search results with scores and metadata
+        Search results with normalized scores and metadata
     """
     try:
         # Create search request
@@ -40,6 +57,7 @@ async def search_documents(
             query=q,
             case_ids=case_ids,
             top_k=limit,
+            score_threshold=min_score,
             use_bm25=True,
             use_dense=True,
             fusion_method="rrf",
@@ -55,7 +73,7 @@ async def search_documents(
             "results": [
                 {
                     "id": r.id,
-                    "score": r.score,
+                    "score": round(r.score, 3),  # Round to 3 decimal places for cleaner display
                     "text": r.text,
                     "metadata": r.metadata,
                     "highlights": r.highlights,
@@ -64,6 +82,8 @@ async def search_documents(
             ],
             "total": response.total_results,
             "limit": limit,
+            "min_score": min_score,
+            "results_filtered": response.search_metadata.get("results_filtered", 0),
             "search_time_ms": response.search_metadata.get("search_time_ms"),
         }
 

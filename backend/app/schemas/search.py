@@ -114,11 +114,16 @@ class HybridSearchRequest(BaseModel):
     document_ids: Optional[List[int]] = Field(None, description="Filter by document IDs")
     chunk_types: Optional[List[str]] = Field(None, description="Filter by chunk types")
     top_k: int = Field(10, ge=1, le=100, description="Maximum number of results")
-    score_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum score threshold")
+    score_threshold: Optional[float] = Field(
+        0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum relevance score threshold (0.0-1.0). Default 0.3. Set to 0.0 to show all results. Scores are normalized: 0.85-1.0 for strong keyword matches, 0.6-0.85 for semantic matches, 0.3-0.6 for weak matches."
+    )
     use_bm25: bool = Field(True, description="Include BM25 keyword search")
     use_dense: bool = Field(True, description="Include dense vector search")
-    fusion_method: str = Field("rrf", description="Fusion method: 'rrf', 'weighted', 'max'")
-    rrf_k: int = Field(60, ge=1, description="RRF k parameter")
+    fusion_method: str = Field("rrf", description="Fusion method: 'rrf' (Reciprocal Rank Fusion), 'dbsf' (Distribution-Based Score Fusion)")
+    rrf_k: int = Field(60, ge=1, description="RRF k parameter (only used with rrf fusion)")
     vector_weights: Optional[Dict[str, float]] = Field(
         None,
         description="Weights for vector types (e.g., {'summary': 0.3, 'section': 0.4, 'microblock': 0.3})"

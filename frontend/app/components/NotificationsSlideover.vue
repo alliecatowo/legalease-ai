@@ -4,7 +4,11 @@ import type { Notification } from '~/types'
 
 const { isNotificationsSlideoverOpen } = useDashboard()
 
-const { data: notifications } = await useFetch<Notification[]>('/api/notifications')
+// Mock notifications until backend API is ready
+const notifications = ref<Notification[]>([])
+
+// TODO: Uncomment when backend /api/notifications endpoint is ready
+// const { data: notifications } = await useFetch<Notification[]>('/api/notifications')
 </script>
 
 <template>
