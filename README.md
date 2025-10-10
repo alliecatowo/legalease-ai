@@ -1,6 +1,73 @@
 # LegalEase
 
-AI-powered legal document management and analysis platform.
+**World-class AI-powered legal document search and analysis platform**
+
+LegalEase is a comprehensive, self-hosted platform for legal professionals to search, analyze, and manage documents with advanced AI capabilities. Built with privacy and security as top priorities, it runs entirely on your local infrastructure with no external API dependencies.
+
+## ✨ Key Features
+
+### 🔍 Hybrid Search Engine
+- **BM25 + Semantic Search**: Combines traditional keyword search with AI-powered semantic understanding
+- **Document Highlighting**: Click search results to jump directly to relevant sections in PDFs
+- **Real-time Search**: Instant results as you type with <100ms latency
+- **Advanced Filters**: Filter by case, document type, date range, entities, and tags
+
+### 📁 Case-Based Organization
+- **Load/Unload Cases**: Control which cases are actively searchable while preserving all files
+- **Bulk Upload**: Drag-and-drop multiple files with progress tracking
+- **Case Management**: Create, archive, and delete cases with full metadata tracking
+- **Status Tracking**: Monitor processing status and storage usage per case
+
+### 🎙️ AI Transcription
+- **Speaker Diarization**: Automatically identify and label different speakers (Speaker 1, 2, 3...)
+- **Word-Level Timestamps**: Precise timing for every word with millisecond accuracy
+- **Audio Sync**: Click transcript segments to jump to exact audio position
+- **Export Options**: DOCX (formatted), SRT/VTT subtitles, JSON
+- **70x Real-Time**: Process 1 hour of audio in ~50 seconds
+
+### 🤖 AI-Powered Analysis
+- **Auto-Summarization**: LLM-generated summaries for documents and transcripts
+- **Entity Extraction**: Identify parties, dates, amounts, citations, courts using GLiNER + LexNLP
+- **Smart Tagging**: Automatic categorization and tagging of document types
+- **Knowledge Graphs**: Visualize entity relationships and citation networks using Neo4j
+
+### 🎨 Beautiful UI
+- **Nuxt 4 + Nuxt UI 4**: Modern Vue.js interface with instant search
+- **PDF Viewer**: Native PDF rendering with search term highlighting
+- **Responsive Design**: Works seamlessly on desktop and mobile
+- **Dark/Light Modes**: Automatic theme switching
+
+### 🔒 Privacy & Security
+- **100% Local**: All processing happens on your hardware
+- **No External APIs**: Uses local Ollama models (Llama 3.1 70B)
+- **Data Isolation**: PostgreSQL + MinIO + Qdrant for complete data control
+- **Audit Logging**: Track all operations and access
+- **Encrypted Storage**: Optional disk encryption support
+
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   Backend       │    │   Services      │
+│   (Nuxt 4)      │◄──►│   (FastAPI)     │◄──►│   (Docker)      │
+│                 │    │                 │    │                 │
+│ • Search UI     │    │ • REST API      │    │ • PostgreSQL    │
+│ • PDF Viewer    │    │ • Case Mgmt     │    │ • Qdrant        │
+│ • Case Mgmt     │    │ • File Upload   │    │ • MinIO         │
+│ • Transcripts   │    │ • Search API    │    │ • Redis         │
+│ • Knowledge Viz │    │ • AI Services   │    │ • Neo4j         │
+└─────────────────┘    └─────────────────┘    │ • Ollama        │
+                                              └─────────────────┘
+```
+
+## 🚀 Performance Targets
+
+- **Search Latency**: <100ms for 95th percentile
+- **Document Processing**: <1 minute per 100-page PDF
+- **Transcription**: ~70x real-time (1 hour audio → 50 seconds)
+- **UI Responsiveness**: <16ms for interactions (60fps)
+- **Memory Usage**: <8GB RAM for backend services
+- **Disk Usage**: ~2x original file size (embeddings + indexes)
 
 ## Prerequisites
 
