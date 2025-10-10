@@ -5,7 +5,7 @@ This module defines request and response models for hybrid search
 operations on legal documents using Qdrant vector database.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
@@ -63,7 +63,7 @@ class SearchResult(BaseModel):
     Individual search result item.
 
     Attributes:
-        id: Unique identifier of the chunk/point
+        id: Unique identifier of the chunk/point (int or UUID string)
         score: Relevance score (0.0 to 1.0 or higher)
         text: The actual text content
         metadata: Additional metadata about the result
@@ -71,7 +71,7 @@ class SearchResult(BaseModel):
         vector_type: Type of vector used for this match (e.g., 'summary', 'bm25')
     """
 
-    id: int = Field(..., description="Chunk/point ID")
+    id: Union[int, str] = Field(..., description="Chunk/point ID (int or UUID string)")
     score: float = Field(..., description="Relevance score")
     text: str = Field(..., description="Content text")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
