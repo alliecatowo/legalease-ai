@@ -1,0 +1,26 @@
+1
+00:00:00,000 --> 00:00:04,500
+[Judge] Welcome to the courtroom. This hearing is
+now in session.
+
+2
+00:00:05,000 --> 00:00:09,199
+[Defense Attorney] Your Honor, the defense would
+like to present new evidence in this case.
+
+3
+00:00:09,500 --> 00:00:13,800
+[Prosecutor] Objection, Your Honor! This evidence
+was not disclosed during discovery.
+
+4
+00:00:14,199 --> 00:00:18,000
+[Judge] I'll allow it. Please proceed with your
+presentation of the evidence.
+
+5
+00:00:18,500 --> 00:00:26,300
+[Defense Attorney] Thank you, Your Honor. As you
+can see from Exhibit A, the defendant was not at
+the scene during the time of the alleged incident.
+

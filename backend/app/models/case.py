@@ -1,0 +1,60 @@
+"""Case model and related enums."""
+
+from datetime import datetime
+from enum import Enum as PyEnum
+from typing import Optional, List
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Text
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+
+
+class CaseStatus(str, PyEnum):
+    """Case status enumeration."""
+
+    STAGING = "STAGING"
+    PROCESSING = "PROCESSING"
+    ACTIVE = "ACTIVE"
+    UNLOADED = "UNLOADED"
+    ARCHIVED = "ARCHIVED"
+
+
+class Case(Base):
+    """
+    Case model representing a legal case.
+
+    A case is the primary container for legal documents and related information.
+    Cases progress through various statuses from staging to archival.
+    """
+
+    __tablename__ = "cases"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(255), nullable=False, index=True)
+    case_number = Column(String(100), unique=True, nullable=False, index=True)
+    client = Column(String(255), nullable=False, index=True)
+    matter_type = Column(String(100), nullable=True)
+    status = Column(
+        Enum(CaseStatus, native_enum=True, create_constraint=True),
+        nullable=False,
+        default=CaseStatus.STAGING,
+        index=True
+    )
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+    archived_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    documents = relationship(
+        "Document",
+        back_populates="case",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Case(id={self.id}, case_number='{self.case_number}', name='{self.name}', status='{self.status.value}')>"

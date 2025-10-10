@@ -1,0 +1,62 @@
+"""Document schemas for API requests and responses."""
+
+from datetime import datetime
+from typing import Optional, List, Any, Dict
+from pydantic import BaseModel, Field, ConfigDict
+from app.models.document import DocumentStatus
+
+
+class DocumentUpload(BaseModel):
+    """Schema for document upload metadata."""
+
+    case_id: int = Field(..., description="ID of the case this document belongs to")
+
+
+class DocumentMetadata(BaseModel):
+    """Schema for document metadata."""
+
+    author: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    custom_fields: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class DocumentResponse(BaseModel):
+    """Schema for document response."""
+
+    id: int = Field(..., description="Document ID")
+    case_id: int = Field(..., description="Case ID")
+    filename: str = Field(..., description="Original filename")
+    file_path: str = Field(..., description="Storage path in MinIO")
+    mime_type: Optional[str] = Field(None, description="MIME type of the file")
+    size: int = Field(..., description="File size in bytes")
+    status: DocumentStatus = Field(..., description="Processing status")
+    meta_data: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    uploaded_at: datetime = Field(..., description="Upload timestamp")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentListResponse(BaseModel):
+    """Schema for list of documents response."""
+
+    documents: List[DocumentResponse] = Field(..., description="List of documents")
+    total: int = Field(..., description="Total number of documents")
+    case_id: Optional[int] = Field(None, description="Case ID if filtered by case")
+
+
+class DocumentDeleteResponse(BaseModel):
+    """Schema for document deletion response."""
+
+    id: int = Field(..., description="Deleted document ID")
+    filename: str = Field(..., description="Deleted filename")
+    message: str = Field(..., description="Deletion confirmation message")
+
+
+class DocumentStatusUpdate(BaseModel):
+    """Schema for updating document status."""
+
+    status: DocumentStatus = Field(..., description="New document status")
+    meta_data: Optional[Dict[str, Any]] = Field(None, description="Updated metadata")
