@@ -5,14 +5,15 @@ export default defineNuxtConfig({
 
   modules: [
     '@nuxt/ui',
-    '@vueuse/nuxt',
-    '@nuxtjs/tailwindcss',
   ],
+
+  css: ['~/assets/css/main.css'],
 
   typescript: {
     strict: true,
     typeCheck: true,
   },
+
 
   ssr: true,
 

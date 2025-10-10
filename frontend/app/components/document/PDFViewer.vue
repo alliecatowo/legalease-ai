@@ -162,7 +162,7 @@
             @click="goToPage(pageNum)"
           >
             <canvas
-              :ref="(el) => setThumbnailRef(el, pageNum)"
+              :ref="(el: HTMLCanvasElement | null) => setThumbnailRef(el, pageNum)"
               class="w-full h-auto"
               :width="thumbnailWidth"
               :height="thumbnailHeight"
@@ -178,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 
 interface Props {
   url: string
@@ -481,7 +481,8 @@ async function extractTextFromSelection() {
     const selectedText = textContent.items
       .filter((item: any) => {
         // Basic bounding box check (simplified)
-        return true // You'd implement proper coordinate checking
+        // TODO: Implement proper coordinate checking based on selection bounds
+        return true
       })
       .map((item: any) => item.str)
       .join(' ')

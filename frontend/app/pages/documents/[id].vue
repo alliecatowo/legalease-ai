@@ -52,11 +52,11 @@
               Download
             </UButton>
 
-            <UDropdown :items="actionMenu" mode="click">
+            <UDropdownMenu :items="actionMenu">
               <UButton variant="outline">
                 <UIcon name="i-heroicons-ellipsis-vertical-20-solid" class="w-5 h-5" />
               </UButton>
-            </UDropdown>
+            </UDropdownMenu>
           </div>
         </div>
       </div>
