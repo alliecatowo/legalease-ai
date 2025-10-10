@@ -5,84 +5,42 @@ definePageMeta({
   layout: 'default'
 })
 
+const api = useApi()
 const showCreateModal = ref(false)
 const viewMode = ref<'grid' | 'list'>('grid')
 const searchQuery = ref('')
 const selectedStatus = ref('all')
 const selectedType = ref('all')
+const loading = ref(true)
+const error = ref<string | null>(null)
 
-// Mock cases data - TODO: Replace with API call
-const cases = ref([
-  {
-    id: '1',
-    name: 'Acme Corp v. Global Tech Inc',
-    caseNumber: '2024-CV-12345',
-    type: 'Civil Litigation',
-    status: 'active',
-    court: 'Superior Court of California',
-    jurisdiction: 'California',
-    openedDate: '2024-01-15',
-    lastActivity: '2024-03-10',
-    parties: ['Acme Corporation', 'Global Tech Inc'],
-    documents: 47,
-    deadlines: 3,
-    description: 'Breach of contract dispute involving software licensing agreements',
-    tags: ['contract', 'software', 'licensing'],
-    progress: 65
-  },
-  {
-    id: '2',
-    name: 'Smith v. Johnson Employment Dispute',
-    caseNumber: '2024-EMP-5678',
-    type: 'Employment',
-    status: 'active',
-    court: 'Federal District Court',
-    jurisdiction: 'Federal',
-    openedDate: '2024-02-01',
-    lastActivity: '2024-03-12',
-    parties: ['John Smith', 'ABC Corporation'],
-    documents: 23,
-    deadlines: 1,
-    description: 'Wrongful termination and discrimination claim',
-    tags: ['employment', 'discrimination'],
-    progress: 40
-  },
-  {
-    id: '3',
-    name: 'Patent Infringement - Tech Innovations LLC',
-    caseNumber: '2024-PAT-9012',
-    type: 'Patent',
-    status: 'pending',
-    court: 'US District Court',
-    jurisdiction: 'Federal',
-    openedDate: '2023-11-20',
-    lastActivity: '2024-03-08',
-    parties: ['Tech Innovations LLC', 'MegaCorp Inc'],
-    documents: 89,
-    deadlines: 5,
-    description: 'Patent infringement case involving mobile technology patents',
-    tags: ['patent', 'technology', 'intellectual property'],
-    progress: 80
-  },
-  {
-    id: '4',
-    name: 'Estate of Williams - Probate',
-    caseNumber: '2024-PRO-3456',
-    type: 'Estate',
-    status: 'closed',
-    court: 'Probate Court',
-    jurisdiction: 'New York',
-    openedDate: '2023-08-10',
-    lastActivity: '2024-02-15',
-    closedDate: '2024-02-15',
-    parties: ['Estate of Robert Williams', 'Multiple Heirs'],
-    documents: 34,
-    deadlines: 0,
-    description: 'Estate distribution and will contest matter',
-    tags: ['probate', 'estate', 'will'],
-    progress: 100
-  }
-])
+// Fetch cases from API
+const { data: casesData, refresh } = await useAsyncData('cases', () => api.cases.list(), {
+  default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
+})
+
+// Transform backend data to frontend format
+const cases = computed(() => {
+  return (casesData.value?.cases || []).map((c: any) => ({
+    id: String(c.id),
+    name: c.name,
+    caseNumber: c.case_number,
+    type: c.matter_type || 'General',
+    status: c.status.toLowerCase(),
+    court: 'N/A', // TODO: Add to backend
+    jurisdiction: 'N/A', // TODO: Add to backend
+    openedDate: c.created_at,
+    lastActivity: c.updated_at,
+    parties: [c.client], // TODO: Add proper parties to backend
+    documents: c.document_count || 0,
+    deadlines: 0, // TODO: Add to backend
+    description: c.matter_type ? `${c.matter_type} case` : 'Legal case',
+    tags: c.matter_type ? [c.matter_type.toLowerCase()] : [],
+    progress: c.status === 'ACTIVE' ? 50 : c.status === 'STAGING' ? 25 : c.status === 'UNLOADED' ? 100 : 0
+  }))
+})
+
+loading.value = false
 
 const statusOptions = [
   { label: 'All Status', value: 'all' },
@@ -101,7 +59,7 @@ const typeOptions = [
 ]
 
 const filteredCases = computed(() => {
-  return cases.value.filter(c => {
+  return cases.value.filter((c: any) => {
     const matchesSearch = !searchQuery.value ||
       c.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       c.caseNumber.toLowerCase().includes(searchQuery.value.toLowerCase())
@@ -113,20 +71,23 @@ const filteredCases = computed(() => {
 
 const stats = computed(() => ({
   total: cases.value.length,
-  active: cases.value.filter(c => c.status === 'active').length,
-  pending: cases.value.filter(c => c.status === 'pending').length,
-  closed: cases.value.filter(c => c.status === 'closed').length
+  active: cases.value.filter((c: any) => c.status === 'active').length,
+  pending: cases.value.filter((c: any) => c.status === 'staging').length,
+  closed: cases.value.filter((c: any) => c.status === 'unloaded').length
 }))
 
 const statusColors: Record<string, string> = {
   active: 'success',
+  staging: 'warning',
   pending: 'warning',
+  unloaded: 'neutral',
   closed: 'neutral'
 }
 
-function onCaseCreated(caseData: any) {
+async function onCaseCreated(caseData: any) {
   console.log('Case created:', caseData)
-  // TODO: Add case to list and navigate to it
+  await refresh() // Refresh the cases list
+  showCreateModal.value = false
 }
 </script>
 
@@ -148,7 +109,8 @@ function onCaseCreated(caseData: any) {
       </UDashboardNavbar>
     </template>
 
-    <UDashboardPanelContent>
+    <div class="overflow-y-auto h-[calc(100vh-64px)]">
+      <div class="max-w-7xl mx-auto p-6 space-y-6">
     <!-- Stats Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       <UCard :ui="{ body: 'space-y-2' }">
@@ -452,6 +414,7 @@ function onCaseCreated(caseData: any) {
 
     <!-- Create Case Modal -->
     <CreateCaseModal v-model:open="showCreateModal" @created="onCaseCreated" />
-    </UDashboardPanelContent>
+      </div>
+    </div>
   </UDashboardPanel>
 </template>

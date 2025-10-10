@@ -1,83 +1,103 @@
 """
-Embedding Generation Pipeline
+FastEmbed Embedding Pipeline
 
-Provides dense vector embeddings for document chunks using sentence-transformers.
-Supports multi-size chunks (summary, section, microblock) and automatic GPU/CPU detection.
+Provides fast, lightweight dense vector embeddings using Qdrant's FastEmbed library.
+Optimized for production with ONNX runtime, smaller memory footprint, and faster inference.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
-import torch
-from sentence_transformers import SentenceTransformer
+from typing import List, Optional, Dict, Any, Iterator
 import numpy as np
+from fastembed import TextEmbedding
 
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingPipeline:
+class FastEmbedPipeline:
     """
-    Pipeline for generating dense embeddings using sentence-transformers.
+    Pipeline for generating dense embeddings using FastEmbed.
+
+    FastEmbed advantages:
+    - 4x faster than sentence-transformers (ONNX runtime)
+    - Lightweight: No PyTorch dependency
+    - Serverless-friendly: Small memory footprint
+    - Qdrant-native integration
+    - CPU optimized with quantization
 
     Features:
-    - Automatic GPU/CPU detection
+    - Automatic model caching
     - Batch processing for efficiency
     - Multi-size support (summary/section/microblock)
-    - Model caching for performance
+    - Parallel encoding
     """
 
     # Class-level cache for models to avoid reloading
-    _model_cache: Dict[str, SentenceTransformer] = {}
+    _model_cache: Dict[str, TextEmbedding] = {}
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-base-en-v1.5",
-        device: Optional[str] = None,
-        batch_size: int = 32,
-        normalize_embeddings: bool = True,
+        model_name: str = "BAAI/bge-small-en-v1.5",
+        cache_dir: Optional[str] = None,
+        threads: Optional[int] = None,
+        parallel: Optional[int] = None,
     ):
         """
-        Initialize the embedding pipeline.
+        Initialize the FastEmbed pipeline.
 
         Args:
-            model_name: HuggingFace model identifier (default: BAAI/bge-base-en-v1.5)
-            device: Device to use ('cuda', 'cpu', or None for auto-detection)
-            batch_size: Number of texts to process in each batch
-            normalize_embeddings: Whether to L2-normalize embeddings (recommended for cosine similarity)
+            model_name: HuggingFace model identifier
+                       Popular options:
+                       - "BAAI/bge-small-en-v1.5" (384 dim, fast, good quality)
+                       - "BAAI/bge-base-en-v1.5" (768 dim, balanced)
+                       - "sentence-transformers/all-MiniLM-L6-v2" (384 dim, very fast)
+            cache_dir: Directory to cache models (default: ~/.cache/fastembed)
+            threads: Number of threads for encoding (default: None = auto)
+            parallel: Number of parallel workers for encoding (default: None = auto)
         """
         self.model_name = model_name
-        self.batch_size = batch_size
-        self.normalize_embeddings = normalize_embeddings
+        self.cache_dir = cache_dir
+        self.threads = threads
+        self.parallel = parallel
 
-        # Auto-detect device if not specified
-        if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            self.device = device
-
-        logger.info(f"Initializing EmbeddingPipeline with model={model_name}, device={self.device}")
+        logger.info(f"Initializing FastEmbedPipeline with model={model_name}")
 
         # Load or retrieve cached model
         self.model = self._load_model()
 
         # Get embedding dimension
-        self.embedding_dim = self.model.get_sentence_embedding_dimension()
+        # Generate a dummy embedding to determine dimension
+        dummy_embedding = list(self.model.embed(["test"]))[0]
+        self.embedding_dim = len(dummy_embedding)
         logger.info(f"Model loaded. Embedding dimension: {self.embedding_dim}")
 
-    def _load_model(self) -> SentenceTransformer:
+    def _load_model(self) -> TextEmbedding:
         """
-        Load the sentence transformer model with caching.
+        Load the FastEmbed model with caching.
 
         Returns:
-            SentenceTransformer model instance
+            TextEmbedding model instance
         """
-        cache_key = f"{self.model_name}_{self.device}"
+        cache_key = self.model_name
 
         if cache_key in self._model_cache:
             logger.info(f"Using cached model: {cache_key}")
             return self._model_cache[cache_key]
 
-        logger.info(f"Loading model: {self.model_name}")
-        model = SentenceTransformer(self.model_name, device=self.device)
+        logger.info(f"Loading FastEmbed model: {self.model_name}")
+
+        # Initialize model with configuration
+        kwargs = {
+            "model_name": self.model_name,
+        }
+
+        if self.cache_dir:
+            kwargs["cache_dir"] = self.cache_dir
+        if self.threads:
+            kwargs["threads"] = self.threads
+        if self.parallel:
+            kwargs["parallel"] = self.parallel
+
+        model = TextEmbedding(**kwargs)
 
         # Cache the model
         self._model_cache[cache_key] = model
@@ -87,18 +107,16 @@ class EmbeddingPipeline:
     def generate_embeddings(
         self,
         texts: List[str],
-        model: Optional[str] = None,
+        batch_size: int = 256,
         show_progress: bool = False,
-        convert_to_numpy: bool = True,
     ) -> np.ndarray:
         """
         Generate embeddings for a list of texts.
 
         Args:
             texts: List of text strings to embed
-            model: Optional model override (will reinitialize if different from current)
+            batch_size: Number of texts to process in each batch
             show_progress: Whether to show progress bar
-            convert_to_numpy: Whether to convert to numpy array (default: True)
 
         Returns:
             Array of embeddings with shape (len(texts), embedding_dim)
@@ -107,24 +125,19 @@ class EmbeddingPipeline:
             logger.warning("Empty text list provided to generate_embeddings")
             return np.array([])
 
-        # Reinitialize if different model requested
-        if model and model != self.model_name:
-            logger.info(f"Switching model from {self.model_name} to {model}")
-            self.model_name = model
-            self.model = self._load_model()
-            self.embedding_dim = self.model.get_sentence_embedding_dimension()
-
         logger.info(f"Generating embeddings for {len(texts)} texts")
 
         try:
-            # Generate embeddings in batches
-            embeddings = self.model.encode(
+            # FastEmbed returns a generator of numpy arrays
+            # We need to convert to a single numpy array
+            embeddings_generator = self.model.embed(
                 texts,
-                batch_size=self.batch_size,
-                show_progress_bar=show_progress,
-                normalize_embeddings=self.normalize_embeddings,
-                convert_to_numpy=convert_to_numpy,
+                batch_size=batch_size,
             )
+
+            # Convert generator to list of arrays, then stack
+            embeddings_list = list(embeddings_generator)
+            embeddings = np.vstack(embeddings_list)
 
             logger.info(f"Generated embeddings with shape: {embeddings.shape}")
             return embeddings
@@ -136,25 +149,23 @@ class EmbeddingPipeline:
     def generate_single_embedding(
         self,
         text: str,
-        model: Optional[str] = None,
     ) -> np.ndarray:
         """
         Generate embedding for a single text.
 
         Args:
             text: Text string to embed
-            model: Optional model override
 
         Returns:
             Embedding vector with shape (embedding_dim,)
         """
-        embeddings = self.generate_embeddings([text], model=model, show_progress=False)
+        embeddings = self.generate_embeddings([text], show_progress=False)
         return embeddings[0] if len(embeddings) > 0 else np.array([])
 
     def generate_embeddings_by_size(
         self,
         texts_dict: Dict[str, List[str]],
-        model: Optional[str] = None,
+        batch_size: int = 256,
     ) -> Dict[str, np.ndarray]:
         """
         Generate embeddings for texts of different sizes.
@@ -167,7 +178,7 @@ class EmbeddingPipeline:
         Args:
             texts_dict: Dictionary mapping size type to list of texts
                        e.g., {"summary": [...], "section": [...], "microblock": [...]}
-            model: Optional model override
+            batch_size: Batch size for encoding
 
         Returns:
             Dictionary mapping size type to embeddings array
@@ -178,41 +189,44 @@ class EmbeddingPipeline:
 
         for size_type, texts in texts_dict.items():
             logger.info(f"Processing {len(texts)} {size_type} texts")
-            embeddings = self.generate_embeddings(texts, model=model)
+            embeddings = self.generate_embeddings(texts, batch_size=batch_size)
             embeddings_dict[size_type] = embeddings
 
         return embeddings_dict
 
-    def batch_generate(
-        self,
-        texts: List[str],
-        batch_size: Optional[int] = None,
-        model: Optional[str] = None,
-    ) -> List[np.ndarray]:
+    def embed_query(self, query: str) -> np.ndarray:
         """
-        Generate embeddings with custom batch processing.
+        Embed a search query.
+
+        Some models support query prefixes like "query:" or "search_query:".
+        This method adds appropriate prefixes if needed.
 
         Args:
-            texts: List of text strings to embed
-            batch_size: Custom batch size (overrides default)
-            model: Optional model override
+            query: Search query text
 
         Returns:
-            List of embedding arrays (one per batch)
+            Query embedding vector
         """
-        batch_size = batch_size or self.batch_size
-        batches = []
+        # Some models (like BGE) support query prefix
+        # FastEmbed automatically handles this for supported models
+        return self.generate_single_embedding(query)
 
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            batch_embeddings = self.generate_embeddings(
-                batch_texts,
-                model=model,
-                show_progress=False,
-            )
-            batches.append(batch_embeddings)
+    def embed_documents(self, documents: List[str], batch_size: int = 256) -> np.ndarray:
+        """
+        Embed a list of documents.
 
-        return batches
+        Some models support document prefixes like "passage:" or "search_document:".
+        This method adds appropriate prefixes if needed.
+
+        Args:
+            documents: List of document texts
+            batch_size: Batch size for encoding
+
+        Returns:
+            Array of document embeddings
+        """
+        # FastEmbed automatically handles document/passage prefixes
+        return self.generate_embeddings(documents, batch_size=batch_size)
 
     def compute_similarity(
         self,
@@ -229,11 +243,7 @@ class EmbeddingPipeline:
         Returns:
             Cosine similarity score between -1 and 1
         """
-        # Ensure embeddings are normalized
-        if not self.normalize_embeddings:
-            embedding1 = embedding1 / np.linalg.norm(embedding1)
-            embedding2 = embedding2 / np.linalg.norm(embedding2)
-
+        # FastEmbed embeddings are already normalized
         return float(np.dot(embedding1, embedding2))
 
     def get_model_info(self) -> Dict[str, Any]:
@@ -245,12 +255,27 @@ class EmbeddingPipeline:
         """
         return {
             "model_name": self.model_name,
-            "device": self.device,
             "embedding_dim": self.embedding_dim,
-            "batch_size": self.batch_size,
-            "normalize_embeddings": self.normalize_embeddings,
-            "cuda_available": torch.cuda.is_available(),
+            "cache_dir": self.cache_dir,
+            "threads": self.threads,
+            "parallel": self.parallel,
+            "backend": "FastEmbed (ONNX)",
         }
+
+    @classmethod
+    def list_supported_models(cls) -> List[str]:
+        """
+        List all supported FastEmbed models.
+
+        Returns:
+            List of model names
+        """
+        try:
+            from fastembed import TextEmbedding
+            return TextEmbedding.list_supported_models()
+        except Exception as e:
+            logger.error(f"Error listing models: {e}")
+            return []
 
     @classmethod
     def clear_cache(cls):
@@ -262,9 +287,8 @@ class EmbeddingPipeline:
 # Convenience function for quick embedding generation
 def generate_embeddings(
     texts: List[str],
-    model: str = "BAAI/bge-base-en-v1.5",
-    device: Optional[str] = None,
-    batch_size: int = 32,
+    model: str = "BAAI/bge-small-en-v1.5",
+    batch_size: int = 256,
 ) -> np.ndarray:
     """
     Convenience function to generate embeddings without creating a pipeline instance.
@@ -272,15 +296,10 @@ def generate_embeddings(
     Args:
         texts: List of text strings to embed
         model: HuggingFace model identifier
-        device: Device to use ('cuda', 'cpu', or None for auto-detection)
         batch_size: Number of texts to process in each batch
 
     Returns:
         Array of embeddings with shape (len(texts), embedding_dim)
     """
-    pipeline = EmbeddingPipeline(
-        model_name=model,
-        device=device,
-        batch_size=batch_size,
-    )
-    return pipeline.generate_embeddings(texts)
+    pipeline = FastEmbedPipeline(model_name=model)
+    return pipeline.generate_embeddings(texts, batch_size=batch_size)

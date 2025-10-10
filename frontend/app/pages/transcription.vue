@@ -55,7 +55,7 @@ const recentTranscriptions = ref([
   }
 ])
 
-const fileInputRef = ref<HTMLInputElement | null>(null)
+const fileInputRef = ref<HTMLInputElement>()
 
 function handleFilesSelected(event: Event) {
   const target = event.target as HTMLInputElement
@@ -139,7 +139,8 @@ const stats = computed(() => ({
       </UDashboardNavbar>
     </template>
 
-    <UDashboardPanelContent>
+    <div class="overflow-y-auto h-[calc(100vh-64px)]">
+      <div class="max-w-7xl mx-auto p-6 space-y-6">
     <!-- Stats Bar -->
     <div class="bg-default p-4 mb-6">
       <div class="p-4">
@@ -425,6 +426,7 @@ const stats = computed(() => ({
         </div>
       </UContainer>
     </div>
-    </UDashboardPanelContent>
+      </div>
+    </div>
   </UDashboardPanel>
 </template>

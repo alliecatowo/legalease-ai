@@ -1,149 +1,232 @@
 """
 Seed script to populate the database with test data for development.
+
+Usage:
+    python scripts/seed_data.py          # Seed data (skip if exists)
+    python scripts/seed_data.py --clear  # Clear all data first, then seed
+    python scripts/seed_data.py --force  # Delete existing and re-seed
 """
-import asyncio
 from datetime import datetime, timedelta
 import random
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import AsyncSessionLocal
+import sys
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.core.database import SessionLocal
 from app.models import Case, Document, Transcription, Entity
-from app.core.qdrant import get_qdrant_client
 
 
-async def seed_cases(db: AsyncSession):
+def clear_all_data(db: Session):
+    """Clear all data from the database"""
+    print("🗑️  Clearing all data...")
+
+    try:
+        # Delete in reverse order of dependencies
+        db.execute(text("TRUNCATE entities CASCADE"))
+        db.execute(text("TRUNCATE transcriptions CASCADE"))
+        db.execute(text("TRUNCATE chunks CASCADE"))
+        db.execute(text("TRUNCATE documents CASCADE"))
+        db.execute(text("TRUNCATE cases CASCADE"))
+        db.commit()
+        print("✓ All data cleared")
+    except Exception as e:
+        print(f"⚠️  Error clearing data: {e}")
+        db.rollback()
+        raise
+
+
+def seed_cases(db: Session, skip_existing=True):
     """Create sample cases"""
     cases_data = [
         {
             "name": "Johnson v. TechCorp",
-            "description": "Employment discrimination case involving wrongful termination",
+            "case_number": "CASE-2024-001",
+            "client": "Sarah Johnson",
+            "matter_type": "Employment Discrimination",
             "status": "ACTIVE",
-            "tags": ["employment", "discrimination", "wrongful-termination"],
         },
         {
             "name": "Smith v. MediCare Inc.",
-            "description": "Medical malpractice suit regarding surgical complications",
+            "case_number": "CASE-2024-002",
+            "client": "Robert Smith",
+            "matter_type": "Medical Malpractice",
             "status": "ACTIVE",
-            "tags": ["medical-malpractice", "negligence"],
         },
         {
             "name": "Anderson Construction Dispute",
-            "description": "Contract dispute over construction delays and cost overruns",
+            "case_number": "CASE-2024-003",
+            "client": "Anderson Builders LLC",
+            "matter_type": "Contract Dispute",
             "status": "STAGING",
-            "tags": ["contract", "construction", "dispute"],
         },
         {
             "name": "Thompson Estate Planning",
-            "description": "Estate planning and trust administration",
+            "case_number": "CASE-2024-004",
+            "client": "Thompson Family Trust",
+            "matter_type": "Estate Planning",
             "status": "UNLOADED",
-            "tags": ["estate", "trust", "probate"],
         },
     ]
 
     cases = []
+    created_count = 0
+    skipped_count = 0
+
     for case_data in cases_data:
+        # Check if case already exists
+        existing_case = db.query(Case).filter_by(case_number=case_data["case_number"]).first()
+
+        if existing_case:
+            if skip_existing:
+                cases.append(existing_case)
+                skipped_count += 1
+                continue
+            else:
+                # Delete existing case and its dependencies
+                db.delete(existing_case)
+                db.commit()
+
         case = Case(**case_data)
         db.add(case)
         cases.append(case)
+        created_count += 1
 
-    await db.commit()
-    for case in cases:
-        await db.refresh(case)
+    if created_count > 0:
+        db.commit()
+        for case in cases:
+            if case not in db:
+                db.refresh(case)
 
-    print(f"✓ Created {len(cases)} cases")
+    if created_count > 0:
+        print(f"✓ Created {created_count} cases")
+    if skipped_count > 0:
+        print(f"ℹ️  Skipped {skipped_count} existing cases")
+
     return cases
 
 
-async def seed_documents(db: AsyncSession, cases: list):
+def seed_documents(db: Session, cases: list, skip_existing=True):
     """Create sample documents"""
     documents_data = [
         # Johnson v. TechCorp documents
         {
             "case_id": cases[0].id,
             "filename": "employment_agreement.pdf",
-            "title": "Employment Agreement - TechCorp Inc.",
-            "document_type": "contract",
-            "file_size": 245000,
+            "file_path": f"/uploads/case_{cases[0].id}/employment_agreement.pdf",
             "mime_type": "application/pdf",
-            "status": "indexed",
-            "summary": "Employment agreement outlining terms of employment, including salary, benefits, termination clauses, and non-compete provisions.",
+            "size": 245000,
+            "status": "COMPLETED",
+            "meta_data": {
+                "title": "Employment Agreement - TechCorp Inc.",
+                "document_type": "contract",
+                "summary": "Employment agreement outlining terms of employment."
+            }
         },
         {
             "case_id": cases[0].id,
             "filename": "termination_letter.pdf",
-            "title": "Notice of Termination",
-            "document_type": "general",
-            "file_size": 52000,
+            "file_path": f"/uploads/case_{cases[0].id}/termination_letter.pdf",
             "mime_type": "application/pdf",
-            "status": "indexed",
-            "summary": "Letter notifying employee of immediate termination due to alleged policy violations.",
+            "size": 52000,
+            "status": "COMPLETED",
+            "meta_data": {
+                "title": "Notice of Termination",
+                "summary": "Letter notifying employee of immediate termination."
+            }
         },
         {
             "case_id": cases[0].id,
             "filename": "performance_reviews.pdf",
-            "title": "Annual Performance Reviews 2022-2023",
-            "document_type": "general",
-            "file_size": 189000,
+            "file_path": f"/uploads/case_{cases[0].id}/performance_reviews.pdf",
             "mime_type": "application/pdf",
-            "status": "indexed",
-            "summary": "Collection of performance reviews showing consistent positive evaluations prior to termination.",
+            "size": 189000,
+            "status": "COMPLETED",
+            "meta_data": {
+                "title": "Annual Performance Reviews 2022-2023",
+                "summary": "Collection of performance reviews."
+            }
         },
         # Smith v. MediCare documents
         {
             "case_id": cases[1].id,
             "filename": "medical_records.pdf",
-            "title": "Patient Medical Records",
-            "document_type": "general",
-            "file_size": 512000,
+            "file_path": f"/uploads/case_{cases[1].id}/medical_records.pdf",
             "mime_type": "application/pdf",
-            "status": "indexed",
-            "summary": "Complete medical records including surgical notes, complications, and follow-up care.",
+            "size": 512000,
+            "status": "COMPLETED",
+            "meta_data": {
+                "title": "Patient Medical Records",
+                "summary": "Complete medical records including surgical notes."
+            }
         },
         {
             "case_id": cases[1].id,
             "filename": "expert_opinion.pdf",
-            "title": "Medical Expert Opinion - Dr. Williams",
-            "document_type": "general",
-            "file_size": 156000,
+            "file_path": f"/uploads/case_{cases[1].id}/expert_opinion.pdf",
             "mime_type": "application/pdf",
-            "status": "indexed",
-            "summary": "Expert medical testimony regarding standard of care and deviation from accepted practices.",
+            "size": 156000,
+            "status": "COMPLETED",
+            "meta_data": {
+                "title": "Medical Expert Opinion - Dr. Williams",
+                "summary": "Expert medical testimony regarding standard of care."
+            }
         },
         # Anderson Construction documents
         {
             "case_id": cases[2].id,
             "filename": "construction_contract.pdf",
-            "title": "Master Construction Agreement",
-            "document_type": "contract",
-            "file_size": 328000,
+            "file_path": f"/uploads/case_{cases[2].id}/construction_contract.pdf",
             "mime_type": "application/pdf",
-            "status": "processing",
-            "summary": "Primary construction contract with timeline, budget, and deliverables.",
+            "size": 328000,
+            "status": "PROCESSING",
+            "meta_data": {
+                "title": "Master Construction Agreement",
+                "document_type": "contract",
+                "summary": "Primary construction contract with timeline and budget."
+            }
         },
     ]
 
     documents = []
-    for doc_data in documents_data:
-        # Add random timestamps in the last 90 days
-        days_ago = random.randint(1, 90)
-        created_at = datetime.utcnow() - timedelta(days=days_ago)
+    created_count = 0
+    skipped_count = 0
 
-        doc = Document(
-            **doc_data,
-            created_at=created_at,
-            updated_at=created_at,
-        )
+    for doc_data in documents_data:
+        # Check if document already exists (by case_id and filename)
+        existing_doc = db.query(Document).filter_by(
+            case_id=doc_data["case_id"],
+            filename=doc_data["filename"]
+        ).first()
+
+        if existing_doc:
+            if skip_existing:
+                documents.append(existing_doc)
+                skipped_count += 1
+                continue
+            else:
+                # Delete existing document
+                db.delete(existing_doc)
+                db.commit()
+
+        doc = Document(**doc_data)
         db.add(doc)
         documents.append(doc)
+        created_count += 1
 
-    await db.commit()
-    for doc in documents:
-        await db.refresh(doc)
+    if created_count > 0:
+        db.commit()
+        for doc in documents:
+            if doc not in db:
+                db.refresh(doc)
 
-    print(f"✓ Created {len(documents)} documents")
+    if created_count > 0:
+        print(f"✓ Created {created_count} documents")
+    if skipped_count > 0:
+        print(f"ℹ️  Skipped {skipped_count} existing documents")
+
     return documents
 
 
-async def seed_transcriptions(db: AsyncSession, cases: list):
+def seed_transcriptions(db: Session, cases: list):
     """Create sample transcriptions"""
     transcriptions_data = [
         {
@@ -186,15 +269,15 @@ async def seed_transcriptions(db: AsyncSession, cases: list):
         db.add(trans)
         transcriptions.append(trans)
 
-    await db.commit()
+    db.commit()
     for trans in transcriptions:
-        await db.refresh(trans)
+        db.refresh(trans)
 
     print(f"✓ Created {len(transcriptions)} transcriptions")
     return transcriptions
 
 
-async def seed_entities(db: AsyncSession, documents: list):
+def seed_entities(db: Session, documents: list):
     """Create sample entities extracted from documents"""
     entities_data = [
         # Entities from Johnson case
@@ -257,35 +340,52 @@ async def seed_entities(db: AsyncSession, documents: list):
         db.add(entity)
         entities.append(entity)
 
-    await db.commit()
+    db.commit()
 
     print(f"✓ Created {len(entities)} entities")
     return entities
 
 
-async def main():
+def main():
     """Main seed function"""
+    # Parse command-line arguments
+    clear_first = "--clear" in sys.argv
+    force_reseed = "--force" in sys.argv
+    skip_existing = not force_reseed
+
     print("🌱 Starting database seeding...")
+    if clear_first:
+        print("⚠️  Mode: Clear all data first, then seed")
+    elif force_reseed:
+        print("⚠️  Mode: Force re-seed (delete existing entries)")
+    else:
+        print("ℹ️  Mode: Skip existing entries (safe)")
 
-    async with AsyncSessionLocal() as db:
-        try:
-            # Seed data in order
-            cases = await seed_cases(db)
-            documents = await seed_documents(db, cases)
-            transcriptions = await seed_transcriptions(db, cases)
-            entities = await seed_entities(db, documents)
+    db = SessionLocal()
+    try:
+        # Clear data if requested
+        if clear_first:
+            clear_all_data(db)
 
-            print("\n✅ Database seeding completed successfully!")
-            print(f"   - {len(cases)} cases")
-            print(f"   - {len(documents)} documents")
-            print(f"   - {len(transcriptions)} transcriptions")
-            print(f"   - {len(entities)} entities")
+        # Seed data in order
+        cases = seed_cases(db, skip_existing=skip_existing)
+        documents = seed_documents(db, cases, skip_existing=skip_existing)
+        # transcriptions = seed_transcriptions(db, cases)
+        # entities = seed_entities(db, documents)
 
-        except Exception as e:
-            print(f"\n❌ Error during seeding: {e}")
-            await db.rollback()
-            raise
+        print("\n✅ Database seeding completed successfully!")
+        print(f"   - {len(cases)} cases")
+        print(f"   - {len(documents)} documents")
+        # print(f"   - {len(transcriptions)} transcriptions")
+        # print(f"   - {len(entities)} entities")
+
+    except Exception as e:
+        print(f"\n❌ Error during seeding: {e}")
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
