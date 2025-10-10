@@ -1,7 +1,7 @@
 [tools]
-node = "22.12.0"
+node = "24.10.0"
 pnpm = "10.18.2"
-python = "3.11.8"
+python = "3.14.0"
 
 [env]
 NUXT_PUBLIC_API_BASE = "http://localhost:8000"
@@ -27,6 +27,7 @@ build = "docker compose build"
 # Database
 db-migrate = "cd backend && uv run alembic upgrade head"
 db-rollback = "cd backend && uv run alembic downgrade -1"
+db-seed = "cd backend && uv run python scripts/seed_data.py"
 
 # Models
 download-models = "./scripts/download_models.sh"
