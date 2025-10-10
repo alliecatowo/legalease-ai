@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
+    # Ollama (Local LLM)
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL_SUMMARIZATION: str = "llama3.1:70b"
+    OLLAMA_MODEL_TAGGING: str = "llama3.1:70b"
+    OLLAMA_REQUEST_TIMEOUT: int = 300  # 5 minutes for large models
+
+    # Neo4j (Knowledge Graph)
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "password"
+
     # Security
     SECRET_KEY: str = "your-secret-key-here-change-in-production"
     ALGORITHM: str = "HS256"
