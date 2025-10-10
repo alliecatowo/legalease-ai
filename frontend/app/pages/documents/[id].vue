@@ -1,73 +1,59 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <!-- Header -->
-    <div class="bg-white border-b border-gray-200">
-      <div class="container mx-auto px-4 py-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center space-x-4">
-            <UButton
-              variant="ghost"
-              @click="navigateTo('/search')"
-            >
-              <UIcon name="i-heroicons-arrow-left-20-solid" class="w-5 h-5 mr-2" />
-              Back to Search
-            </UButton>
+    <UPageHeader
+      :title="document.filename"
+      :description="getDocumentDescription()"
+    >
+      <template #links>
+        <UButton
+          variant="ghost"
+          to="/search"
+        >
+          <UIcon name="i-heroicons-arrow-left-20-solid" class="w-5 h-5 mr-2" />
+          Back to Search
+        </UButton>
+      </template>
 
-            <div class="h-6 w-px bg-gray-300" />
+      <UButton
+        variant="outline"
+        @click="summarizeDocument"
+        :loading="summarizing"
+      >
+        <UIcon name="i-heroicons-document-text-20-solid" class="w-4 h-4 mr-2" />
+        {{ document.summary ? 'View Summary' : 'Summarize' }}
+      </UButton>
 
-            <div>
-              <h1 class="text-xl font-semibold text-gray-900">
-                {{ document.filename }}
-              </h1>
-              <p class="text-sm text-gray-500">
-                {{ document.case_name }} • {{ formatDate(document.created_at) }}
-              </p>
-            </div>
-          </div>
+      <UButton
+        variant="outline"
+        @click="showTranscript"
+        :disabled="!hasTranscript"
+      >
+        <UIcon name="i-heroicons-chat-bubble-left-right-20-solid" class="w-4 h-4 mr-2" />
+        Transcript
+      </UButton>
 
-          <div class="flex items-center space-x-3">
-            <UButton
-              variant="outline"
-              @click="summarizeDocument"
-              :loading="summarizing"
-            >
-              <UIcon name="i-heroicons-document-text-20-solid" class="w-4 h-4 mr-2" />
-              {{ document.summary ? 'View Summary' : 'Summarize' }}
-            </UButton>
+      <UButton
+        variant="outline"
+        @click="downloadDocument"
+      >
+        <UIcon name="i-heroicons-arrow-down-tray-20-solid" class="w-4 h-4 mr-2" />
+        Download
+      </UButton>
 
-            <UButton
-              variant="outline"
-              @click="showTranscript"
-              :disabled="!hasTranscript"
-            >
-              <UIcon name="i-heroicons-chat-bubble-left-right-20-solid" class="w-4 h-4 mr-2" />
-              Transcript
-            </UButton>
+      <UDropdownMenu :items="actionMenu">
+        <UButton variant="outline">
+          <UIcon name="i-heroicons-ellipsis-vertical-20-solid" class="w-5 h-5" />
+        </UButton>
+      </UDropdownMenu>
+    </UPageHeader>
 
-            <UButton
-              variant="outline"
-              @click="downloadDocument"
-            >
-              <UIcon name="i-heroicons-arrow-down-tray-20-solid" class="w-4 h-4 mr-2" />
-              Download
-            </UButton>
-
-            <UDropdownMenu :items="actionMenu">
-              <UButton variant="outline">
-                <UIcon name="i-heroicons-ellipsis-vertical-20-solid" class="w-5 h-5" />
-              </UButton>
-            </UDropdownMenu>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="container mx-auto px-4 py-6">
-      <div class="grid grid-cols-12 gap-6">
+    <UPageSection>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <!-- Main Content -->
-        <div class="col-span-8">
+        <div class="lg:col-span-2">
           <!-- PDF Viewer -->
-          <div class="bg-white rounded-lg border border-gray-200">
+          <UCard class="overflow-hidden">
             <PDFViewer
               v-if="document.file_url"
               :url="document.file_url"
@@ -82,31 +68,35 @@
                 <p class="text-gray-500">Document not available</p>
               </div>
             </div>
-          </div>
+          </UCard>
 
           <!-- Summary Panel -->
-          <div v-if="document.summary" class="mt-6 bg-white rounded-lg border border-gray-200 p-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-semibold text-gray-900">Document Summary</h3>
-              <UButton
-                variant="ghost"
-                size="sm"
-                @click="regenerateSummary"
-                :loading="summarizing"
-              >
-                <UIcon name="i-heroicons-arrow-path-20-solid" class="w-4 h-4 mr-1" />
-                Regenerate
-              </UButton>
-            </div>
+          <UCard v-if="document.summary" class="mt-6">
+            <template #header>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-900">Document Summary</h3>
+                <UButton
+                  variant="ghost"
+                  size="sm"
+                  @click="regenerateSummary"
+                  :loading="summarizing"
+                >
+                  <UIcon name="i-heroicons-arrow-path-20-solid" class="w-4 h-4 mr-1" />
+                  Regenerate
+                </UButton>
+              </div>
+            </template>
             <p class="text-gray-700 leading-relaxed">{{ document.summary }}</p>
-          </div>
+          </UCard>
         </div>
 
         <!-- Sidebar -->
-        <div class="col-span-4 space-y-6">
+        <div class="space-y-6">
           <!-- Document Info -->
-          <div class="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Document Info</h3>
+          <UCard>
+            <template #header>
+              <h3 class="text-lg font-semibold text-gray-900">Document Info</h3>
+            </template>
 
             <div class="space-y-3">
               <div>
@@ -131,11 +121,13 @@
                 </p>
               </div>
             </div>
-          </div>
+          </UCard>
 
           <!-- Tags -->
-          <div v-if="document.tags && document.tags.length > 0" class="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Tags</h3>
+          <UCard v-if="document.tags && document.tags.length > 0">
+            <template #header>
+              <h3 class="text-lg font-semibold text-gray-900">Tags</h3>
+            </template>
             <div class="flex flex-wrap gap-2">
               <UBadge
                 v-for="tag in document.tags"
@@ -146,57 +138,71 @@
                 {{ tag }}
               </UBadge>
             </div>
-          </div>
+          </UCard>
 
           <!-- Entities -->
-          <div v-if="document.entities && document.entities.length > 0" class="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Key Entities</h3>
-            <div class="space-y-2">
+          <UCard v-if="document.entities && document.entities.length > 0">
+            <template #header>
+              <h3 class="text-lg font-semibold text-gray-900">Key Entities</h3>
+            </template>
+            <div class="space-y-3">
               <div
                 v-for="entity in document.entities.slice(0, 10)"
                 :key="entity.text"
-                class="flex items-center justify-between p-2 rounded hover:bg-gray-50 cursor-pointer"
+                class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                 @click="highlightEntity(entity)"
               >
-                <div>
-                  <span class="text-sm font-medium text-gray-900">{{ entity.text }}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-sm font-medium text-gray-900 truncate">{{ entity.text }}</span>
+                    <UChip
+                      :text="`${Math.round(entity.confidence * 100)}%`"
+                      size="xs"
+                      color="info"
+                    />
+                  </div>
                   <UBadge
                     :color="getEntityColor(entity.type)"
-                    variant="subtle"
+                    variant="soft"
                     size="sm"
-                    class="ml-2"
                   >
                     {{ entity.type }}
                   </UBadge>
                 </div>
-                <span class="text-xs text-gray-500">{{ Math.round(entity.confidence * 100) }}%</span>
               </div>
             </div>
-            <div v-if="document.entities.length > 10" class="mt-4">
-              <UButton variant="link" size="sm">
+            <template #footer v-if="document.entities.length > 10">
+              <UButton variant="ghost" size="sm" color="gray">
                 Show {{ document.entities.length - 10 }} more
               </UButton>
-            </div>
-          </div>
+            </template>
+          </UCard>
 
           <!-- Related Documents -->
-          <div v-if="relatedDocuments.length > 0" class="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Related Documents</h3>
+          <UCard v-if="relatedDocuments.length > 0">
+            <template #header>
+              <h3 class="text-lg font-semibold text-gray-900">Related Documents</h3>
+            </template>
             <div class="space-y-3">
               <div
                 v-for="doc in relatedDocuments.slice(0, 5)"
                 :key="doc.id"
-                class="p-3 rounded border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                class="p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
                 @click="openDocument(doc.id)"
               >
-                <p class="text-sm font-medium text-gray-900">{{ doc.filename }}</p>
-                <p class="text-xs text-gray-500">{{ formatDate(doc.created_at) }}</p>
+                <div class="flex items-start justify-between">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 truncate">{{ doc.filename }}</p>
+                    <p class="text-xs text-gray-500 mt-1">{{ formatDate(doc.created_at) }}</p>
+                  </div>
+                  <UIcon name="i-heroicons-chevron-right-20-solid" class="w-4 h-4 text-gray-400 ml-2 flex-shrink-0" />
+                </div>
               </div>
             </div>
-          </div>
+          </UCard>
         </div>
       </div>
-    </div>
+    </UPageSection>
   </div>
 </template>
 
@@ -247,10 +253,17 @@ const actionMenu = computed(() => [
   }
 ])
 
+function getDocumentDescription(): string {
+  const parts = []
+  if (document.value.case_name) parts.push(document.value.case_name)
+  if (document.value.created_at) parts.push(formatDate(document.value.created_at))
+  return parts.join(' • ')
+}
+
 // Methods
 async function loadDocument() {
   try {
-    const response = await apiFetch(`/documents/${documentId}`)
+    const response = await apiFetch(`/documents/${documentId}`) as any
     document.value = response.document
 
     // Check for transcript
@@ -275,7 +288,7 @@ async function loadDocument() {
 
 async function loadRelatedDocuments() {
   try {
-    const response = await apiFetch(`/documents/${documentId}/related`)
+    const response = await apiFetch(`/documents/${documentId}/related`) as any
     relatedDocuments.value = response.documents || []
   } catch (error) {
     console.error('Failed to load related documents:', error)
@@ -320,7 +333,7 @@ async function summarizeDocument() {
   try {
     const response = await apiFetch(`/documents/${documentId}/summarize`, {
       method: 'POST'
-    })
+    }) as any
     document.value.summary = response.summary
   } catch (error) {
     console.error('Failed to summarize document:', error)
@@ -335,7 +348,7 @@ async function regenerateSummary() {
     const response = await apiFetch(`/documents/${documentId}/summarize`, {
       method: 'POST',
       body: { regenerate: true }
-    })
+    }) as any
     document.value.summary = response.summary
   } catch (error) {
     console.error('Failed to regenerate summary:', error)
@@ -351,15 +364,14 @@ function showTranscript() {
 async function downloadDocument() {
   try {
     const response = await apiFetch(`/documents/${documentId}/download`, {
-      method: 'GET',
-      responseType: 'blob'
-    })
+      method: 'GET'
+    }) as any
 
     const url = window.URL.createObjectURL(new Blob([response]))
-    const link = document.createElement('a')
+    const link = window.document.createElement('a')
     link.href = url
     link.setAttribute('download', document.value.filename)
-    document.body.appendChild(link)
+    window.document.body.appendChild(link)
     link.click()
     link.remove()
   } catch (error) {

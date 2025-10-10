@@ -1,118 +1,129 @@
 <template>
-  <div
-    class="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer"
-    @click="$emit('click', props.case)"
+  <UPageCard
+    :to="`/cases/${props.case.id}`"
+    class="transition-all duration-200 hover:shadow-xl hover:scale-[1.02] group"
+    :title="props.case.name"
+    :description="getCaseDescription()"
   >
-    <!-- Header -->
-    <div class="flex items-start justify-between mb-4">
-      <div class="flex-1">
-        <h3 class="text-lg font-semibold text-gray-900 mb-1">
-          {{ props.case.name }}
-        </h3>
-        <p v-if="props.case.case_number" class="text-sm text-gray-500 mb-1">
-          Case #{{ props.case.case_number }}
-        </p>
-        <p v-if="props.case.client" class="text-sm text-gray-600">
-          Client: {{ props.case.client }}
-        </p>
-      </div>
+    <template #header>
+      <div class="flex items-start justify-between">
+        <div class="flex flex-wrap items-center gap-2">
+          <UBadge
+            v-if="props.case.case_number"
+            variant="outline"
+            size="sm"
+          >
+            #{{ props.case.case_number }}
+          </UBadge>
+          <UBadge
+            v-if="props.case.client"
+            variant="soft"
+            size="sm"
+            color="info"
+          >
+            {{ props.case.client }}
+          </UBadge>
+        </div>
 
-      <UBadge
-        :color="getStatusColor(props.case.status)"
-        variant="subtle"
-      >
-        {{ getStatusLabel(props.case.status) }}
-      </UBadge>
+        <UBadge
+          :color="getStatusColor(props.case.status)"
+          variant="solid"
+          class="shrink-0"
+        >
+          {{ getStatusLabel(props.case.status) }}
+        </UBadge>
+      </div>
+    </template>
+
+    <!-- Key Metrics -->
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <UChip
+        :text="`${props.case.document_count || 0}`"
+        :description="'Documents'"
+        icon="i-heroicons-document-text-20-solid"
+        color="primary"
+        size="lg"
+      />
+      <UChip
+        :text="formatFileSize(props.case.total_size || 0)"
+        :description="'Storage'"
+        icon="i-heroicons-server-stack-20-solid"
+        color="secondary"
+        size="lg"
+      />
+      <UChip
+        :text="`${props.case.entity_count || 0}`"
+        :description="'Entities'"
+        icon="i-heroicons-users-20-solid"
+        color="success"
+        size="lg"
+      />
     </div>
 
-    <!-- Stats -->
-    <div class="grid grid-cols-3 gap-4 mb-4">
-      <div class="text-center">
-        <p class="text-2xl font-bold text-gray-900">{{ props.case.document_count || 0 }}</p>
-        <p class="text-xs text-gray-500">Documents</p>
-      </div>
-      <div class="text-center">
-        <p class="text-2xl font-bold text-gray-900">{{ formatFileSize(props.case.total_size || 0) }}</p>
-        <p class="text-xs text-gray-500">Storage</p>
-      </div>
-      <div class="text-center">
-        <p class="text-2xl font-bold text-gray-900">{{ props.case.entity_count || 0 }}</p>
-        <p class="text-xs text-gray-500">Entities</p>
-      </div>
-    </div>
-
-    <!-- Matter Type and Dates -->
-    <div class="space-y-2 mb-4">
+    <!-- Case Details -->
+    <div class="space-y-3 mb-6">
       <div v-if="props.case.matter_type" class="flex items-center text-sm text-gray-600">
-        <UIcon name="i-heroicons-scale-20-solid" class="w-4 h-4 mr-2" />
-        {{ props.case.matter_type }}
+        <UIcon name="i-heroicons-scale-20-solid" class="w-4 h-4 mr-3 text-primary" />
+        <span class="font-medium">{{ props.case.matter_type }}</span>
       </div>
 
       <div class="flex items-center text-sm text-gray-500">
-        <UIcon name="i-heroicons-calendar-20-solid" class="w-4 h-4 mr-2" />
-        Created {{ formatDate(props.case.created_at) }}
+        <UIcon name="i-heroicons-calendar-days-20-solid" class="w-4 h-4 mr-3 text-info" />
+        <span>Created {{ formatDate(props.case.created_at) }}</span>
       </div>
 
       <div v-if="props.case.last_activity" class="flex items-center text-sm text-gray-500">
-        <UIcon name="i-heroicons-clock-20-solid" class="w-4 h-4 mr-2" />
-        Last activity {{ formatDate(props.case.last_activity) }}
+        <UIcon name="i-heroicons-clock-20-solid" class="w-4 h-4 mr-3 text-warning" />
+        <span>Last activity {{ formatDate(props.case.last_activity) }}</span>
       </div>
     </div>
 
     <!-- Progress Bar (for processing) -->
-    <div v-if="props.case.status === 'processing'" class="mb-4">
-      <div class="flex items-center justify-between text-sm text-gray-600 mb-1">
-        <span>Processing documents...</span>
-        <span>{{ props.case.progress || 0 }}%</span>
+    <div v-if="props.case.status === 'processing'" class="mb-6">
+      <div class="flex items-center justify-between text-sm text-gray-600 mb-2">
+        <span class="font-medium">Processing documents...</span>
+        <UBadge variant="outline" size="sm">
+          {{ props.case.progress || 0 }}%
+        </UBadge>
       </div>
-      <UProgress :value="props.case.progress || 0" />
+      <UProgress :value="props.case.progress || 0" size="lg" />
     </div>
 
-    <!-- Actions -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center space-x-2">
-        <UButton
-          variant="link"
-          size="sm"
-          @click.stop="$emit('click', props.case)"
-        >
-          <UIcon name="i-heroicons-eye-20-solid" class="w-4 h-4 mr-1" />
-          View
-        </UButton>
-
+    <template #footer>
+      <div class="flex items-center justify-between pt-4 border-t border-gray-100">
         <UDropdownMenu :items="getActionMenu()">
-          <UButton variant="link" size="sm">
+          <UButton variant="ghost" size="sm" color="gray">
             <UIcon name="i-heroicons-ellipsis-vertical-20-solid" class="w-4 h-4" />
           </UButton>
         </UDropdownMenu>
-      </div>
 
-      <!-- Status Actions -->
-      <div class="flex items-center space-x-2">
-        <UButton
-          v-if="props.case.status === 'unloaded'"
-          variant="outline"
-          size="sm"
-          color="success"
-          @click.stop="$emit('load', props.case)"
-        >
-          <UIcon name="i-heroicons-play-20-solid" class="w-4 h-4 mr-1" />
-          Load
-        </UButton>
+        <!-- Status Actions -->
+        <div class="flex items-center space-x-2">
+          <UButton
+            v-if="props.case.status === 'unloaded'"
+            variant="solid"
+            size="sm"
+            color="success"
+            @click.stop="$emit('load', props.case)"
+          >
+            <UIcon name="i-heroicons-play-20-solid" class="w-4 h-4 mr-2" />
+            Load
+          </UButton>
 
-        <UButton
-          v-if="props.case.status === 'active'"
-          variant="outline"
-          size="sm"
-          color="warning"
-          @click.stop="$emit('unload', props.case)"
-        >
-          <UIcon name="i-heroicons-pause-20-solid" class="w-4 h-4 mr-1" />
-          Unload
-        </UButton>
+          <UButton
+            v-if="props.case.status === 'active'"
+            variant="outline"
+            size="sm"
+            color="warning"
+            @click.stop="$emit('unload', props.case)"
+          >
+            <UIcon name="i-heroicons-pause-20-solid" class="w-4 h-4 mr-2" />
+            Unload
+          </UButton>
+        </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </UPageCard>
 </template>
 
 <script setup lang="ts">
@@ -137,7 +148,6 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  click: [caseItem: Props['case']]
   load: [caseItem: Props['case']]
   unload: [caseItem: Props['case']]
   archive: [caseItem: Props['case']]
@@ -191,6 +201,13 @@ function formatFileSize(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+function getCaseDescription(): string {
+  const parts = []
+  if (props.case.matter_type) parts.push(props.case.matter_type)
+  if (props.case.last_activity) parts.push(`Last activity ${formatDate(props.case.last_activity)}`)
+  return parts.length > 0 ? parts.join(' • ') : 'No recent activity'
 }
 
 function getActionMenu() {

@@ -1,7 +1,7 @@
 <template>
-  <div
-    class="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
-    @click="$emit('click', result)"
+  <UPageCard
+    :to="`/documents/${result.id}`"
+    class="hover:shadow-lg transition-all duration-200 cursor-pointer"
   >
     <!-- Header -->
     <div class="flex items-start justify-between mb-3">
@@ -42,7 +42,7 @@
     </div>
 
     <!-- Snippet -->
-    <div v-if="result.snippet" class="mb-4">
+    <div v-if="result.snippet" class="mb-6">
       <p class="text-gray-700 text-sm leading-relaxed">
         <span v-html="highlightSnippet(result.snippet, result.highlights)" />
       </p>
@@ -50,7 +50,7 @@
 
     <!-- Tags -->
     <div v-if="result.tags && result.tags.length > 0" class="mb-4">
-      <div class="flex flex-wrap gap-1">
+      <div class="flex flex-wrap gap-2">
         <UBadge
           v-for="tag in result.tags.slice(0, 5)"
           :key="tag"
@@ -59,25 +59,24 @@
         >
           {{ tag }}
         </UBadge>
-        <UBadge
+        <UChip
           v-if="result.tags.length > 5"
-          variant="outline"
+          :text="`+${result.tags.length - 5} more`"
           size="sm"
-        >
-          +{{ result.tags.length - 5 }} more
-        </UBadge>
+          color="gray"
+        />
       </div>
     </div>
 
     <!-- Entities -->
-    <div v-if="result.entities && result.entities.length > 0" class="mb-4">
-      <div class="text-xs text-gray-500 mb-2">Key entities:</div>
-      <div class="flex flex-wrap gap-1">
+    <div v-if="result.entities && result.entities.length > 0" class="mb-6">
+      <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Key Entities</div>
+      <div class="flex flex-wrap gap-2">
         <UBadge
           v-for="entity in result.entities.slice(0, 6)"
           :key="entity.text"
           :color="getEntityColor(entity.type)"
-          variant="subtle"
+          variant="soft"
           size="sm"
         >
           {{ entity.text }}
@@ -86,35 +85,38 @@
     </div>
 
     <!-- Actions -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <UButton
-          variant="link"
-          size="sm"
-          @click.stop="summarizeDocument"
-        >
-          <UIcon name="i-heroicons-document-text-20-solid" class="w-4 h-4 mr-1" />
-          Summarize
-        </UButton>
-        <UButton
-          variant="link"
-          size="sm"
-          @click.stop="viewTranscript"
-        >
-          <UIcon name="i-heroicons-chat-bubble-left-right-20-solid" class="w-4 h-4 mr-1" />
-          Transcript
-        </UButton>
-        <UButton
-          variant="link"
-          size="sm"
-          @click.stop="downloadDocument"
-        >
-          <UIcon name="i-heroicons-arrow-down-tray-20-solid" class="w-4 h-4 mr-1" />
-          Download
-        </UButton>
-      </div>
+    <template #footer>
+      <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+        <div class="flex items-center space-x-2">
+          <UButton
+            variant="ghost"
+            size="sm"
+            color="primary"
+            @click.stop="summarizeDocument"
+          >
+            <UIcon name="i-heroicons-document-text-20-solid" class="w-4 h-4 mr-2" />
+            Summarize
+          </UButton>
+          <UButton
+            variant="ghost"
+            size="sm"
+            color="info"
+            @click.stop="viewTranscript"
+          >
+            <UIcon name="i-heroicons-chat-bubble-left-right-20-solid" class="w-4 h-4 mr-2" />
+            Transcript
+          </UButton>
+          <UButton
+            variant="ghost"
+            size="sm"
+            color="gray"
+            @click.stop="downloadDocument"
+          >
+            <UIcon name="i-heroicons-arrow-down-tray-20-solid" class="w-4 h-4 mr-2" />
+            Download
+          </UButton>
+        </div>
 
-      <div class="flex items-center space-x-1">
         <UButton
           variant="ghost"
           size="sm"
@@ -122,12 +124,12 @@
         >
           <UIcon
             :name="result.bookmarked ? 'i-heroicons-bookmark-20-solid' : 'i-heroicons-bookmark-20-solid'"
-            :class="result.bookmarked ? 'w-4 h-4 text-blue-600' : 'w-4 h-4 text-gray-400'"
+            :class="result.bookmarked ? 'w-5 h-5 text-primary' : 'w-5 h-5 text-gray-400'"
           />
         </UButton>
       </div>
-    </div>
-  </div>
+    </template>
+  </UPageCard>
 </template>
 
 <script setup lang="ts">
@@ -151,9 +153,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const emit = defineEmits<{
-  click: [result: Props['result']]
-}>()
+// No emits needed - using "to" prop for navigation
 
 // Methods
 function formatDate(dateString: string): string {

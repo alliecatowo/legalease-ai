@@ -1,132 +1,140 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <!-- Header -->
-    <div class="bg-white border-b border-gray-200">
-      <div class="container mx-auto px-4 py-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900">Cases</h1>
-            <p class="mt-1 text-gray-600">Manage your legal cases and documents</p>
-          </div>
+    <UPageHeader
+      title="Cases"
+      description="Manage your legal cases and documents"
+    >
+      <template #links>
+        <USelectMenu
+          v-model="filterStatus"
+          :options="statusOptions"
+          placeholder="All Cases"
+          class="w-40"
+        />
 
-          <div class="flex items-center space-x-4">
-            <USelectMenu
-              v-model="filterStatus"
-              :options="statusOptions"
-              placeholder="All Cases"
-              class="w-40"
-            />
+        <UInput
+          v-model="searchQuery"
+          placeholder="Search cases..."
+          size="sm"
+          class="w-64"
+        >
+          <template #leading>
+            <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-4 h-4 text-gray-400" />
+          </template>
+        </UInput>
+      </template>
 
-            <UInput
-              v-model="searchQuery"
-              placeholder="Search cases..."
-              size="sm"
-              class="w-64"
-            >
-              <template #leading>
-                <UIcon name="i-heroicons-magnifying-glass-20-solid" class="w-4 h-4 text-gray-400" />
-              </template>
-            </UInput>
-
-            <UButton
-              color="primary"
-              @click="createCase"
-            >
-              <UIcon name="i-heroicons-plus-20-solid" class="w-5 h-5 mr-2" />
-              New Case
-            </UButton>
-          </div>
-        </div>
-      </div>
-    </div>
+      <UButton
+        color="primary"
+        @click="createCase"
+      >
+        <UIcon name="i-heroicons-plus-20-solid" class="w-5 h-5 mr-2" />
+        New Case
+      </UButton>
+    </UPageHeader>
 
     <!-- Cases Grid -->
     <div class="container mx-auto px-4 py-8">
       <!-- Stats Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div class="bg-white rounded-lg border border-gray-200 p-6">
-          <div class="flex items-center">
-            <div class="p-2 bg-blue-100 rounded-lg">
-              <UIcon name="i-heroicons-folder-20-solid" class="w-6 h-6 text-blue-600" />
+        <UCard>
+          <template #header>
+            <div class="flex items-center">
+              <div class="p-2 bg-blue-100 rounded-lg">
+                <UIcon name="i-heroicons-folder-20-solid" class="w-6 h-6 text-blue-600" />
+              </div>
+              <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Cases</p>
+              </div>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Total Cases</p>
-              <p class="text-2xl font-bold text-gray-900">{{ stats.total }}</p>
-            </div>
-          </div>
-        </div>
+          </template>
+          <p class="text-2xl font-bold text-gray-900">{{ stats.total }}</p>
+        </UCard>
 
-        <div class="bg-white rounded-lg border border-gray-200 p-6">
-          <div class="flex items-center">
-            <div class="p-2 bg-green-100 rounded-lg">
-              <UIcon name="i-heroicons-play-20-solid" class="w-6 h-6 text-green-600" />
+        <UCard>
+          <template #header>
+            <div class="flex items-center">
+              <div class="p-2 bg-green-100 rounded-lg">
+                <UIcon name="i-heroicons-play-20-solid" class="w-6 h-6 text-green-600" />
+              </div>
+              <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Active Cases</p>
+              </div>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Active Cases</p>
-              <p class="text-2xl font-bold text-gray-900">{{ stats.active }}</p>
-            </div>
-          </div>
-        </div>
+          </template>
+          <p class="text-2xl font-bold text-gray-900">{{ stats.active }}</p>
+        </UCard>
 
-        <div class="bg-white rounded-lg border border-gray-200 p-6">
-          <div class="flex items-center">
-            <div class="p-2 bg-yellow-100 rounded-lg">
-              <UIcon name="i-heroicons-pause-20-solid" class="w-6 h-6 text-yellow-600" />
+        <UCard>
+          <template #header>
+            <div class="flex items-center">
+              <div class="p-2 bg-yellow-100 rounded-lg">
+                <UIcon name="i-heroicons-pause-20-solid" class="w-6 h-6 text-yellow-600" />
+              </div>
+              <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Unloaded Cases</p>
+              </div>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Unloaded Cases</p>
-              <p class="text-2xl font-bold text-gray-900">{{ stats.unloaded }}</p>
-            </div>
-          </div>
-        </div>
+          </template>
+          <p class="text-2xl font-bold text-gray-900">{{ stats.unloaded }}</p>
+        </UCard>
 
-        <div class="bg-white rounded-lg border border-gray-200 p-6">
-          <div class="flex items-center">
-            <div class="p-2 bg-purple-100 rounded-lg">
-              <UIcon name="i-heroicons-document-20-solid" class="w-6 h-6 text-purple-600" />
+        <UCard>
+          <template #header>
+            <div class="flex items-center">
+              <div class="p-2 bg-purple-100 rounded-lg">
+                <UIcon name="i-heroicons-document-20-solid" class="w-6 h-6 text-purple-600" />
+              </div>
+              <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Documents</p>
+              </div>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Total Documents</p>
-              <p class="text-2xl font-bold text-gray-900">{{ stats.totalDocuments }}</p>
-            </div>
-          </div>
-        </div>
+          </template>
+          <p class="text-2xl font-bold text-gray-900">{{ stats.totalDocuments }}</p>
+        </UCard>
       </div>
 
       <!-- Cases Grid -->
-      <div v-if="loading" class="text-center py-12">
-        <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-        <p class="text-gray-600">Loading cases...</p>
+      <div v-if="loading">
+        <UPageGrid>
+          <UCard v-for="n in 6" :key="n">
+            <USkeleton class="h-48" />
+          </UCard>
+        </UPageGrid>
       </div>
 
-      <div v-else-if="filteredCases.length === 0" class="text-center py-12">
-        <UIcon name="i-heroicons-folder-open-20-solid" class="w-16 h-16 text-gray-300 mx-auto mb-4" />
+      <UCard v-else-if="filteredCases.length === 0" class="text-center">
+        <template #header>
+          <UIcon name="i-heroicons-folder-open-20-solid" class="w-16 h-16 text-gray-300 mx-auto" />
+        </template>
         <h3 class="text-lg font-medium text-gray-900 mb-2">No cases found</h3>
         <p class="text-gray-500 mb-6">
           {{ searchQuery ? 'Try adjusting your search terms' : 'Create your first case to get started' }}
         </p>
-        <UButton
-          v-if="!searchQuery"
-          color="primary"
-          @click="createCase"
-        >
-          <UIcon name="i-heroicons-plus-20-solid" class="w-5 h-5 mr-2" />
-          Create Case
-        </UButton>
-      </div>
+        <template #footer>
+          <UButton
+            v-if="!searchQuery"
+            color="primary"
+            @click="createCase"
+          >
+            <UIcon name="i-heroicons-plus-20-solid" class="w-5 h-5 mr-2" />
+            Create Case
+          </UButton>
+        </template>
+      </UCard>
 
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <UPageGrid v-else>
         <CaseCard
           v-for="caseItem in filteredCases"
           :key="caseItem.id"
           :case="caseItem"
-          @click="openCase"
           @load="loadCase"
           @unload="unloadCase"
           @archive="archiveCase"
           @delete="deleteCase"
         />
-      </div>
+      </UPageGrid>
 
       <!-- Load More -->
       <div v-if="hasMore && !loading" class="text-center mt-8">
@@ -171,7 +179,9 @@ interface StatsResponse {
   stats: {
     total: number
     active: number
+    unloaded: number
     archived: number
+    totalDocuments: number
   }
 }
 
@@ -182,6 +192,11 @@ const searchQuery = ref('')
 const filterStatus = ref('')
 const currentPage = ref(0)
 const hasMore = ref(false)
+
+// Modal instances
+const overlay = useOverlay()
+const archiveModal = overlay.create(() => import('~/components/modals/ArchiveCaseModal.vue'))
+const deleteModal = overlay.create(() => import('~/components/modals/DeleteCaseModal.vue'))
 
 // Stats
 const stats = ref({
@@ -226,12 +241,12 @@ const filteredCases = computed(() => {
 async function loadCases() {
   loading.value = true
   try {
-    const response = await apiFetch<CasesResponse>('/cases', {
+    const response = await apiFetch('/cases', {
       params: {
         page: currentPage.value,
         limit: 20
       }
-    })
+    }) as CasesResponse
 
     if (currentPage.value === 0) {
       cases.value = response.cases || []
@@ -250,7 +265,7 @@ async function loadCases() {
 
 async function loadStats() {
   try {
-    const response = await apiFetch<StatsResponse>('/cases/stats')
+    const response = await apiFetch('/cases/stats') as StatsResponse
     stats.value = response.stats || stats.value
   } catch (error) {
     console.error('Failed to load stats:', error)
@@ -261,9 +276,6 @@ function createCase() {
   navigateTo('/cases/new')
 }
 
-function openCase(caseItem: any) {
-  navigateTo(`/cases/${caseItem.id}`)
-}
 
 async function loadCase(caseItem: any) {
   try {
@@ -290,53 +302,42 @@ async function unloadCase(caseItem: any) {
 }
 
 async function archiveCase(caseItem: any) {
-  // Show confirmation dialog
-  const confirmed = await confirmDialog({
-    title: 'Archive Case',
-    description: `Are you sure you want to archive "${caseItem.name}"? This will remove it from active search.`,
-    confirmText: 'Archive',
-    cancelText: 'Cancel'
-  })
+  const instance = archiveModal.open({ case: caseItem })
+  const confirmed = await instance.result
 
-  if (!confirmed) return
-
-  try {
-    await apiFetch(`/cases/${caseItem.id}/archive`, {
-      method: 'POST'
-    })
-    caseItem.status = 'archived'
-    await loadStats() // Refresh stats
-  } catch (error) {
-    console.error('Failed to archive case:', error)
+  if (confirmed) {
+    try {
+      await apiFetch(`/cases/${caseItem.id}/archive`, {
+        method: 'POST'
+      })
+      caseItem.status = 'archived'
+      await loadStats() // Refresh stats
+    } catch (error) {
+      console.error('Failed to archive case:', error)
+    }
   }
 }
 
 async function deleteCase(caseItem: any) {
-  // Show confirmation dialog
-  const confirmed = await confirmDialog({
-    title: 'Delete Case',
-    description: `Are you sure you want to permanently delete "${caseItem.name}" and all its documents? This action cannot be undone.`,
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
-    type: 'danger'
-  })
+  const instance = deleteModal.open({ case: caseItem })
+  const confirmed = await instance.result
 
-  if (!confirmed) return
+  if (confirmed) {
+    try {
+      await apiFetch(`/cases/${caseItem.id}`, {
+        method: 'DELETE'
+      })
 
-  try {
-    await apiFetch(`/cases/${caseItem.id}`, {
-      method: 'DELETE'
-    })
+      // Remove from local list
+      const index = cases.value.findIndex((c: any) => c.id === caseItem.id)
+      if (index > -1) {
+        cases.value.splice(index, 1)
+      }
 
-    // Remove from local list
-    const index = cases.value.findIndex((c: any) => c.id === caseItem.id)
-    if (index > -1) {
-      cases.value.splice(index, 1)
+      await loadStats() // Refresh stats
+    } catch (error) {
+      console.error('Failed to delete case:', error)
     }
-
-    await loadStats() // Refresh stats
-  } catch (error) {
-    console.error('Failed to delete case:', error)
   }
 }
 
@@ -345,21 +346,6 @@ function loadMore() {
   loadCases()
 }
 
-// Confirmation dialog helper
-async function confirmDialog(options: {
-  title: string
-  description: string
-  confirmText: string
-  cancelText: string
-  type?: 'danger' | 'warning'
-}) {
-  return new Promise<boolean>((resolve) => {
-    // This would be implemented with a modal/dialog component
-    // For now, use browser confirm
-    const confirmed = confirm(`${options.title}\n\n${options.description}`)
-    resolve(confirmed)
-  })
-}
 
 // Lifecycle
 onMounted(async () => {

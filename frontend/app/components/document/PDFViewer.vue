@@ -1,7 +1,8 @@
 <template>
   <div class="relative">
     <!-- Toolbar -->
-    <div class="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+    <UCard class="rounded-none border-x-0 border-t-0">
+      <div class="flex items-center justify-between">
       <div class="flex items-center space-x-4">
         <UButton
           variant="outline"
@@ -51,7 +52,7 @@
           <UIcon name="i-heroicons-arrows-up-down-20-solid" class="w-4 h-4" />
         </UButton>
       </div>
-    </div>
+    </UCard>
 
     <!-- PDF Container -->
     <div
@@ -60,21 +61,22 @@
       :style="{ height: containerHeight }"
     >
       <!-- Loading -->
-      <div v-if="loading" class="flex items-center justify-center h-full">
+      <UCard v-if="loading" class="flex items-center justify-center h-full border-0 bg-transparent">
         <div class="text-center">
-          <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p class="text-gray-600">Loading PDF...</p>
+          <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 animate-spin mx-auto mb-4" />
+          <h3 class="text-lg font-medium mb-2">Loading PDF...</h3>
+          <p class="text-muted">Please wait while we prepare your document</p>
         </div>
-      </div>
+      </UCard>
 
       <!-- Error -->
-      <div v-else-if="error" class="flex items-center justify-center h-full">
+      <UCard v-else-if="error" class="flex items-center justify-center h-full border-0 bg-transparent">
         <div class="text-center">
-          <UIcon name="i-heroicons-exclamation-triangle-20-solid" class="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Failed to load PDF</h3>
-          <p class="text-gray-500">{{ error }}</p>
+          <UIcon name="i-heroicons-exclamation-triangle-20-solid" class="w-16 h-16 mx-auto mb-4" />
+          <h3 class="text-lg font-medium mb-2">Failed to load PDF</h3>
+          <p class="text-muted">{{ error }}</p>
         </div>
-      </div>
+      </UCard>
 
       <!-- PDF Canvas -->
       <div

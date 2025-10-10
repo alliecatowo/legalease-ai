@@ -1,42 +1,40 @@
 <template>
-  <div class="bg-white rounded-lg border border-gray-200">
+  <UCard>
     <!-- Audio Player -->
-    <div class="p-4 border-b border-gray-200">
-      <AudioPlayer
-        v-if="audioUrl"
-        :url="audioUrl"
-        :duration="duration"
-        :current-time="currentTime"
-        @time-update="onTimeUpdate"
-        @play="onPlay"
-        @pause="onPause"
-        @seek="onSeek"
-      />
-      <div v-else class="text-center py-8">
-        <UIcon name="i-heroicons-musical-note-20-solid" class="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <p class="text-gray-500">No audio file available</p>
-      </div>
+    <AudioPlayer
+      v-if="audioUrl"
+      :url="audioUrl"
+      :duration="duration"
+      :current-time="currentTime"
+      @time-update="onTimeUpdate"
+      @play="onPlay"
+      @pause="onPause"
+      @seek="onSeek"
+    />
+    <div v-else class="text-center py-8">
+      <UIcon name="i-heroicons-musical-note-20-solid" class="w-12 h-12 text-muted mx-auto mb-4" />
+      <p class="text-muted">No audio file available</p>
     </div>
 
     <!-- Transcript Content -->
     <div class="max-h-96 overflow-y-auto">
       <!-- Loading -->
       <div v-if="loading" class="flex items-center justify-center py-12">
-        <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 animate-spin text-blue-600 mr-3" />
-        <span class="text-gray-600">Loading transcript...</span>
+        <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 animate-spin mr-3" />
+        <span class="text-muted">Loading transcript...</span>
       </div>
 
       <!-- Transcript Segments -->
-      <div v-else-if="segments.length > 0" class="divide-y divide-gray-100">
+      <div v-else-if="segments.length > 0" class="space-y-2">
         <div
           v-for="segment in segments"
           :key="segment.id"
-          class="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+          class="p-4 rounded-lg hover:bg-elevated cursor-pointer transition-colors border"
           :class="{
-            'bg-blue-50 border-l-4 border-blue-500': isActiveSegment(segment),
-            'bg-yellow-50': segment.speaker === 'SPEAKER_01' && showSpeakerColors,
-            'bg-green-50': segment.speaker === 'SPEAKER_02' && showSpeakerColors,
-            'bg-purple-50': segment.speaker === 'SPEAKER_03' && showSpeakerColors
+            'bg-primary/5 border-primary/20 ring-1 ring-primary/10': isActiveSegment(segment),
+            'bg-warning/5 border-warning/20': segment.speaker === 'SPEAKER_01' && showSpeakerColors,
+            'bg-success/5 border-success/20': segment.speaker === 'SPEAKER_02' && showSpeakerColors,
+            'bg-info/5 border-info/20': segment.speaker === 'SPEAKER_03' && showSpeakerColors
           }"
           @click="seekToSegment(segment)"
         >
@@ -47,24 +45,26 @@
               <UBadge
                 v-if="segment.speaker"
                 :color="getSpeakerColor(segment.speaker)"
-                variant="subtle"
+                variant="soft"
                 size="sm"
               >
                 {{ formatSpeaker(segment.speaker) }}
               </UBadge>
 
               <!-- Timestamp -->
-              <span class="text-xs text-gray-500 font-mono">
+              <UBadge variant="outline" size="xs">
                 {{ formatTime(segment.start) }}
-              </span>
+              </UBadge>
 
               <!-- Confidence Score -->
-              <span
+              <UBadge
                 v-if="segment.confidence"
-                class="text-xs text-gray-400"
+                :color="getConfidenceColor(segment.confidence)"
+                variant="subtle"
+                size="xs"
               >
                 {{ Math.round(segment.confidence * 100) }}%
-              </span>
+              </UBadge>
             </div>
 
             <!-- Actions -->
@@ -87,7 +87,7 @@
           </div>
 
           <!-- Segment Text -->
-          <p class="text-gray-900 leading-relaxed">
+          <p class="text-foreground leading-relaxed">
             {{ segment.text }}
           </p>
 
