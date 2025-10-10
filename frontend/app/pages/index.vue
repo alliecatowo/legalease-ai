@@ -1,6 +1,37 @@
 <script setup lang="ts">
-const { data: stats } = await useFetch('/api/v1/stats/dashboard')
-const { data: recentActivity } = await useFetch('/api/v1/activity/recent')
+const api = useApi()
+
+// Fetch cases to compute stats
+const { data: casesData } = await useAsyncData('dashboard-cases', () => api.cases.list(), {
+  default: () => ({ cases: [], total: 0 })
+})
+
+// Compute stats from cases data
+const stats = computed(() => {
+  const cases = casesData.value?.cases || []
+  const totalDocs = cases.reduce((sum: number, c: any) => sum + (c.document_count || 0), 0)
+
+  return {
+    total_cases: cases.length,
+    active_cases: cases.filter((c: any) => c.status === 'ACTIVE').length,
+    total_documents: totalDocs,
+    documents_this_month: totalDocs, // TODO: Filter by month
+    total_transcriptions: 0, // TODO: Add transcriptions API
+    processing_transcriptions: 0,
+    total_storage: totalDocs * 250000, // Rough estimate: 250KB per doc
+    indexed_chunks: totalDocs * 10, // Rough estimate: 10 chunks per doc
+    queue_documents: 0, // TODO: Add queue API
+    queue_transcriptions: 0,
+    queue_ai: 0,
+    total_entities: 0, // TODO: Add entities API
+    graph_nodes: 0,
+    search_queries_30d: 0
+  }
+})
+
+// TODO: Replace with actual recent activity API
+const recentActivity = ref([])
+
 
 const quickActions = [[{
   label: 'Upload Document',
@@ -50,8 +81,8 @@ function formatDate(dateStr: string) {
       </UDashboardNavbar>
     </template>
 
-    <UDashboardPanelContent>
-      <div class="space-y-6">
+    <div class="p-6 overflow-y-auto h-[calc(100vh-64px)]">
+      <div class="max-w-7xl mx-auto space-y-6">
       <!-- Welcome Section -->
       <div>
         <h1 class="text-2xl font-bold">Welcome to LegalEase</h1>
@@ -237,7 +268,7 @@ function formatDate(dateStr: string) {
           </div>
         </UCard>
       </div>
+      </div>
     </div>
-    </UDashboardPanelContent>
   </UDashboardPanel>
 </template>

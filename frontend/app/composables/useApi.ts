@@ -36,9 +36,9 @@ export const useApi = () => {
 
     // Documents
     documents: {
-      list: (params?: any) => api('/api/v1/documents', { params }),
+      listByCase: (caseId: string | number) => api(`/api/v1/cases/${caseId}/documents`),
       get: (id: string) => api(`/api/v1/documents/${id}`),
-      upload: (formData: FormData) => api('/api/v1/documents/upload', { method: 'POST', body: formData }),
+      upload: (caseId: string | number, formData: FormData) => api(`/api/v1/cases/${caseId}/documents`, { method: 'POST', body: formData }),
       delete: (id: string) => api(`/api/v1/documents/${id}`, { method: 'DELETE' }),
       download: (id: string) => api(`/api/v1/documents/${id}/download`),
       content: (id: string) => api(`/api/v1/documents/${id}/content`)
@@ -47,6 +47,8 @@ export const useApi = () => {
     // Search
     search: {
       query: (params: any) => api('/api/v1/search', { params }),
+      hybrid: (data: any) => api('/api/v1/search/hybrid', { method: 'POST', body: data }),
+      semantic: (data: any) => api('/api/v1/search/semantic', { method: 'POST', body: data }),
       suggest: (q: string) => api('/api/v1/search/suggestions', { params: { q } })
     },
 

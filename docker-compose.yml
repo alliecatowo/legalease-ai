@@ -51,7 +51,7 @@ services:
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/6333' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -124,21 +124,21 @@ services:
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
       - legalease-network
     restart: unless-stopped
-    # Uncomment if you have GPU support
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # GPU support enabled for NVIDIA GPUs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   # FastAPI Backend
   backend:
@@ -246,28 +246,28 @@ services:
       - legalease-network
     restart: unless-stopped
 
-  # Nuxt Frontend
-  frontend:
-    build:
-      context: .
-      dockerfile: docker/frontend/Dockerfile
-      target: development
-    container_name: legalease-frontend
-    command: pnpm dev
-    ports:
-      - "3000:3000"
-    environment:
-      NUXT_PUBLIC_API_BASE: http://localhost:8000
-      NODE_ENV: development
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.nuxt
-    depends_on:
-      - backend
-    networks:
-      - legalease-network
-    restart: unless-stopped
+  # Nuxt Frontend (commented out - run manually with: cd frontend && pnpm dev)
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/frontend/Dockerfile
+  #     target: development
+  #   container_name: legalease-frontend
+  #   command: pnpm dev
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     NUXT_PUBLIC_API_BASE: http://localhost:8000
+  #     NODE_ENV: development
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+  #     - /app/.nuxt
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - legalease-network
+  #   restart: unless-stopped
 
 networks:
   legalease-network:

@@ -20,10 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create enum types
-    op.execute("CREATE TYPE casestatus AS ENUM ('STAGING', 'PROCESSING', 'ACTIVE', 'UNLOADED', 'ARCHIVED')")
-    op.execute("CREATE TYPE documentstatus AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')")
-
     # Create cases table
     op.create_table(
         'cases',

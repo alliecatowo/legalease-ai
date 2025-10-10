@@ -2,7 +2,7 @@
 Pipeline modules for document processing, embeddings, and encoding.
 """
 
-from app.workers.pipelines.embeddings import EmbeddingPipeline
+from app.workers.pipelines.embeddings import FastEmbedPipeline as EmbeddingPipeline
 from app.workers.pipelines.bm25_encoder import BM25Encoder
 from app.workers.pipelines.docling_parser import DoclingParser
 from app.workers.pipelines.ocr_pipeline import OCRPipeline

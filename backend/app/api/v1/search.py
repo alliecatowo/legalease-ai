@@ -45,7 +45,7 @@ async def search_documents(
             fusion_method="rrf",
         )
 
-        # Execute search
+        # Execute hybrid search
         search_engine = get_search_engine()
         response = search_engine.search(request)
 
