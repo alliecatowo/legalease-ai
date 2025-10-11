@@ -23,10 +23,17 @@ const searchSettings = ref({
 })
 
 // Case filters - fetch available cases
-const { data: casesData } = await useAsyncData('search-cases', () => useApi().cases.list(), {
+const { data: casesData } = await useAsyncData('search-cases', () => api.cases.list(), {
   default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
 })
-const availableCases = computed(() => casesData.value?.cases || [])
+const availableCases = computed(() =>
+  (casesData.value?.cases || []).map((c: any) => ({
+    label: c.name,
+    value: c.id,
+    case_number: c.case_number,
+    ...c
+  }))
+)
 
 // Filter state
 const selectedCases = ref<number[]>([])
