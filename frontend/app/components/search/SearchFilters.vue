@@ -2,13 +2,16 @@
 const props = defineProps<{
   selectedCases: number[]
   selectedDocumentTypes: string[]
+  selectedChunkTypes?: string[]
   availableCases: any[]
   isCompact?: boolean
+  showChunkTypes?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:selectedCases': [value: number[]]
   'update:selectedDocumentTypes': [value: string[]]
+  'update:selectedChunkTypes': [value: string[]]
   'clear': []
 }>()
 
@@ -22,6 +25,11 @@ const localDocTypes = computed({
   set: (value) => emit('update:selectedDocumentTypes', value)
 })
 
+const localChunkTypes = computed({
+  get: () => props.selectedChunkTypes || [],
+  set: (value) => emit('update:selectedChunkTypes', value)
+})
+
 const documentTypeOptions = [
   { value: 'contract', label: 'Contracts', icon: 'i-lucide-file-text' },
   { value: 'court_filing', label: 'Court Filings', icon: 'i-lucide-gavel' },
@@ -31,8 +39,18 @@ const documentTypeOptions = [
   { value: 'correspondence', label: 'Correspondence', icon: 'i-lucide-mail' }
 ]
 
+const chunkTypeOptions = [
+  { value: 'summary', label: 'Summaries', icon: 'i-lucide-sparkles' },
+  { value: 'section', label: 'Sections', icon: 'i-lucide-layout' },
+  { value: 'microblock', label: 'Microblocks', icon: 'i-lucide-component' },
+  { value: 'paragraph', label: 'Paragraphs', icon: 'i-lucide-text' },
+  { value: 'page', label: 'Pages', icon: 'i-lucide-file' }
+]
+
 const hasActiveFilters = computed(() =>
-  props.selectedCases.length > 0 || props.selectedDocumentTypes.length > 0
+  props.selectedCases.length > 0 ||
+  props.selectedDocumentTypes.length > 0 ||
+  (props.selectedChunkTypes && props.selectedChunkTypes.length > 0)
 )
 
 const clearAllFilters = () => {
@@ -94,6 +112,33 @@ const clearAllFilters = () => {
       </template>
     </USelectMenu>
 
+    <!-- Chunk Type Filter (Granularity) -->
+    <USelectMenu
+      v-if="showChunkTypes"
+      v-model="localChunkTypes"
+      :options="chunkTypeOptions"
+      multiple
+      :placeholder="(selectedChunkTypes?.length || 0) > 0 ? `${selectedChunkTypes?.length} level${(selectedChunkTypes?.length || 0) > 1 ? 's' : ''}` : 'All Levels'"
+      :ui="{
+        trigger: 'inline-flex items-center gap-x-1.5',
+        width: 'w-auto min-w-[160px]'
+      }"
+      value-attribute="value"
+    >
+      <template #label>
+        <UIcon name="i-lucide-layers" class="size-4" />
+        <span v-if="(selectedChunkTypes?.length || 0) === 0">All Levels</span>
+        <span v-else>{{ selectedChunkTypes?.length }} level{{ (selectedChunkTypes?.length || 0) > 1 ? 's' : '' }}</span>
+      </template>
+
+      <template #option="{ option }">
+        <div class="flex items-center gap-2">
+          <UIcon :name="option.icon" class="size-4" />
+          <span>{{ option.label }}</span>
+        </div>
+      </template>
+    </USelectMenu>
+
     <!-- Clear Filters Button -->
     <UButton
       v-if="hasActiveFilters"
@@ -128,6 +173,19 @@ const clearAllFilters = () => {
         variant="soft"
         size="sm"
         @click="localDocTypes = selectedDocumentTypes.filter(t => t !== type)"
+      >
+        <template #trailing>
+          <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />
+        </template>
+      </UBadge>
+      <UBadge
+        v-for="type in (selectedChunkTypes || [])"
+        :key="`chunk-${type}`"
+        :label="chunkTypeOptions.find(o => o.value === type)?.label || type"
+        color="info"
+        variant="soft"
+        size="sm"
+        @click="localChunkTypes = (selectedChunkTypes || []).filter(t => t !== type)"
       >
         <template #trailing>
           <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />

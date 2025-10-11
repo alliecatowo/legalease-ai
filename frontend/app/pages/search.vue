@@ -23,7 +23,9 @@ const searchSettings = ref({
 })
 
 // Case filters - fetch available cases
-const { data: casesData } = await useAsyncData('search-cases', () => useApi().cases.list())
+const { data: casesData } = await useAsyncData('search-cases', () => useApi().cases.list(), {
+  default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
+})
 const availableCases = computed(() => casesData.value?.cases || [])
 
 // Filter state
@@ -447,8 +449,10 @@ defineShortcuts({
                 <SearchFilters
                   v-model:selected-cases="selectedCases"
                   v-model:selected-document-types="selectedDocumentTypes"
+                  v-model:selected-chunk-types="selectedChunkTypes"
                   :available-cases="availableCases"
-                  @clear="selectedCases = []; selectedDocumentTypes = []"
+                  :show-chunk-types="true"
+                  @clear="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
                 />
               </div>
             </div>
@@ -522,9 +526,11 @@ defineShortcuts({
               <SearchFilters
                 v-model:selected-cases="selectedCases"
                 v-model:selected-document-types="selectedDocumentTypes"
+                v-model:selected-chunk-types="selectedChunkTypes"
                 :available-cases="availableCases"
+                :show-chunk-types="true"
                 :is-compact="true"
-                @clear="selectedCases = []; selectedDocumentTypes = []"
+                @clear="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
               />
             </div>
 
@@ -535,7 +541,6 @@ defineShortcuts({
               </p>
               <UBadge :label="searchMode" color="primary" variant="soft" size="sm" />
               <UBadge v-if="searchSettings.fusion_method !== 'rrf'" :label="`Fusion: ${searchSettings.fusion_method}`" color="neutral" variant="outline" size="sm" />
-              <UBadge v-if="selectedChunkTypes.length > 0" :label="`${selectedChunkTypes.length} granularity filter${selectedChunkTypes.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
             </div>
 
             <!-- Search Results List -->
