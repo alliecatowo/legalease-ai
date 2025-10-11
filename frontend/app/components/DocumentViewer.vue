@@ -37,7 +37,8 @@ interface SearchResult {
 interface Props {
   documentId: number | string
   searchQuery?: string
-  searchResults?: SearchResult[]  // Semantic search results
+  bm25Results?: SearchResult[]  // BM25 keyword results (blue)
+  fusionResults?: SearchResult[]  // Fusion hybrid results (yellow)
   highlightBboxes?: BBox[]
   initialPage?: number
   chunkId?: number
@@ -45,7 +46,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   searchQuery: '',
-  searchResults: () => [],
+  bm25Results: () => [],
+  fusionResults: () => [],
   highlightBboxes: () => [],
   initialPage: 1
 })
@@ -126,54 +128,64 @@ const collectBoxesForPage = (page: PageData) => {
   return out
 }
 
-// Get search result highlights separated by type (BM25 = blue, hybrid = yellow)
-const semanticHighlights = computed(() => {
-  if (!props.searchResults || props.searchResults.length === 0) return []
-
-  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'bm25' | 'semantic'; score: number }> = []
-
-  // Track seen positions to avoid duplicates
+// Get search result highlights - BM25 (blue) and Fusion (yellow) separately
+const allHighlights = computed(() => {
+  const bm25Boxes: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'bm25' | 'semantic'; score: number }> = []
+  const fusionBoxes: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'bm25' | 'semantic'; score: number }> = []
   const seenPositions = new Set<string>()
 
-  // Take top 5 results, show their bboxes
-  for (const result of props.searchResults.slice(0, 5)) {
-    const matchType = (result as any).match_type || 'semantic'
+  // Collect BM25 boxes (blue) - up to 5 boxes
+  for (const result of props.bm25Results || []) {
     const page = result.page_number || 1
-
-    // Add ALL bboxes from this result
     for (const entry of result.bboxes || []) {
       const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
       const nb = normalizeBBox(box)
-
-      // Skip if dimensions are invalid
       if (nb.width === 0 || nb.height === 0) continue
 
-      // Deduplicate by position
       const posKey = `${page}-${Math.round(nb.x)}-${Math.round(nb.y)}-${Math.round(nb.width)}-${Math.round(nb.height)}`
       if (seenPositions.has(posKey)) continue
       seenPositions.add(posKey)
 
-      out.push({
-        x: nb.x,
-        y: nb.y,
-        width: nb.width,
-        height: nb.height,
+      bm25Boxes.push({
+        x: nb.x, y: nb.y, width: nb.width, height: nb.height,
         text: (entry as any).text || result.text,
         page,
-        type: matchType === 'bm25' ? 'bm25' : 'semantic',
+        type: 'bm25',  // BLUE
         score: result.score
       })
-
-      // Limit total boxes to prevent overcrowding
-      if (out.length >= 10) break
+      if (bm25Boxes.length >= 5) break
     }
-
-    if (out.length >= 10) break
+    if (bm25Boxes.length >= 5) break
   }
 
-  const bm25Count = out.filter(h => h.type === 'bm25').length
-  const semanticCount = out.filter(h => h.type === 'semantic').length
-  console.log(`[DocumentViewer] Highlights: ${bm25Count} BM25 (blue), ${semanticCount} hybrid (yellow)`)
+  // Collect Fusion boxes (yellow) - up to 5 boxes
+  for (const result of props.fusionResults || []) {
+    const page = result.page_number || 1
+    for (const entry of result.bboxes || []) {
+      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+      const nb = normalizeBBox(box)
+      if (nb.width === 0 || nb.height === 0) continue
+
+      const posKey = `${page}-${Math.round(nb.x)}-${Math.round(nb.y)}-${Math.round(nb.width)}-${Math.round(nb.height)}`
+      if (seenPositions.has(posKey)) continue
+      seenPositions.add(posKey)
+
+      fusionBoxes.push({
+        x: nb.x, y: nb.y, width: nb.width, height: nb.height,
+        text: (entry as any).text || result.text,
+        page,
+        type: 'semantic',  // YELLOW
+        score: result.score
+      })
+      if (fusionBoxes.length >= 5) break
+    }
+    if (fusionBoxes.length >= 5) break
+  }
+
+  // Combine: 5 BM25 + 5 Fusion = 10 total
+  const out = [...bm25Boxes, ...fusionBoxes]
+
+  console.log(`[DocumentViewer] ${bm25Boxes.length} BM25 (blue), ${fusionBoxes.length} fusion (yellow)`)
   return out
 })
 
@@ -213,13 +225,6 @@ const textHighlights = computed(() => {
   return out
 })
 
-// Only use hybrid search results (not text matches)
-const allHighlights = computed(() => {
-  // Only show semantic highlights from hybrid search API
-  const highlights = semanticHighlights.value
-  console.log(`[DocumentViewer] Total highlights: ${highlights.length} (from hybrid search)`)
-  return highlights
-})
 
 // Just the highlights for the current page
 const pageHighlights = computed(() => {
