@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 definePageMeta({
   layout: 'default'
@@ -68,6 +68,12 @@ const { data: relatedDocs } = useLazyAsyncData(
 )
 
 // UI State
+const selectedTab = ref('content')
+const showDeleteModal = ref(false)
+const showAddToCaseModal = ref(false)
+const isDeleting = ref(false)
+const searchWithinQuery = ref('')
+
 // Initialize from route query
 if (route.query.q) {
   searchWithinQuery.value = String(route.query.q)
@@ -76,12 +82,6 @@ if (route.query.q) {
 watch(() => route.query.q, (q) => {
   searchWithinQuery.value = q ? String(q) : ''
 })
-
-const selectedTab = ref('content')
-const showDeleteModal = ref(false)
-const showAddToCaseModal = ref(false)
-const isDeleting = ref(false)
-const searchWithinQuery = ref('')
 
 // Document type configuration
 const typeConfig = computed(() => {
