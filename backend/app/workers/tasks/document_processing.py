@@ -218,10 +218,7 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
                     chunk_type=payload.get("chunk_type", "section"),
                     position=payload.get("position", 0),
                     page_number=payload.get("page_number"),
-                    meta_data={
-                        "bboxes": payload.get("bboxes", []),
-                        **payload.get("metadata", {}),
-                    },
+                    meta_data=(payload.get("additional_metadata") or {})
                 )
                 db.add(chunk)
 

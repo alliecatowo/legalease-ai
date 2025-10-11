@@ -67,6 +67,26 @@ const currentPageData = computed(() => {
 })
 
 
+// Simple, cohesive highlight list from item.bboxes only
+const pageHighlights = computed(() => {
+  const page = currentPageData.value
+  if (!page) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
+  const q = (props.searchQuery || '').toLowerCase().trim()
+  const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+  for (const item of page.items) {
+    for (const entry of item.bboxes || []) {
+      const t = (entry as any).text || item.text || ''
+      if (!q || t.toLowerCase().includes(q)) {
+        const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+        const nb = normalizeBBox(box)
+        out.push({ x: nb.x, y: nb.y, width: nb.width, height: nb.height, text: t })
+      }
+    }
+  }
+  return out
+})
+
+
 // Build highlight rectangles for current page from item.bboxes
 const currentPageHighlights = computed(() => {
   if (!currentPageData.value) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
@@ -335,7 +355,7 @@ watch(() => props.documentId, () => {
             <template #leading>
               <UIcon name="i-lucide-search" class="size-3" />
             </template>
-            {{ currentPageHighlights.length }} highlights
+            {{ pageHighlights.length }} highlights
           </UBadge>
         </UTooltip>
         <UButton
@@ -394,12 +414,12 @@ watch(() => props.documentId, () => {
 
         <!-- SVG Overlay for Bounding Boxes -->
         <svg
-          v-if="currentPageHighlights.length > 0"
+          v-if="pageHighlights.length > 0"
           class="bbox-overlay absolute top-0 left-0 w-full h-full pointer-events-none"
           :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
         >
           <rect
-            v-for="(box, idx) in currentPageHighlights"
+            v-for="(box, idx) in pageHighlights"
             :key="idx"
             :x="box.x"
             :y="box.y"
@@ -428,8 +448,8 @@ watch(() => props.documentId, () => {
             {{ currentPageData.items.length }} elements
           </span>
         </div>
-        <div v-if="currentPageHighlights.length > 0" class="text-warning">
-          {{ currentPageHighlights.length }} highlighted
+        <div v-if="pageHighlights.length > 0" class="text-warning">
+          {{ pageHighlights.length }} highlighted
         </div>
       </div>
     </div>
