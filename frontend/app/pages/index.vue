@@ -90,55 +90,51 @@ function formatDate(dateStr: string) {
         </div>
 
         <!-- Stats Grid -->
-        <UPageGrid>
-          <UPageCard
-            title="Total Cases"
-            :description="stats?.total_cases?.toString() || '0'"
-            icon="i-lucide-folder"
-          >
-            <template #footer>
-              <div class="text-xs text-muted">
-                {{ stats?.active_cases || 0 }} active
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <UCard>
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-folder" class="size-8 text-primary" />
+              <div>
+                <p class="text-2xl font-bold">{{ stats?.total_cases?.toString() || '0' }}</p>
+                <p class="text-sm text-muted">Total Cases</p>
+                <p class="text-xs text-muted mt-1">{{ stats?.active_cases || 0 }} active</p>
               </div>
-            </template>
-          </UPageCard>
+            </div>
+          </UCard>
 
-          <UPageCard
-            title="Documents"
-            :description="stats?.total_documents?.toString() || '0'"
-            icon="i-lucide-file-text"
-          >
-            <template #footer>
-              <div class="text-xs text-muted">
-                {{ stats?.documents_this_month || 0 }} this month
+          <UCard>
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-file-text" class="size-8 text-primary" />
+              <div>
+                <p class="text-2xl font-bold">{{ stats?.total_documents?.toString() || '0' }}</p>
+                <p class="text-sm text-muted">Documents</p>
+                <p class="text-xs text-muted mt-1">{{ stats?.documents_this_month || 0 }} this month</p>
               </div>
-            </template>
-          </UPageCard>
+            </div>
+          </UCard>
 
-          <UPageCard
-            title="Transcriptions"
-            :description="stats?.total_transcriptions?.toString() || '0'"
-            icon="i-lucide-mic"
-          >
-            <template #footer>
-              <div class="text-xs text-muted">
-                {{ stats?.processing_transcriptions || 0 }} processing
+          <UCard>
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-mic" class="size-8 text-primary" />
+              <div>
+                <p class="text-2xl font-bold">{{ stats?.total_transcriptions?.toString() || '0' }}</p>
+                <p class="text-sm text-muted">Transcriptions</p>
+                <p class="text-xs text-muted mt-1">{{ stats?.processing_transcriptions || 0 }} processing</p>
               </div>
-            </template>
-          </UPageCard>
+            </div>
+          </UCard>
 
-          <UPageCard
-            title="Storage"
-            :description="formatBytes(stats?.total_storage || 0)"
-            icon="i-lucide-hard-drive"
-          >
-            <template #footer>
-              <div class="text-xs text-muted">
-                {{ stats?.indexed_chunks || 0 }} indexed chunks
+          <UCard>
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-hard-drive" class="size-8 text-primary" />
+              <div>
+                <p class="text-2xl font-bold">{{ formatBytes(stats?.total_storage || 0) }}</p>
+                <p class="text-sm text-muted">Storage</p>
+                <p class="text-xs text-muted mt-1">{{ stats?.indexed_chunks || 0 }} indexed chunks</p>
               </div>
-            </template>
-          </UPageCard>
-        </UPageGrid>
+            </div>
+          </UCard>
+        </div>
 
         <!-- Quick Links -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">

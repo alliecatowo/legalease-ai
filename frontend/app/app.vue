@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ConfigProvider } from 'reka-ui'
+
 const colorMode = useColorMode()
 
 const color = computed(() => colorMode.value === 'dark' ? '#1b1718' : 'white')
@@ -32,11 +34,13 @@ useSeoMeta({
 </script>
 
 <template>
-  <UApp>
-    <NuxtLoadingIndicator />
+  <ConfigProvider :use-id="() => useId()">
+    <UApp>
+      <NuxtLoadingIndicator />
 
-    <NuxtLayout>
-      <NuxtPage />
-    </NuxtLayout>
-  </UApp>
+      <NuxtLayout>
+        <NuxtPage />
+      </NuxtLayout>
+    </UApp>
+  </ConfigProvider>
 </template>

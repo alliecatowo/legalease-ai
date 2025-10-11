@@ -130,22 +130,23 @@ const stats = computed(() => {
 // Bulk selection
 const allSelected = computed(() => {
   return filteredDocuments.value.length > 0 &&
-    filteredDocuments.value.every(d => selectedDocuments.value.has(d.id))
+    filteredDocuments.value.every(d => selectedDocuments.value.has(String(d.id)))
 })
 
 function toggleSelectAll() {
   if (allSelected.value) {
     selectedDocuments.value.clear()
   } else {
-    filteredDocuments.value.forEach(d => selectedDocuments.value.add(d.id))
+    filteredDocuments.value.forEach(d => selectedDocuments.value.add(String(d.id)))
   }
 }
 
-function toggleSelect(docId: string) {
-  if (selectedDocuments.value.has(docId)) {
-    selectedDocuments.value.delete(docId)
+function toggleSelect(docId: string | number) {
+  const id = String(docId)
+  if (selectedDocuments.value.has(id)) {
+    selectedDocuments.value.delete(id)
   } else {
-    selectedDocuments.value.add(docId)
+    selectedDocuments.value.add(id)
   }
 }
 
@@ -154,7 +155,20 @@ function toggleSelect(docId: string) {
 async function uploadDocuments() {
   if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
 
-  // TODO: Implement actual upload with progress tracking
+  // Get the first available case ID (or show error if no cases exist)
+  if (!casesData.value?.cases || casesData.value.cases.length === 0) {
+    if (import.meta.client) {
+      const toast = useToast()
+      toast.add({
+        title: 'No Case Available',
+        description: 'Please create a case first before uploading documents',
+        color: 'error'
+      })
+    }
+    return
+  }
+
+  const caseId = casesData.value.cases[0].id
   uploadProgress.value = 0
 
   const formData = new FormData()
@@ -163,24 +177,34 @@ async function uploadDocuments() {
   })
 
   try {
-    // Simulate upload progress
-    const progressInterval = setInterval(() => {
-      uploadProgress.value += 10
-      if (uploadProgress.value >= 100) {
-        clearInterval(progressInterval)
-      }
-    }, 200)
+    // Simple progress indicator (show as uploading)
+    uploadProgress.value = 50
 
-    // TODO: Replace with actual API call
-    // await api.documents.upload(formData)
+    // Call actual API
+    await api.documents.upload(caseId, formData)
 
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // Mark complete
+    uploadProgress.value = 100
 
+    // Success feedback
+    if (import.meta.client) {
+      const toast = useToast()
+      toast.add({
+        title: 'Upload Successful',
+        description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
+        color: 'success'
+      })
+    }
+
+    // Close modal and refresh
     showUploadModal.value = false
     uploadingFiles.value = null
+    uploadProgress.value = 0
     refresh()
   } catch (error) {
+    // Error already handled by useApi.ts onResponseError
     console.error('Upload failed:', error)
+    uploadProgress.value = 0
   }
 }
 
@@ -330,16 +354,15 @@ const documentTypeIcons: Record<string, string> = {
 
       <!-- Controls -->
       <div class="flex items-center gap-3 flex-wrap">
-        <!-- Select All Checkbox -->
-        <UCheckbox
-          :model-value="allSelected"
-          :indeterminate="selectedDocuments.size > 0 && !allSelected"
-          @update:model-value="toggleSelectAll"
+        <!-- Select All Button -->
+        <UButton
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          @click="toggleSelectAll"
         >
-          <template #label>
-            <span class="text-sm text-muted">Select All</span>
-          </template>
-        </UCheckbox>
+          {{ allSelected ? 'Deselect All' : 'Select All' }}
+        </UButton>
 
         <!-- Search -->
         <div class="flex-1 min-w-[240px]">
@@ -352,8 +375,10 @@ const documentTypeIcons: Record<string, string> = {
         </div>
 
         <!-- Filters -->
-        <USelectMenu v-model="selectedType" :items="typeOptions" size="lg" />
-        <USelectMenu v-model="sortBy" :items="sortOptions" size="lg" />
+        <ClientOnly>
+          <USelectMenu v-model="selectedType" :items="typeOptions" size="lg" />
+          <USelectMenu v-model="sortBy" :items="sortOptions" size="lg" />
+        </ClientOnly>
 
         <!-- View Mode Toggle -->
         <div class="flex items-center gap-1 border border-default rounded-lg p-1">
@@ -380,16 +405,21 @@ const documentTypeIcons: Record<string, string> = {
           v-for="doc in filteredDocuments"
           :key="doc.id"
           class="hover:shadow-md transition-all cursor-pointer"
-          :class="selectedDocuments.has(doc.id) ? 'ring-2 ring-primary' : ''"
+          :class="selectedDocuments.has(String(doc.id)) ? 'ring-2 ring-primary' : ''"
           @click="navigateTo(`/documents/${doc.id}`)"
         >
           <div class="flex items-start gap-4">
-            <!-- Checkbox -->
-            <UCheckbox
-              :model-value="selectedDocuments.has(doc.id)"
-              @update:model-value="toggleSelect(doc.id)"
-              @click.stop
-            />
+            <!-- Selection Icon -->
+            <div
+              class="flex-shrink-0 cursor-pointer p-2"
+              @click.stop="toggleSelect(doc.id)"
+            >
+              <UIcon
+                :name="selectedDocuments.has(String(doc.id)) ? 'i-lucide-check-square' : 'i-lucide-square'"
+                class="size-5"
+                :class="selectedDocuments.has(String(doc.id)) ? 'text-primary' : 'text-muted'"
+              />
+            </div>
 
             <!-- Icon -->
             <div class="flex-shrink-0 p-3 bg-primary/10 rounded-lg">
@@ -436,46 +466,48 @@ const documentTypeIcons: Record<string, string> = {
                 </div>
 
                 <!-- Actions -->
-                <div class="flex items-center gap-1">
-                  <UTooltip text="View Document">
-                    <UButton
-                      icon="i-lucide-eye"
-                      variant="ghost"
-                      color="neutral"
-                      size="sm"
-                      @click.stop="navigateTo(`/documents/${doc.id}`)"
-                    />
-                  </UTooltip>
-                  <UTooltip text="Download">
-                    <UButton
-                      icon="i-lucide-download"
-                      variant="ghost"
-                      color="neutral"
-                      size="sm"
-                      @click.stop="downloadDocument(doc.id)"
-                    />
-                  </UTooltip>
-                  <UDropdownMenu
-                    :items="[
-                      [
-                        { label: 'Add to Case', icon: 'i-lucide-folder-plus' },
-                        { label: 'Add Tags', icon: 'i-lucide-tag' },
-                        { label: 'Share', icon: 'i-lucide-share' }
-                      ],
-                      [
-                        { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
-                      ]
-                    ]"
-                  >
-                    <UButton
-                      icon="i-lucide-more-vertical"
-                      variant="ghost"
-                      color="neutral"
-                      size="sm"
-                      @click.stop
-                    />
-                  </UDropdownMenu>
-                </div>
+                <ClientOnly>
+                  <div class="flex items-center gap-1">
+                    <UTooltip text="View Document">
+                      <UButton
+                        icon="i-lucide-eye"
+                        variant="ghost"
+                        color="neutral"
+                        size="sm"
+                        @click.stop="navigateTo(`/documents/${doc.id}`)"
+                      />
+                    </UTooltip>
+                    <UTooltip text="Download">
+                      <UButton
+                        icon="i-lucide-download"
+                        variant="ghost"
+                        color="neutral"
+                        size="sm"
+                        @click.stop="downloadDocument(doc.id)"
+                      />
+                    </UTooltip>
+                    <UDropdownMenu
+                      :items="[
+                        [
+                          { label: 'Add to Case', icon: 'i-lucide-folder-plus' },
+                          { label: 'Add Tags', icon: 'i-lucide-tag' },
+                          { label: 'Share', icon: 'i-lucide-share' }
+                        ],
+                        [
+                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                        ]
+                      ]"
+                    >
+                      <UButton
+                        icon="i-lucide-more-vertical"
+                        variant="ghost"
+                        color="neutral"
+                        size="sm"
+                        @click.stop
+                      />
+                    </UDropdownMenu>
+                  </div>
+                </ClientOnly>
               </div>
             </div>
           </div>
@@ -488,17 +520,22 @@ const documentTypeIcons: Record<string, string> = {
           v-for="doc in filteredDocuments"
           :key="doc.id"
           class="hover:shadow-lg transition-all cursor-pointer relative"
-          :class="selectedDocuments.has(doc.id) ? 'ring-2 ring-primary' : ''"
+          :class="selectedDocuments.has(String(doc.id)) ? 'ring-2 ring-primary' : ''"
           @click="navigateTo(`/documents/${doc.id}`)"
         >
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <UCheckbox
-                  :model-value="selectedDocuments.has(doc.id)"
-                  @update:model-value="toggleSelect(doc.id)"
-                  @click.stop
-                />
+                <div
+                  class="cursor-pointer"
+                  @click.stop="toggleSelect(doc.id)"
+                >
+                  <UIcon
+                    :name="selectedDocuments.has(String(doc.id)) ? 'i-lucide-check-square' : 'i-lucide-square'"
+                    class="size-5"
+                    :class="selectedDocuments.has(String(doc.id)) ? 'text-primary' : 'text-muted'"
+                  />
+                </div>
                 <div class="p-2 bg-primary/10 rounded-lg">
                   <UIcon
                     :name="documentTypeIcons[doc.document_type] || 'i-lucide-file'"
@@ -506,25 +543,27 @@ const documentTypeIcons: Record<string, string> = {
                   />
                 </div>
               </div>
-              <UDropdownMenu
-                :items="[
-                  [
-                    { label: 'View', icon: 'i-lucide-eye', click: () => navigateTo(`/documents/${doc.id}`) },
-                    { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.id) }
-                  ],
-                  [
-                    { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
-                  ]
-                ]"
-              >
-                <UButton
-                  icon="i-lucide-more-vertical"
-                  variant="ghost"
-                  color="neutral"
-                  size="sm"
-                  @click.stop
-                />
-              </UDropdownMenu>
+              <ClientOnly>
+                <UDropdownMenu
+                  :items="[
+                    [
+                      { label: 'View', icon: 'i-lucide-eye', click: () => navigateTo(`/documents/${doc.id}`) },
+                      { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.id) }
+                    ],
+                    [
+                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                    ]
+                  ]"
+                >
+                  <UButton
+                    icon="i-lucide-more-vertical"
+                    variant="ghost"
+                    color="neutral"
+                    size="sm"
+                    @click.stop
+                  />
+                </UDropdownMenu>
+              </ClientOnly>
             </div>
           </template>
 

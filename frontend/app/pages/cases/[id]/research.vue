@@ -250,7 +250,7 @@ const sectionIcons: Record<string, string> = {
           />
         </template>
         <template #trailing>
-          <UButtonGroup v-if="reportGenerated">
+          <UFieldGroup v-if="reportGenerated">
             <UDropdownMenu>
               <UButton icon="i-lucide-download" label="Export" color="primary" variant="outline" />
               <template #content>
@@ -267,7 +267,7 @@ const sectionIcons: Record<string, string> = {
               variant="ghost"
               @click="generateReport"
             />
-          </UButtonGroup>
+          </UFieldGroup>
         </template>
       </UDashboardNavbar>
     </template>
