@@ -380,15 +380,16 @@ watch(() => props.documentId, () => {
         <UButton
           icon="i-lucide-refresh-cw"
           color="neutral"
-      <div class="mb-2 text-xs text-muted">
-        <span>PDF: {{ Math.round(pageWidth) }}x{{ Math.round(pageHeight) }} | Boxes: {{ pageHighlights.length }}</span>
-      </div>
-
           variant="ghost"
           size="sm"
           :loading="isLoading"
           @click="fetchDocumentContent"
         />
+      </div>
+
+      <div class="mb-2 text-xs text-muted">
+        <span>PDF: {{ Math.round(pageWidth) }}x{{ Math.round(pageHeight) }} | Boxes: {{ pageHighlights.length }}</span>
+      </div>
       </div>
     </div>
 
