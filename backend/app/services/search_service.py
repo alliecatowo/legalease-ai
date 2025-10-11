@@ -401,6 +401,7 @@ class HybridSearchEngine:
                             "chunk_type": payload.get("chunk_type"),
                             "page_number": payload.get("page_number"),
                             "position": payload.get("position"),
+                            "bboxes": payload.get("bboxes", []),
                             "bm25_score": result.get("bm25_score", 0.0),
                             "score_debug": result.get("_score_debug"),
                         },

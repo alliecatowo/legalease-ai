@@ -73,6 +73,8 @@ const showDeleteModal = ref(false)
 const showAddToCaseModal = ref(false)
 const isDeleting = ref(false)
 const searchWithinQuery = ref('')
+const searchResults = ref<any[]>([])
+const isSearching = ref(false)
 
 // Initialize from route query
 if (route.query.q) {
@@ -82,6 +84,51 @@ if (route.query.q) {
 watch(() => route.query.q, (q) => {
   searchWithinQuery.value = q ? String(q) : ''
 })
+
+// Perform hybrid search when query changes
+async function performHybridSearch(query: string) {
+  if (!query || !document.value) {
+    searchResults.value = []
+    return
+  }
+
+  isSearching.value = true
+  try {
+    const response = await api.search.hybrid({
+      query,
+      filters: {
+        document_id: parseInt(documentId.value)
+      },
+      limit: 20
+    })
+
+    // Map results to include bboxes
+    searchResults.value = (response.results || []).map((result: any) => ({
+      chunk_id: result.id,
+      score: result.score,
+      text: result.text,
+      page_number: result.metadata?.page_number,
+      bboxes: result.metadata?.bboxes || []
+    }))
+
+    console.log(`[DocumentPage] Hybrid search returned ${searchResults.value.length} results`)
+    console.log(`[DocumentPage] First result:`, searchResults.value[0])
+    if (searchResults.value[0]?.bboxes) {
+      console.log(`[DocumentPage] First result bboxes count:`, searchResults.value[0].bboxes.length)
+      console.log(`[DocumentPage] First bbox:`, searchResults.value[0].bboxes[0])
+    }
+  } catch (error) {
+    console.error('Hybrid search failed:', error)
+    searchResults.value = []
+  } finally {
+    isSearching.value = false
+  }
+}
+
+// Watch for search query changes
+watch(searchWithinQuery, (query) => {
+  performHybridSearch(query)
+}, { immediate: true })
 
 // Document type configuration
 const typeConfig = computed(() => {
@@ -525,6 +572,7 @@ const tabItems = computed(() => [
                     icon="i-lucide-search"
                     placeholder="Search within this document..."
                     size="lg"
+                    :loading="isSearching"
                   >
                     <template #trailing>
                       <UButton
@@ -537,6 +585,9 @@ const tabItems = computed(() => [
                       />
                     </template>
                   </UInput>
+                  <div v-if="searchResults.length > 0" class="mt-2 text-sm text-muted">
+                    Found {{ searchResults.length }} hybrid matches (showing top 5)
+                  </div>
                 </div>
 
                 <!-- Document Viewer with PDF and bbox highlighting -->
@@ -544,6 +595,7 @@ const tabItems = computed(() => [
                   <DocumentViewer
                     :document-id="documentId"
                     :search-query="searchWithinQuery"
+                    :search-results="searchResults"
                     :initial-page="parseInt(route.query.page as string) || 1"
                     :chunk-id="parseInt(route.query.chunk as string) || undefined"
                   />
