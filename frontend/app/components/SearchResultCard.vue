@@ -29,8 +29,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const router = useRouter()
-
 type ColorType = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral'
 
 // Document type configuration
@@ -79,7 +77,7 @@ const handleClick = () => {
   if (props.result.metadata?.chunk_id) query.chunk = props.result.metadata.chunk_id
   if (props.query) query.q = props.query
 
-  router.push({
+  navigateTo({
     path: `/documents/${props.result.metadata?.document_id || props.result.id}`,
     query
   })

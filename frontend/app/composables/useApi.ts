@@ -22,9 +22,24 @@ export const useApi = () => {
       // Show toast on client-side only to avoid SSR issues
       if (import.meta.client) {
         const toast = useToast()
+        let description = 'An error occurred'
+
+        // Extract error message from different response formats
+        if (response._data?.detail) {
+          if (Array.isArray(response._data.detail)) {
+            // Validation errors: extract first error message
+            description = response._data.detail[0]?.msg || description
+          } else if (typeof response._data.detail === 'string') {
+            // Simple string error
+            description = response._data.detail
+          }
+        } else if (response.statusText) {
+          description = response.statusText
+        }
+
         toast.add({
           title: 'Error',
-          description: response._data?.detail || response.statusText || 'An error occurred',
+          description,
           color: 'error'
         })
       }
