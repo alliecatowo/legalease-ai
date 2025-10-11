@@ -308,6 +308,12 @@ class DocumentService:
         for page_num in sorted(pages_dict.keys()):
             page_data = pages_dict[page_num]
             page_data["text"] = "\n".join(page_data["text"])
+            # Debug: count item bboxes per page
+            try:
+                bbox_counts = sum(len(item.get("bboxes", []) or []) for item in page_data.get("items", []))
+                logger.info(f"Document {document_id} page {page_num}: {bbox_counts} item bboxes")
+            except Exception as _:
+                pass
             pages.append(page_data)
 
         result = {
