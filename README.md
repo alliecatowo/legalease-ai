@@ -1,5 +1,25 @@
 # LegalEase
 
+[![License](https://img.shields.io/github/license/alliecatowo/legalease-ai?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/stargazers)
+[![Issues](https://img.shields.io/github/issues/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/issues)
+[![PRs](https://img.shields.io/github/issues-pr/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/pulls)
+[![Last Commit](https://img.shields.io/github/last-commit/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/commits)
+[![Build](https://img.shields.io/github/actions/workflow/status/alliecatowo/legalease-ai/ci.yml?branch=main&style=flat-square)](https://github.com/alliecatowo/legalease-ai/actions)
+
+[![FastAPI](https://img.shields.io/badge/FastAPI-109989?logo=fastapi&logoColor=white&style=flat-square)](#)
+[![Nuxt](https://img.shields.io/badge/Nuxt-00DC82?logo=nuxt.js&logoColor=white&style=flat-square)](#)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white&style=flat-square)](#)
+[![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white&style=flat-square)](#)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white&style=flat-square)](#)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white&style=flat-square)](#)
+[![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white&style=flat-square)](#)
+[![Neo4j](https://img.shields.io/badge/Neo4j-008CC1?logo=neo4j&logoColor=white&style=flat-square)](#)
+[![Qdrant](https://img.shields.io/badge/Vector%20DB-Qdrant-FF4D4D?style=flat-square)](#)
+[![MinIO](https://img.shields.io/badge/MinIO-C72E49?style=flat-square)](#)
+[![Ollama](https://img.shields.io/badge/LLM-Ollama-black?style=flat-square)](#)
+
+
 **World-class AI-powered legal document search and analysis platform**
 
 LegalEase is a comprehensive, self-hosted platform for legal professionals to search, analyze, and manage documents with advanced AI capabilities. Built with privacy and security as top priorities, it runs entirely on your local infrastructure with no external API dependencies.
