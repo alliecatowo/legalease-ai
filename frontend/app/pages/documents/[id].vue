@@ -73,7 +73,6 @@ const showDeleteModal = ref(false)
 const showAddToCaseModal = ref(false)
 const isDeleting = ref(false)
 const searchWithinQuery = ref('')
-const searchWithinResults = ref<any[]>([])
 
 // Document type configuration
 const typeConfig = computed(() => {
@@ -92,11 +91,12 @@ const typeConfig = computed(() => {
 
 // Status badge configuration
 const statusConfig = computed(() => {
-  const status = document.value?.status || 'pending'
+  const status = (document.value?.status || 'pending').toLowerCase()
   const configs: Record<string, { color: string; label: string; icon: string }> = {
     pending: { color: 'warning', label: 'Pending', icon: 'i-lucide-clock' },
     processing: { color: 'info', label: 'Processing', icon: 'i-lucide-loader-circle' },
     indexed: { color: 'success', label: 'Indexed', icon: 'i-lucide-check-circle' },
+    completed: { color: 'success', label: 'Completed', icon: 'i-lucide-check-circle' },
     failed: { color: 'error', label: 'Failed', icon: 'i-lucide-alert-circle' }
   }
   return configs[status] || configs.pending
@@ -188,39 +188,6 @@ const entities = computed(() => {
 const tags = computed(() => {
   return document.value?.meta_data?.tags || []
 })
-
-// Search within document
-function searchWithinDocument() {
-  if (!searchWithinQuery.value.trim() || !content.value?.text) {
-    searchWithinResults.value = []
-    return
-  }
-
-  const text = content.value.text
-  const query = searchWithinQuery.value.toLowerCase()
-  const results: any[] = []
-
-  // Split into paragraphs
-  const paragraphs = text.split(/\n\n+/)
-
-  paragraphs.forEach((para, idx) => {
-    if (para.toLowerCase().includes(query)) {
-      results.push({
-        index: idx,
-        text: para.substring(0, 300) + (para.length > 300 ? '...' : ''),
-        highlighted: highlightText(para.substring(0, 300), query)
-      })
-    }
-  })
-
-  searchWithinResults.value = results.slice(0, 50) // Limit to 50 results
-}
-
-function highlightText(text: string, query: string): string {
-  if (!query) return text
-  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
-  return text.replace(regex, '<mark class="bg-primary/20 text-primary-600 dark:text-primary-400 font-medium px-0.5 rounded">$1</mark>')
-}
 
 // Actions
 async function handleDownload() {
@@ -549,37 +516,31 @@ const tabItems = computed(() => [
                     icon="i-lucide-search"
                     placeholder="Search within this document..."
                     size="lg"
-                    @keyup.enter="searchWithinDocument"
                   >
                     <template #trailing>
                       <UButton
                         v-if="searchWithinQuery"
-                        label="Search"
+                        icon="i-lucide-x"
+                        color="neutral"
+                        variant="ghost"
                         size="xs"
-                        @click="searchWithinDocument"
+                        @click="searchWithinQuery = ''"
                       />
                     </template>
                   </UInput>
                 </div>
 
-                <!-- Search Results -->
-                <div v-if="searchWithinResults.length > 0" class="space-y-2">
-                  <p class="text-sm text-muted">
-                    Found {{ searchWithinResults.length }} result{{ searchWithinResults.length > 1 ? 's' : '' }}
-                  </p>
-                  <div class="space-y-2 max-h-96 overflow-y-auto">
-                    <div
-                      v-for="(result, idx) in searchWithinResults"
-                      :key="idx"
-                      class="p-3 bg-muted/10 rounded-lg border border-default/50"
-                    >
-                      <p class="text-sm" v-html="result.highlighted" />
-                    </div>
-                  </div>
+                <!-- Document Viewer with PDF and bbox highlighting -->
+                <div v-if="isViewable && fileExtension.toLowerCase() === 'pdf'" class="min-h-[600px]">
+                  <DocumentViewer
+                    :document-id="documentId"
+                    :search-query="searchWithinQuery"
+                    :initial-page="parseInt(route.query.page as string) || 1"
+                  />
                 </div>
 
-                <!-- Document Content Viewer -->
-                <div v-if="!searchWithinResults.length">
+                <!-- Fallback for non-PDF documents -->
+                <div v-else>
                   <div v-if="loadingContent" class="space-y-3">
                     <USkeleton class="h-4 w-full" />
                     <USkeleton class="h-4 w-5/6" />

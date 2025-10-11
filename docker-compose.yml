@@ -185,6 +185,14 @@ services:
     networks:
       - legalease-network
     restart: unless-stopped
+    # GPU support for Docling document processing
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   # Celery Worker
   worker:
@@ -221,6 +229,14 @@ services:
     networks:
       - legalease-network
     restart: unless-stopped
+    # GPU support for Docling document processing
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   # Celery Beat Scheduler
   beat:
