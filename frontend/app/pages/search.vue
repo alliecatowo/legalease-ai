@@ -441,7 +441,7 @@ defineShortcuts({
                 ref="heroSearchInput"
                 v-model="searchQuery"
                 icon="i-lucide-search"
-                placeholder="Search for legal terms, clauses, concepts..."
+                placeholder="Search for legal terms, clauses, concepts, or natural language queries..."
                 size="xl"
                 :loading="isLoading"
                 autofocus
