@@ -215,15 +215,26 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
             for point in points:
                 payload = point.payload or {}
                 logger.info(f"Point payload keys: {list(payload.keys())}")
+                # Merge metadata from both styles: flattened (pipelines/indexer) and nested (services/indexing_service)
+                meta: Dict[str, Any] = {}
                 add_meta = payload.get("additional_metadata") or {}
-                logger.info(f"additional_metadata keys: {list(add_meta.keys())}")
+                if isinstance(add_meta, dict):
+                    meta.update(add_meta)
+                # Bring through bboxes and other useful fields
+                if "bboxes" in payload:
+                    meta["bboxes"] = payload.get("bboxes") or []
+                # Optional: include char/word counts
+                for k in ("char_count", "word_count"):
+                    if k in payload:
+                        meta[k] = payload[k]
+                logger.info(f"Saving chunk meta fields: {list(meta.keys())}, bboxes={len(meta.get('bboxes', []))}")
                 chunk = Chunk(
                     document_id=document.id,
                     text=payload.get("text", ""),
                     chunk_type=payload.get("chunk_type", "section"),
                     position=payload.get("position", 0),
                     page_number=payload.get("page_number"),
-                    meta_data=add_meta
+                    meta_data=meta or None
                 )
                 db.add(chunk)
 
