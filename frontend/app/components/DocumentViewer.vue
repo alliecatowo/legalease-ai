@@ -149,21 +149,40 @@ watch(() => props.documentId, () => { currentPage.value = props.initialPage || 1
   return results
 })
 
+  // Log sizing and first box for debug
+  if (documentContent.value?.pages?.length) {
+    const p = documentContent.value.pages[0]
+    const first = p.items.find(i => (i.bboxes||[]).length)?.bboxes?.[0] as any
+    if (first?.bbox) {
+      const nb = normalizeBBox(first.bbox)
+      console.debug('First bbox (normalized):', nb)
+    }
+  }
+
+
 // Normalize bbox coordinates (handle both {l,t,r,b} and {x0,y0,x1,y1} formats)
 const normalizeBBox = (bbox: BBox) => {
   if (bbox.l !== undefined) {
+    const l = bbox.l
+    const t = bbox.t ?? 0
+    const r = bbox.r ?? l
+    const b = bbox.b ?? t
     return {
-      x: bbox.l,
-      y: bbox.t || 0,
-      width: (bbox.r || 0) - bbox.l,
-      height: (bbox.b || 0) - (bbox.t || 0)
+      x: l,
+      y: Math.min(t, b),
+      width: Math.abs(r - l),
+      height: Math.abs(b - t)
     }
   } else if (bbox.x0 !== undefined) {
+    const x0 = bbox.x0
+    const y0 = bbox.y0 ?? 0
+    const x1 = bbox.x1 ?? x0
+    const y1 = bbox.y1 ?? y0
     return {
-      x: bbox.x0,
-      y: bbox.y0 || 0,
-      width: (bbox.x1 || 0) - bbox.x0,
-      height: (bbox.y1 || 0) - (bbox.y0 || 0)
+      x: x0,
+      y: Math.min(y0, y1),
+      width: Math.abs(x1 - x0),
+      height: Math.abs(y1 - y0)
     }
   }
   return { x: 0, y: 0, width: 0, height: 0 }
@@ -361,6 +380,10 @@ watch(() => props.documentId, () => {
         <UButton
           icon="i-lucide-refresh-cw"
           color="neutral"
+      <div class="mb-2 text-xs text-muted">
+        <span>PDF: {{ Math.round(pageWidth) }}x{{ Math.round(pageHeight) }} | Boxes: {{ pageHighlights.length }}</span>
+      </div>
+
           variant="ghost"
           size="sm"
           :loading="isLoading"
@@ -402,6 +425,30 @@ watch(() => props.documentId, () => {
 
       <!-- PDF with Overlay -->
       <div v-else class="pdf-wrapper relative inline-block mx-auto shadow-lg">
+          <g>
+            <rect
+              v-for="(box, idx) in pageHighlights"
+              :key="`bg-${idx}`"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+              fill="rgba(255, 235, 59, 0.20)"
+              stroke="none"
+            />
+            <rect
+              v-for="(box, idx) in pageHighlights"
+              :key="`fg-${idx}`"
+              :x="box.x"
+              :y="box.y"
+              :width="box.width"
+              :height="box.height"
+              fill="none"
+              stroke="rgba(255, 193, 7, 0.9)"
+              stroke-width="2"
+              rx="2"
+            />
+          </g>
         <VuePdfEmbed
           ref="pdfEmbed"
           :source="pdfUrl"
