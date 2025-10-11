@@ -30,6 +30,7 @@ interface Props {
   searchQuery?: string
   highlightBboxes?: BBox[]
   initialPage?: number
+  chunkId?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -137,6 +138,15 @@ const currentPageHighlights = computed(() => {
 
     const boxes = item.bboxes || []
     for (const entry of boxes) {
+
+  // If chunkId provided, set page to the item's page when found
+  if (props.chunkId && currentPageData.value) {
+    const pageIdx = documentContent.value?.pages.findIndex(p => p.items.some(i => i.chunk_id === props.chunkId))
+    if (pageIdx !== undefined && pageIdx >= 0) {
+      currentPage.value = documentContent.value!.pages[pageIdx].page_number
+    }
+  }
+
       const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
       const norm = normalizeBBox(box)
       results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
@@ -188,6 +198,20 @@ const zoomOut = () => {
 
 const resetZoom = () => {
   zoom.value = 1.0
+
+// Watch for query or content changes to rehighlight and jump to first match
+watch([() => props.searchQuery, documentContent], () => {
+  // Jump to page that contains first item matching query
+  const q = (props.searchQuery || '').toLowerCase()
+  if (!q || !documentContent.value) return
+  for (const page of documentContent.value.pages) {
+    if (page.items.some(i => i.text?.toLowerCase().includes(q))) {
+      currentPage.value = page.page_number
+      break
+    }
+  }
+})
+
 }
 
 // Initialize

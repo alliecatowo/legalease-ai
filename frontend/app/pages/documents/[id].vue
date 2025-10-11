@@ -545,6 +545,7 @@ const tabItems = computed(() => [
                     :document-id="documentId"
                     :search-query="searchWithinQuery"
                     :initial-page="parseInt(route.query.page as string) || 1"
+                    :chunk-id="parseInt(route.query.chunk as string) || undefined"
                   />
                 </div>
 
