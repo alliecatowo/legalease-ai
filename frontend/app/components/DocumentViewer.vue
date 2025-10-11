@@ -16,6 +16,7 @@ interface DocumentItem {
   text: string
   type: string
   bbox?: BBox
+  bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
   chunk_id?: number
 }
 
@@ -64,27 +65,6 @@ const currentPageData = computed(() => {
   return documentContent.value.pages.find(p => p.page_number === currentPage.value)
 })
 
-const highlightedItems = computed(() => {
-  if (!currentPageData.value) return []
-
-  const items = currentPageData.value.items
-
-  // If searchQuery is provided, filter items that match
-  if (props.searchQuery) {
-    const query = props.searchQuery.toLowerCase()
-    return items.filter(item =>
-      item.text && item.text.toLowerCase().includes(query) && item.bbox
-    )
-  }
-
-  // If highlightBboxes is provided, return items with those bboxes
-  if (props.highlightBboxes && props.highlightBboxes.length > 0) {
-    return items.filter(item => item.bbox)
-  }
-
-  return []
-})
-
 // Normalize bbox coordinates (handle both {l,t,r,b} and {x0,y0,x1,y1} formats)
 const normalizeBBox = (bbox: BBox) => {
   if (bbox.l !== undefined) {
@@ -124,6 +104,28 @@ const fetchDocumentContent = async () => {
     pdfUrl.value = `${config.public.apiBase}/api/v1/documents/${props.documentId}/download`
 
     totalPages.value = content.total_pages || content.pages?.length || 0
+
+// Build highlight rectangles for current page from item.bboxes
+const currentPageHighlights = computed(() => {
+  if (!currentPageData.value) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
+  const results: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+  const query = (props.searchQuery || '').toLowerCase()
+
+  for (const item of currentPageData.value.items) {
+    // Skip items that don't match search when a query is provided
+    if (query && !(item.text && item.text.toLowerCase().includes(query))) continue
+
+    const boxes = item.bboxes || (item.bbox ? [item.bbox] : [])
+    for (const entry of boxes) {
+      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+      const norm = normalizeBBox(box)
+      results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
+    }
+  }
+
+  return results
+})
+
   } catch (e: any) {
     console.error('Error fetching document content:', e)
     error.value = e.message || 'Failed to load document'
@@ -246,7 +248,7 @@ watch(() => props.documentId, () => {
             <template #leading>
               <UIcon name="i-lucide-search" class="size-3" />
             </template>
-            {{ highlightedItems.length }} highlights
+            {{ currentPageHighlights.length }} highlights
           </UBadge>
         </UTooltip>
         <UButton
@@ -305,24 +307,24 @@ watch(() => props.documentId, () => {
 
         <!-- SVG Overlay for Bounding Boxes -->
         <svg
-          v-if="highlightedItems.length > 0"
+          v-if="currentPageHighlights.length > 0"
           class="bbox-overlay absolute top-0 left-0 w-full h-full pointer-events-none"
           :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
         >
           <rect
-            v-for="(item, idx) in highlightedItems"
+            v-for="(box, idx) in currentPageHighlights"
             :key="idx"
-            :x="normalizeBBox(item.bbox!).x"
-            :y="normalizeBBox(item.bbox!).y"
-            :width="normalizeBBox(item.bbox!).width"
-            :height="normalizeBBox(item.bbox!).height"
+            :x="box.x"
+            :y="box.y"
+            :width="box.width"
+            :height="box.height"
             class="highlight-box"
             fill="rgba(255, 235, 59, 0.3)"
             stroke="rgba(255, 235, 59, 0.8)"
             stroke-width="2"
             rx="2"
           >
-            <title>{{ item.text.substring(0, 100) }}</title>
+            <title>{{ (box.text || '').substring(0, 100) }}</title>
           </rect>
         </svg>
       </div>
@@ -339,8 +341,8 @@ watch(() => props.documentId, () => {
             {{ currentPageData.items.length }} elements
           </span>
         </div>
-        <div v-if="highlightedItems.length > 0" class="text-warning">
-          {{ highlightedItems.length }} highlighted
+        <div v-if="currentPageHighlights.length > 0" class="text-warning">
+          {{ currentPageHighlights.length }} highlighted
         </div>
       </div>
     </div>
