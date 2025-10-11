@@ -13,38 +13,48 @@ NEO4J_URI = "bolt://localhost:7687"
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 [tasks]
-# Development
+# === Development ===
 dev-frontend = "cd frontend && pnpm dev"
 dev-backend = "cd backend && uv run uvicorn app.main:app --reload"
 dev-worker = "cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info"
 
-# Docker
+# === Docker Services ===
 up = "docker compose up -d"
 down = "docker compose down"
-logs = "docker compose logs -f"
-build = "docker compose build"
+restart = "docker compose restart"
+rebuild = "docker compose up -d --build"
+clean = "docker compose down -v"
+ps = "docker compose ps"
 
-# Database - Migration
+# === Database ===
+# Migrations
 migrate = "docker compose exec backend bash -c 'cd /app && uv run alembic upgrade head'"
 "migrate:down" = "docker compose exec backend bash -c 'cd /app && uv run alembic downgrade -1'"
+"migrate:create" = "docker compose exec backend bash -c 'cd /app && uv run alembic revision --autogenerate -m \"${DESCRIPTION}\"'"
 "migrate:current" = "docker compose exec backend bash -c 'cd /app && uv run alembic current'"
 "migrate:history" = "docker compose exec backend bash -c 'cd /app && uv run alembic history'"
 
-# Database - Seeding
+# Data seeding
 seed = "docker compose exec backend bash -c 'cd /app && uv run python scripts/seed_with_real_pdfs.py'"
 "seed:clear" = "docker compose exec backend bash -c 'cd /app && uv run python scripts/seed_with_real_pdfs.py --clear-db'"
 
-# Database - Old seed script (simple data)
-"seed:old" = "cd backend && uv run python scripts/seed_data.py"
-
-# Database - Admin
-shell = "docker compose exec backend bash"
+# Database access
 psql = "docker compose exec postgres psql -U legalease -d legalease"
 
-# Logs
+# === Logs ===
+logs = "docker compose logs -f"
 "logs:backend" = "docker compose logs -f backend"
 "logs:worker" = "docker compose logs -f worker"
-"logs:all" = "docker compose logs -f"
+"logs:frontend" = "docker compose logs -f frontend"
 
-# Models
-download-models = "./scripts/download_models.sh"
+# === Shell Access ===
+shell = "docker compose exec backend bash"
+"shell:frontend" = "docker compose exec frontend sh"
+
+# === Setup ===
+setup = "docker compose up -d && docker compose exec ollama ollama pull llama3.1 && docker compose exec ollama ollama pull nomic-embed-text && docker compose exec backend alembic upgrade head"
+"setup:models" = "./scripts/download_models.sh"
+
+# === Testing ===
+test = "docker compose exec backend pytest -v"
+"test:cov" = "docker compose exec backend pytest -v --cov=app"
