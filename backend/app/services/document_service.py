@@ -295,9 +295,9 @@ class DocumentService:
                 "chunk_id": chunk.id,
             }
 
-            # Add bbox if available in metadata
-            if "bbox" in chunk_meta:
-                item_data["bbox"] = chunk_meta["bbox"]
+            # Add bboxes if available in metadata
+            if "bboxes" in chunk_meta and chunk_meta["bboxes"]:
+                item_data["bboxes"] = chunk_meta["bboxes"]
 
             pages_dict[page_num]["items"].append(item_data)
             pages_dict[page_num]["text"].append(chunk.text)

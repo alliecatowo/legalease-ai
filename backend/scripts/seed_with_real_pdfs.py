@@ -467,7 +467,7 @@ def main():
                             position=payload.get("position", 0),
                             page_number=payload.get("page_number"),
                             meta_data={
-                                "bbox": payload.get("bbox"),
+                                "bboxes": payload.get("bboxes", []),
                                 **payload.get("metadata", {}),
                             },
                         )
