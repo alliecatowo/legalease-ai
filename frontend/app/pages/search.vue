@@ -427,7 +427,7 @@ defineShortcuts({
             </p>
 
             <!-- Hero Search Bar - Centered -->
-            <div class="w-full max-w-3xl mx-auto">
+            <div class="w-full max-w-3xl mx-auto space-y-4">
               <UInput
                 ref="heroSearchInput"
                 v-model="searchQuery"
@@ -441,6 +441,16 @@ defineShortcuts({
                   <UKbd value="/" />
                 </template>
               </UInput>
+
+              <!-- Prominent Filter Bar in Hero View -->
+              <div class="flex justify-center">
+                <SearchFilters
+                  v-model:selected-cases="selectedCases"
+                  v-model:selected-document-types="selectedDocumentTypes"
+                  :available-cases="availableCases"
+                  @clear="selectedCases = []; selectedDocumentTypes = []"
+                />
+              </div>
             </div>
 
             <!-- Quick Examples -->
@@ -487,7 +497,7 @@ defineShortcuts({
         <div v-show="searchResults.length > 0 || isSearching" class="p-6">
           <UContainer>
             <!-- Compact Search Bar (kept in DOM to prevent focus loss) -->
-            <div class="mb-6">
+            <div class="mb-6 space-y-3">
               <UInput
                 ref="compactSearchInput"
                 v-model="searchQuery"
@@ -507,29 +517,25 @@ defineShortcuts({
                   />
                 </template>
               </UInput>
+
+              <!-- Filter Bar - Always Visible in Results View -->
+              <SearchFilters
+                v-model:selected-cases="selectedCases"
+                v-model:selected-document-types="selectedDocumentTypes"
+                :available-cases="availableCases"
+                :is-compact="true"
+                @clear="selectedCases = []; selectedDocumentTypes = []"
+              />
             </div>
 
             <!-- Results Header -->
-            <div v-if="searchResults.length > 0" class="mb-6 flex items-center justify-between flex-wrap gap-3">
-              <div class="flex items-center gap-3 flex-wrap">
-                <p class="text-sm text-muted">
-                  About <span class="font-semibold text-highlighted">{{ searchResults.length }}</span> results
-                </p>
-                <UBadge :label="searchMode" color="primary" variant="soft" size="sm" />
-                <UBadge v-if="searchSettings.fusion_method !== 'rrf'" :label="`Fusion: ${searchSettings.fusion_method}`" color="neutral" variant="outline" size="sm" />
-                <UBadge v-if="selectedCases.length > 0" :label="`${selectedCases.length} case${selectedCases.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
-                <UBadge v-if="selectedDocumentTypes.length > 0" :label="`${selectedDocumentTypes.length} type filter${selectedDocumentTypes.length > 1 ? 's' : ''}`" color="info" variant="outline" size="sm" />
-                <UBadge v-if="selectedChunkTypes.length > 0" :label="`${selectedChunkTypes.length} chunk filter${selectedChunkTypes.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
-              </div>
-              <UButton
-                v-if="selectedCases.length > 0 || selectedDocumentTypes.length > 0 || selectedChunkTypes.length > 0"
-                label="Clear Filters"
-                icon="i-lucide-x"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                @click="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
-              />
+            <div v-if="searchResults.length > 0" class="mb-6 flex items-center gap-3 flex-wrap">
+              <p class="text-sm text-muted">
+                About <span class="font-semibold text-highlighted">{{ searchResults.length }}</span> results
+              </p>
+              <UBadge :label="searchMode" color="primary" variant="soft" size="sm" />
+              <UBadge v-if="searchSettings.fusion_method !== 'rrf'" :label="`Fusion: ${searchSettings.fusion_method}`" color="neutral" variant="outline" size="sm" />
+              <UBadge v-if="selectedChunkTypes.length > 0" :label="`${selectedChunkTypes.length} granularity filter${selectedChunkTypes.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
             </div>
 
             <!-- Search Results List -->
