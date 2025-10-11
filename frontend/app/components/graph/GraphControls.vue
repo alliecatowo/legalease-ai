@@ -38,10 +38,10 @@ const layoutOptions = [
       </template>
     </USelectMenu>
 
-    <UDivider orientation="vertical" class="h-6" />
+    <USeparator orientation="vertical" class="h-6" />
 
     <!-- Zoom Controls -->
-    <UButtonGroup>
+    <UFieldGroup>
       <UTooltip text="Zoom In">
         <UButton
           icon="i-lucide-zoom-in"
@@ -69,9 +69,9 @@ const layoutOptions = [
           @click="emit('reset-zoom')"
         />
       </UTooltip>
-    </UButtonGroup>
+    </UFieldGroup>
 
-    <UDivider orientation="vertical" class="h-6" />
+    <USeparator orientation="vertical" class="h-6" />
 
     <!-- Fit to Screen -->
     <UTooltip text="Fit to Screen">

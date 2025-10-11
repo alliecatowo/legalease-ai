@@ -224,11 +224,13 @@ function highlightText(text: string, query: string): string {
 
 // Actions
 async function handleDownload() {
+  if (!import.meta.client) return
+
   try {
     const response = await api.documents.download(documentId.value)
     // Create download link
     const url = window.URL.createObjectURL(new Blob([response]))
-    const link = document.createElement('a')
+    const link = window.document.createElement('a')
     link.href = url
     link.download = document.value?.filename || 'document'
     link.click()
@@ -334,7 +336,7 @@ const tabItems = computed(() => [
               variant="ghost"
               @click="router.back()"
             />
-            <UDivider orientation="vertical" class="h-6" />
+            <USeparator orientation="vertical" class="h-6" />
             <UBreadcrumb :items="breadcrumbItems" />
           </div>
         </template>

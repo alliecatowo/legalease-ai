@@ -11,13 +11,15 @@ export const useApi = () => {
       }
     },
     onResponseError({ response }) {
-      // Handle errors globally
-      const toast = useToast()
-      toast.add({
-        title: 'Error',
-        description: response._data?.detail || 'An error occurred',
-        color: 'error'
-      })
+      // Show toast on client-side only to avoid SSR issues
+      if (import.meta.client) {
+        const toast = useToast()
+        toast.add({
+          title: 'Error',
+          description: response._data?.detail || response.statusText || 'An error occurred',
+          color: 'error'
+        })
+      }
     }
   })
 
