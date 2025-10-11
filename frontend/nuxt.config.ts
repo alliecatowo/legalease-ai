@@ -25,7 +25,8 @@ export default defineNuxtConfig({
       }
     },
     '/documents/**': { ssr: false },
-    '/documents': { ssr: false }
+    '/documents': { ssr: false },
+    '/search': { ssr: false }
   },
 
   compatibilityDate: '2024-07-11',

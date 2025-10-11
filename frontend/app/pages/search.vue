@@ -28,10 +28,10 @@ const { data: casesData } = await useAsyncData('search-cases', () => api.cases.l
 })
 const availableCases = computed(() =>
   (casesData.value?.cases || []).map((c: any) => ({
+    id: Number(c.id),
+    name: c.name,
     label: c.name,
-    value: c.id,
-    case_number: c.case_number,
-    ...c
+    case_number: c.case_number
   }))
 )
 
@@ -83,6 +83,9 @@ const performSearch = async () => {
   isLoading.value = true
   isSearching.value = true
   try {
+    // Filter out null/undefined values and convert to integers
+    const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
+
     // Build search request with filters
     const request = {
       query: searchQuery.value,
@@ -91,9 +94,15 @@ const performSearch = async () => {
       fusion_method: searchSettings.value.fusion_method,
       top_k: searchSettings.value.top_k,
       chunk_types: selectedChunkTypes.value.length > 0 ? selectedChunkTypes.value : undefined,
-      case_ids: selectedCases.value.length > 0 ? selectedCases.value : undefined,
+      case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
       document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
     }
+
+    // DEBUG: Log search request details
+    console.log('🔍 Search Request Debug:')
+    console.log('  selectedCases.value:', selectedCases.value)
+    console.log('  selectedChunkTypes.value:', selectedChunkTypes.value)
+    console.log('  Full request object:', JSON.stringify(request, null, 2))
 
     // Use hybrid endpoint by default
     const response = await api.search.hybrid(request)
