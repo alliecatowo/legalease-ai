@@ -71,24 +71,35 @@ const currentPageData = computed(() => {
 const currentPageHighlights = computed(() => {
   if (!currentPageData.value) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
   const results: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
-  const query = (props.searchQuery || '').toLowerCase()
+  const q = (props.searchQuery || '').toLowerCase()
 
-  // Prefer item-level highlights that match query; fallback to page-level bboxes if query present but no item match
-  let hadItemMatches = false
-  for (const item of currentPageData.value.items) {
-    const matches = !query || (item.text && item.text.toLowerCase().includes(query))
-    if (!matches) continue
-    hadItemMatches = true
-    for (const entry of item.bboxes || []) {
-      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
-      const norm = normalizeBBox(box)
-      results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
+  const pushEntry = (entry: any, fallbackText?: string) => {
+    const box = entry.bbox ? (entry.bbox as BBox) : (entry as BBox)
+    const norm = normalizeBBox(box)
+    results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: entry.text || fallbackText })
+  }
+
+  // Prefer bbox text matching when available
+  if (q) {
+    for (const item of currentPageData.value.items) {
+      for (const entry of item.bboxes || []) {
+        const t = (entry as any).text || item.text || ''
+        if (t.toLowerCase().includes(q)) pushEntry(entry, item.text)
+      }
     }
   }
-  if (query && !hadItemMatches) {
-    results.push(...collectBoxesForPage(currentPageData.value))
-  }
 
+  // Fallbacks
+  if (results.length === 0) {
+    if (props.chunkId) {
+      const item = currentPageData.value.items.find(i => i.chunk_id === props.chunkId)
+      if (item) (item.bboxes || []).forEach(e => pushEntry(e, item.text))
+    }
+    if (results.length === 0 && !q) {
+      // No query: show all bboxes on page
+      collectBoxesForPage(currentPageData.value).forEach(e => results.push(e))
+    }
+  }
 
 // Collect boxes from page-level and item-level
 const collectBoxesForPage = (page: PageData) => {
@@ -107,6 +118,11 @@ const collectBoxesForPage = (page: PageData) => {
       out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
     }
   }
+
+// Ensure we reset currentPage to initialPage on load or when props change
+watch(() => props.initialPage, (p) => { currentPage.value = p || 1 })
+watch(() => props.documentId, () => { currentPage.value = props.initialPage || 1 })
+
   return out
 }
 
