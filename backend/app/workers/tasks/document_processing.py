@@ -147,6 +147,7 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
         processor = DocumentProcessor(
             use_ocr=True,  # Enable OCR for scanned documents
             use_bm25=True,  # Enable BM25 sparse vectors
+            embedding_model="BAAI/bge-small-en-v1.5",  # 384 dims (matches Qdrant collection)
         )
 
         result = processor.process(
@@ -163,21 +164,81 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
 
         logger.info(f"Document processing successful: {result.message}")
 
-        # Step 6: Create chunk records in database
+        # Step 6: Generate page images (for PDFs only)
+        pages_count = result.data.get("pages_count", 0)
+        if document.mime_type == "application/pdf" and pages_count > 0:
+            logger.info(f"Generating page images for {pages_count} pages")
+            try:
+                from app.services.page_image_service import PageImageService
+
+                image_paths = PageImageService.generate_page_images(
+                    pdf_content=file_content,
+                    document_id=document.id,
+                    case_id=document.case_id,
+                )
+                logger.info(f"Generated {len(image_paths)} page images")
+
+            except Exception as e:
+                logger.warning(f"Failed to generate page images: {e}")
+                # Continue processing even if image generation fails
+
+        # Step 7: Create chunk records in database
         logger.info("Creating chunk records in database")
         chunks_data = result.data
         chunks_count = chunks_data.get("chunks_count", 0)
 
-        # For now, we store a summary record
-        # Individual chunks are stored in Qdrant, not in PostgreSQL
-        # You can optionally store chunk metadata here if needed
+        # Fetch chunks from Qdrant and save to PostgreSQL for document viewer
+        from app.core.qdrant import get_qdrant_client
+        from app.core.config import settings
 
-        # Step 7: Update document status to COMPLETED
+        try:
+            qdrant_client = get_qdrant_client()
+            collection_name = settings.QDRANT_COLLECTION
+
+            # Scroll through all points for this document
+            scroll_result = qdrant_client.scroll(
+                collection_name=collection_name,
+                scroll_filter={
+                    "must": [
+                        {"key": "document_id", "match": {"value": document.id}}
+                    ]
+                },
+                limit=1000,
+                with_payload=True,
+                with_vectors=False,
+            )
+
+            points = scroll_result[0]
+
+            for point in points:
+                payload = point.payload
+                chunk = Chunk(
+                    document_id=document.id,
+                    text=payload.get("text", ""),
+                    chunk_type=payload.get("chunk_type", "section"),
+                    position=payload.get("position", 0),
+                    page_number=payload.get("page_number"),
+                    meta_data={
+                        "bbox": payload.get("bbox"),
+                        **payload.get("metadata", {}),
+                    },
+                )
+                db.add(chunk)
+
+            db.flush()
+            logger.info(f"Saved {len(points)} chunks to database")
+
+        except Exception as e:
+            logger.warning(f"Failed to save chunks to database: {e}")
+            # Continue processing even if chunk saving fails
+
+        # Step 8: Update document status to COMPLETED (successful completion)
         document.status = DocumentStatus.COMPLETED
         document.meta_data = {
             "chunks_count": chunks_count,
             "text_length": chunks_data.get("text_length", 0),
-            "pages_count": chunks_data.get("pages_count", 0),
+            "pages_count": pages_count,
+            "page_count": pages_count,  # Also use 'page_count' for compatibility
             "processing_stage": result.stage,
             "processed_at": str(db.query(Document).filter(Document.id == document_id).first().uploaded_at),
         }

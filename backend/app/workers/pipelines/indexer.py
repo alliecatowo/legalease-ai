@@ -194,6 +194,7 @@ class QdrantIndexer:
             "case_id": case_id,
             "char_count": chunk.get("char_count", len(chunk.get("text", ""))),
             "word_count": chunk.get("word_count", len(chunk.get("text", "").split())),
+            "bboxes": chunk.get("bboxes", []),  # Store bounding boxes
         }
 
         # Add any additional metadata
