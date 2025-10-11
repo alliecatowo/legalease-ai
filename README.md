@@ -1,386 +1,197 @@
-# LegalEase
+# LegalEase AI
 
-[![License](https://img.shields.io/github/license/alliecatowo/legalease-ai?style=flat-square)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/stargazers)
-[![Issues](https://img.shields.io/github/issues/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/issues)
-[![PRs](https://img.shields.io/github/issues-pr/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/pulls)
-[![Last Commit](https://img.shields.io/github/last-commit/alliecatowo/legalease-ai?style=flat-square)](https://github.com/alliecatowo/legalease-ai/commits)
-[![Build](https://img.shields.io/github/actions/workflow/status/alliecatowo/legalease-ai/ci.yml?branch=main&style=flat-square)](https://github.com/alliecatowo/legalease-ai/actions)
+<div align="center">
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-109989?logo=fastapi&logoColor=white&style=flat-square)](#)
-[![Nuxt](https://img.shields.io/badge/Nuxt-00DC82?logo=nuxt.js&logoColor=white&style=flat-square)](#)
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white&style=flat-square)](#)
-[![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white&style=flat-square)](#)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white&style=flat-square)](#)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white&style=flat-square)](#)
-[![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white&style=flat-square)](#)
-[![Neo4j](https://img.shields.io/badge/Neo4j-008CC1?logo=neo4j&logoColor=white&style=flat-square)](#)
-[![Qdrant](https://img.shields.io/badge/Vector%20DB-Qdrant-FF4D4D?style=flat-square)](#)
-[![MinIO](https://img.shields.io/badge/MinIO-C72E49?style=flat-square)](#)
-[![Ollama](https://img.shields.io/badge/LLM-Ollama-black?style=flat-square)](#)
+[![License](https://img.shields.io/github/license/AlliecatOwO/legalease-ai?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/AlliecatOwO/legalease-ai?style=flat-square)](https://github.com/AlliecatOwO/legalease-ai/stargazers)
+[![Issues](https://img.shields.io/github/issues/AlliecatOwO/legalease-ai?style=flat-square)](https://github.com/AlliecatOwO/legalease-ai/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/AlliecatOwO/legalease-ai?style=flat-square)](https://github.com/AlliecatOwO/legalease-ai/commits)
 
+[![FastAPI](https://img.shields.io/badge/FastAPI-109989?logo=fastapi&logoColor=white&style=flat-square)](#tech-stack)
+[![Nuxt](https://img.shields.io/badge/Nuxt_4-00DC82?logo=nuxt.js&logoColor=white&style=flat-square)](#tech-stack)
+[![Python](https://img.shields.io/badge/Python_3.11-3776AB?logo=python&logoColor=white&style=flat-square)](#tech-stack)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white&style=flat-square)](#tech-stack)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white&style=flat-square)](#tech-stack)
+[![Neo4j](https://img.shields.io/badge/Neo4j-008CC1?logo=neo4j&logoColor=white&style=flat-square)](#tech-stack)
+[![Qdrant](https://img.shields.io/badge/Qdrant-FF4D4D?style=flat-square)](#tech-stack)
+[![Ollama](https://img.shields.io/badge/Ollama-000000?style=flat-square)](#tech-stack)
 
 **World-class AI-powered legal document search and analysis platform**
 
-LegalEase is a comprehensive, self-hosted platform for legal professionals to search, analyze, and manage documents with advanced AI capabilities. Built with privacy and security as top priorities, it runs entirely on your local infrastructure with no external API dependencies.
+Self-hosted • Privacy-first • No external APIs • Fully local AI
 
-## ✨ Key Features
+[Features](#-features) • [Quick Start](#-quick-start) • [Demo](#-demo) • [Tech Stack](#-tech-stack)
 
-### 🔍 Hybrid Search Engine
-- **BM25 + Semantic Search**: Combines traditional keyword search with AI-powered semantic understanding
-- **Document Highlighting**: Click search results to jump directly to relevant sections in PDFs
-- **Real-time Search**: Instant results as you type with <100ms latency
-- **Advanced Filters**: Filter by case, document type, date range, entities, and tags
+</div>
 
-### 📁 Case-Based Organization
-- **Load/Unload Cases**: Control which cases are actively searchable while preserving all files
-- **Bulk Upload**: Drag-and-drop multiple files with progress tracking
-- **Case Management**: Create, archive, and delete cases with full metadata tracking
-- **Status Tracking**: Monitor processing status and storage usage per case
+---
 
-### 🎙️ AI Transcription
-- **Speaker Diarization**: Automatically identify and label different speakers (Speaker 1, 2, 3...)
-- **Word-Level Timestamps**: Precise timing for every word with millisecond accuracy
-- **Audio Sync**: Click transcript segments to jump to exact audio position
-- **Export Options**: DOCX (formatted), SRT/VTT subtitles, JSON
-- **70x Real-Time**: Process 1 hour of audio in ~50 seconds
+## 📺 Demo
 
-### 🤖 AI-Powered Analysis
-- **Auto-Summarization**: LLM-generated summaries for documents and transcripts
-- **Entity Extraction**: Identify parties, dates, amounts, citations, courts using GLiNER + LexNLP
-- **Smart Tagging**: Automatic categorization and tagging of document types
-- **Knowledge Graphs**: Visualize entity relationships and citation networks using Neo4j
+![LegalEase Demo](./frontend/app/assets/demo.gif)
 
-### 🎨 Beautiful UI
-- **Nuxt 4 + Nuxt UI 4**: Modern Vue.js interface with instant search
-- **PDF Viewer**: Native PDF rendering with search term highlighting
-- **Responsive Design**: Works seamlessly on desktop and mobile
-- **Dark/Light Modes**: Automatic theme switching
+---
 
-### 🔒 Privacy & Security
-- **100% Local**: All processing happens on your hardware
-- **No External APIs**: Uses local Ollama models (Llama 3.1 70B)
-- **Data Isolation**: PostgreSQL + MinIO + Qdrant for complete data control
-- **Audit Logging**: Track all operations and access
-- **Encrypted Storage**: Optional disk encryption support
+## ✨ Features
 
-## 🏗️ Architecture
+### 🔍 **Hybrid Search Engine**
+Lightning-fast hybrid search combining BM25 keyword matching with semantic vector search. Click results to jump directly to highlighted sections in PDFs. Sub-100ms latency for instant results.
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Backend       │    │   Services      │
-│   (Nuxt 4)      │◄──►│   (FastAPI)     │◄──►│   (Docker)      │
-│                 │    │                 │    │                 │
-│ • Search UI     │    │ • REST API      │    │ • PostgreSQL    │
-│ • PDF Viewer    │    │ • Case Mgmt     │    │ • Qdrant        │
-│ • Case Mgmt     │    │ • File Upload   │    │ • MinIO         │
-│ • Transcripts   │    │ • Search API    │    │ • Redis         │
-│ • Knowledge Viz │    │ • AI Services   │    │ • Neo4j         │
-└─────────────────┘    └─────────────────┘    │ • Ollama        │
-                                              └─────────────────┘
-```
+### 📁 **Smart Case Management**
+Organize documents into cases with load/unload capabilities. Bulk upload with drag-and-drop, automatic processing pipelines, and real-time status tracking.
 
-## 🚀 Performance Targets
+### 🎙️ **AI Transcription**
+70x real-time transcription with speaker diarization and word-level timestamps. Export to DOCX, SRT/VTT, or JSON. Process 1 hour of audio in ~50 seconds.
 
-- **Search Latency**: <100ms for 95th percentile
-- **Document Processing**: <1 minute per 100-page PDF
-- **Transcription**: ~70x real-time (1 hour audio → 50 seconds)
-- **UI Responsiveness**: <16ms for interactions (60fps)
-- **Memory Usage**: <8GB RAM for backend services
-- **Disk Usage**: ~2x original file size (embeddings + indexes)
+### 🤖 **AI-Powered Analysis**
+- **Auto-Summarization**: LLM-generated document and transcript summaries
+- **Entity Extraction**: Identify parties, dates, amounts, citations using GLiNER + LexNLP
+- **Smart Tagging**: Automatic document categorization and metadata extraction
+- **Knowledge Graphs**: Visualize entity relationships and citation networks with Neo4j
 
-## Prerequisites
+### 🎨 **Modern UI**
+Built with Nuxt 4 and Nuxt UI 4. Native PDF viewer with search highlighting, responsive design, dark/light modes, and real-time updates.
 
-- Docker Engine 24.0+ and Docker Compose V2
-- Git
+### 🔒 **Privacy & Security**
+100% local processing with no external APIs. All data stays on your infrastructure. Uses local Ollama models (Llama 3.1). Complete control over PostgreSQL, MinIO, and Qdrant storage.
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Docker Engine 24.0+ with Docker Compose V2
 - Minimum 8GB RAM (16GB recommended)
 - 20GB available disk space
 
-## Quick Start with Docker
+### Installation
 
-### Starting All Services
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/AlliecatOwO/legalease-ai.git
+   cd legalease-ai
+   ```
 
-Start all services in detached mode:
+2. **Start all services**
+   ```bash
+   docker compose up -d
+   ```
 
+3. **Initialize the platform**
+   ```bash
+   # Pull Ollama models
+   docker compose exec ollama ollama pull llama3.1
+   docker compose exec ollama ollama pull nomic-embed-text
+
+   # Run database migrations
+   docker compose exec backend alembic upgrade head
+
+   # Setup storage and vector DB
+   docker compose exec backend python -m app.scripts.setup_storage
+   docker compose exec backend python -m app.scripts.setup_qdrant
+   ```
+
+4. **Access the platform**
+   - Frontend: http://localhost:3000
+   - API Docs: http://localhost:8000/docs
+   - MinIO Console: http://localhost:9001 (legalease / legalease_dev_secret)
+   - Neo4j Browser: http://localhost:7474 (neo4j / legalease_dev)
+
+---
+
+## 🏗️ Tech Stack
+
+### Frontend
+- **Nuxt 4** - Vue.js framework with server-side rendering
+- **Nuxt UI 4** - Beautiful, accessible UI components
+- **Cytoscape.js** - Knowledge graph visualization
+- **PDF.js** - Native PDF rendering
+
+### Backend
+- **FastAPI** - Modern Python API framework
+- **Celery** - Distributed task processing
+- **SQLAlchemy** - Database ORM
+- **Alembic** - Database migrations
+
+### AI/ML
+- **Ollama** - Local LLM inference (Llama 3.1 70B)
+- **Sentence Transformers** - Text embeddings
+- **GLiNER** - Named entity recognition
+- **LexNLP** - Legal text analysis
+- **Docling** - Document parsing with bounding boxes
+- **Faster-Whisper** - Speech-to-text transcription
+
+### Data Storage
+- **PostgreSQL** - Relational database
+- **Qdrant** - Vector database for semantic search
+- **MinIO** - S3-compatible object storage
+- **Neo4j** - Graph database for entity relationships
+- **Redis** - Cache and message broker
+
+---
+
+## 📊 Performance
+
+| Metric | Target |
+|--------|--------|
+| Search Latency (p95) | <100ms |
+| Document Processing | <1 min per 100-page PDF |
+| Transcription Speed | ~70x real-time |
+| UI Frame Rate | 60fps (16ms) |
+| Memory Usage | <8GB RAM |
+| Storage Overhead | ~2x original file size |
+
+---
+
+## 🔧 Development
+
+### View Logs
 ```bash
-docker compose up -d
+docker compose logs -f              # All services
+docker compose logs -f backend      # Specific service
 ```
 
-Start specific services:
-
+### Run Tests
 ```bash
-docker compose up -d postgres redis qdrant
-```
-
-View logs while starting:
-
-```bash
-docker compose up
-```
-
-### Stopping Services
-
-Stop all services:
-
-```bash
-docker compose down
-```
-
-Stop and remove volumes (WARNING: deletes all data):
-
-```bash
-docker compose down -v
-```
-
-Stop specific services:
-
-```bash
-docker compose stop backend worker
-```
-
-### Viewing Logs
-
-View all logs:
-
-```bash
-docker compose logs
-```
-
-Follow logs in real-time:
-
-```bash
-docker compose logs -f
-```
-
-View logs for specific service:
-
-```bash
-docker compose logs -f backend
-```
-
-View last 100 lines:
-
-```bash
-docker compose logs --tail=100 backend
-```
-
-### Rebuilding Services
-
-Rebuild after code changes:
-
-```bash
-docker compose build
-```
-
-Rebuild specific service:
-
-```bash
-docker compose build backend
-```
-
-Force rebuild without cache:
-
-```bash
-docker compose build --no-cache
-```
-
-Rebuild and restart:
-
-```bash
-docker compose up -d --build
-```
-
-### Service Management
-
-Restart a service:
-
-```bash
-docker compose restart backend
-```
-
-Execute commands in running container:
-
-```bash
-# Backend shell
-docker compose exec backend bash
-
-# Run database migrations
-docker compose exec backend alembic upgrade head
-
-# Run tests
-docker compose exec backend pytest
-
-# Frontend shell
-docker compose exec frontend sh
-
-# Redis CLI
-docker compose exec redis redis-cli
-```
-
-### Checking Service Health
-
-Check status of all services:
-
-```bash
-docker compose ps
-```
-
-Check resource usage:
-
-```bash
-docker stats
-```
-
-### Initial Setup
-
-After starting services for the first time:
-
-1. **Pull Ollama models** (if using LLM features):
-```bash
-docker compose exec ollama ollama pull llama3.1
-docker compose exec ollama ollama pull nomic-embed-text
-```
-
-2. **Run database migrations**:
-```bash
-docker compose exec backend alembic upgrade head
-```
-
-3. **Create MinIO buckets**:
-```bash
-docker compose exec backend python -m app.scripts.setup_storage
-```
-
-4. **Initialize vector database**:
-```bash
-docker compose exec backend python -m app.scripts.setup_qdrant
-```
-
-## Port Mappings
-
-| Service    | Port(s)      | Description                          |
-|------------|--------------|--------------------------------------|
-| Frontend   | 3000         | Nuxt.js application                  |
-| Backend    | 8000         | FastAPI REST API                     |
-| PostgreSQL | 5432         | Main database                        |
-| Redis      | 6379         | Cache and message broker             |
-| Qdrant     | 6333, 6334   | Vector database (HTTP, gRPC)         |
-| MinIO      | 9000, 9001   | Object storage (API, Console)        |
-| Neo4j      | 7474, 7687   | Graph database (HTTP, Bolt)          |
-| Ollama     | 11434        | LLM inference server                 |
-
-## Service URLs
-
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **MinIO Console**: http://localhost:9001 (legalease / legalease_dev_secret)
-- **Neo4j Browser**: http://localhost:7474 (neo4j / legalease_dev)
-- **Qdrant Dashboard**: http://localhost:6333/dashboard
-
-## Environment Variables
-
-Default development credentials are set in `docker-compose.yml`. For production:
-
-1. Copy `.env.example` to `.env`
-2. Update all passwords and secrets
-3. Set `ENVIRONMENT=production`
-4. Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
-
-## Development Workflow
-
-### Hot Reload
-
-Both frontend and backend support hot reload in development mode:
-
-- **Frontend**: Changes to `frontend/` directory trigger automatic rebuild
-- **Backend**: Changes to `backend/` directory trigger automatic reload (via `--reload` flag)
-
-### Running Tests
-
-Backend tests:
-
-```bash
-docker compose exec backend pytest
 docker compose exec backend pytest -v --cov=app
-```
-
-Frontend tests:
-
-```bash
 docker compose exec frontend pnpm test
-docker compose exec frontend pnpm test:unit
 ```
 
-### Database Management
-
-Access PostgreSQL:
-
-```bash
-docker compose exec postgres psql -U legalease -d legalease
-```
-
-Create migration:
-
+### Database Migrations
 ```bash
 docker compose exec backend alembic revision --autogenerate -m "description"
-```
-
-Apply migrations:
-
-```bash
 docker compose exec backend alembic upgrade head
 ```
 
-Rollback migration:
+### Hot Reload
+Both frontend and backend support hot reload in development mode. Code changes trigger automatic rebuilds.
 
-```bash
-docker compose exec backend alembic downgrade -1
-```
+---
 
-### Celery Tasks
+## 🐛 Troubleshooting
 
-Monitor Celery worker:
+<details>
+<summary><b>Services won't start</b></summary>
 
-```bash
-docker compose logs -f worker
-```
-
-Inspect active tasks:
-
-```bash
-docker compose exec worker celery -A app.worker inspect active
-```
-
-Purge all tasks:
-
-```bash
-docker compose exec worker celery -A app.worker purge
-```
-
-## Troubleshooting
-
-### Services won't start
-
-Check logs:
+Check logs and disk space:
 ```bash
 docker compose logs
-```
-
-Check disk space:
-```bash
 df -h
 ```
 
-Remove all containers and volumes:
+Reset everything:
 ```bash
 docker compose down -v
 docker system prune -a
+docker compose up -d
 ```
+</details>
 
-### Database connection issues
+<details>
+<summary><b>Database connection issues</b></summary>
 
-Ensure PostgreSQL is healthy:
+Check PostgreSQL health:
 ```bash
 docker compose ps postgres
 docker compose logs postgres
@@ -391,75 +202,53 @@ Reset database:
 docker compose down
 docker volume rm legalease-postgres-data
 docker compose up -d postgres
+docker compose exec backend alembic upgrade head
 ```
+</details>
 
-### Out of memory
+<details>
+<summary><b>Out of memory</b></summary>
 
-Increase Docker memory limit in Docker Desktop settings or adjust service memory limits in `docker-compose.yml`.
+Increase Docker memory limit in Docker Desktop settings, or adjust service limits in `docker-compose.yml`.
+</details>
 
-### Permission issues
+---
 
-Fix file permissions:
-```bash
-sudo chown -R $USER:$USER .
-```
+## 🎯 Roadmap
 
-## Production Deployment
+- [ ] Multi-tenant support with user authentication
+- [ ] Advanced citation network analysis
+- [ ] Custom LLM model fine-tuning
+- [ ] Collaborative case sharing
+- [ ] Mobile app (iOS/Android)
+- [ ] OCR for scanned documents
+- [ ] Legal research AI assistant
 
-For production deployment:
+---
 
-1. Use separate `docker-compose.prod.yml`
-2. Set strong passwords for all services
-3. Enable TLS/SSL certificates
-4. Configure proper backup strategy
-5. Set up monitoring and logging
-6. Use external managed databases for critical data
-7. Enable GPU support for Ollama if available
+## 🤝 Contributing
 
-## GPU Support (Optional)
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-To enable GPU acceleration for Ollama, uncomment the deploy section in `docker-compose.yml`:
+---
 
-```yaml
-ollama:
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: 1
-            capabilities: [gpu]
-```
+## 📄 License
 
-Requires:
-- NVIDIA GPU
-- NVIDIA Container Toolkit installed
-- Docker with GPU support
+MIT License - See [LICENSE](LICENSE) file for details.
 
-## Architecture
+---
 
-```
-┌─────────────┐     ┌─────────────┐
-│  Frontend   │────▶│   Backend   │
-│  (Nuxt 4)   │     │  (FastAPI)  │
-└─────────────┘     └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-         ┌─────────┐  ┌────────┐  ┌────────┐
-         │PostgreSQL│  │ Redis  │  │ Celery │
-         └─────────┘  └────────┘  │ Worker │
-                                  └────────┘
-              ▼            ▼            ▼
-         ┌─────────┐  ┌────────┐  ┌────────┐
-         │ Qdrant  │  │ MinIO  │  │ Neo4j  │
-         └─────────┘  └────────┘  └────────┘
-                           ▼
-                      ┌────────┐
-                      │ Ollama │
-                      └────────┘
-```
+## 🙏 Acknowledgments
 
-## License
+Built with amazing open-source technologies:
+- [Ollama](https://ollama.ai/) - Local LLM inference
+- [Qdrant](https://qdrant.tech/) - Vector similarity search
+- [Nuxt](https://nuxt.com/) - Vue.js framework
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
+- [Neo4j](https://neo4j.com/) - Graph database platform
 
-MIT License - See LICENSE file for details
+---
+
+<div align="center">
+Made with ❤️ by <a href="https://github.com/AlliecatOwO">AlliecatOwO</a>
+</div>
