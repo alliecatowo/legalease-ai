@@ -331,11 +331,13 @@ class DocumentProcessor:
                 logger.info("Generating BM25 sparse vectors")
                 all_texts = [c["text"] for c in chunks]
 
-                # Fit BM25 on all chunks
-                self.bm25_encoder.fit(all_texts)
+                # NOTE: Don't fit BM25 encoder - use hash-based token IDs for consistency
+                # This ensures query token IDs match indexed token IDs
+                # self.bm25_encoder.fit(all_texts)  # DISABLED
 
                 # Encode each chunk
                 sparse_vectors = self.bm25_encoder.batch_encode_to_qdrant_format(all_texts)
+                logger.info(f"Generated BM25 vectors for {len(all_texts)} texts")
 
             return ProcessingResult(
                 success=True,

@@ -267,6 +267,9 @@ class SearchResult(BaseModel):
         metadata: Additional metadata about the result
         highlights: Optional highlighted portions of the text
         vector_type: Type of vector used for this match (e.g., 'summary', 'bm25')
+        match_type: Type of match - 'bm25' for keyword matches, 'semantic' for semantic matches
+        page_number: Page number for this result
+        bboxes: Bounding boxes for highlighting
     """
 
     id: Union[int, str] = Field(..., description="Chunk/point ID (int or UUID string)")
@@ -275,6 +278,9 @@ class SearchResult(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     highlights: Optional[List[str]] = Field(None, description="Highlighted text snippets")
     vector_type: Optional[str] = Field(None, description="Vector type used for matching")
+    match_type: Optional[str] = Field("semantic", description="Match type: 'bm25' for keyword, 'semantic' for semantic")
+    page_number: Optional[int] = Field(None, description="Page number for this result")
+    bboxes: List[Dict[str, Any]] = Field(default_factory=list, description="Bounding boxes for highlighting")
 
     class Config:
         json_schema_extra = {

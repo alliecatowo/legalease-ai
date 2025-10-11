@@ -85,7 +85,7 @@ watch(() => route.query.q, (q) => {
   searchWithinQuery.value = q ? String(q) : ''
 })
 
-// Perform hybrid search when query changes
+// Perform search when query changes - call both keyword and semantic APIs
 async function performHybridSearch(query: string) {
   if (!query || !document.value) {
     searchResults.value = []
@@ -94,31 +94,32 @@ async function performHybridSearch(query: string) {
 
   isSearching.value = true
   try {
-    const response = await api.search.hybrid({
+    // Use hybrid search - it correctly identifies BM25 vs semantic matches via match_type
+    const semanticResponse = await api.search.hybrid({
       query,
-      filters: {
-        document_id: parseInt(documentId.value)
-      },
-      limit: 20
+      document_ids: [parseInt(documentId.value)],
+      top_k: 10,
+      use_bm25: true,
+      use_dense: true,
+      fusion_method: 'rrf',
+      score_threshold: 0.0
     })
 
-    // Map results to include bboxes
-    searchResults.value = (response.results || []).map((result: any) => ({
+    // Backend returns match_type='bm25' for keyword matches, 'semantic' for semantic matches
+    searchResults.value = (semanticResponse.results || []).map((result: any) => ({
       chunk_id: result.id,
       score: result.score,
       text: result.text,
-      page_number: result.metadata?.page_number,
-      bboxes: result.metadata?.bboxes || []
+      page_number: result.page_number || result.metadata?.page_number,
+      bboxes: result.bboxes || result.metadata?.bboxes || [],
+      match_type: result.match_type || 'semantic'
     }))
 
-    console.log(`[DocumentPage] Hybrid search returned ${searchResults.value.length} results`)
-    console.log(`[DocumentPage] First result:`, searchResults.value[0])
-    if (searchResults.value[0]?.bboxes) {
-      console.log(`[DocumentPage] First result bboxes count:`, searchResults.value[0].bboxes.length)
-      console.log(`[DocumentPage] First bbox:`, searchResults.value[0].bboxes[0])
-    }
+    const bm25Count = searchResults.value.filter(r => r.match_type === 'bm25').length
+    const semanticCount = searchResults.value.filter(r => r.match_type === 'semantic').length
+    console.log(`[DocumentPage] Search for "${query}": ${bm25Count} BM25 + ${semanticCount} semantic = ${searchResults.value.length} total results`)
   } catch (error) {
-    console.error('Hybrid search failed:', error)
+    console.error('Search failed:', error)
     searchResults.value = []
   } finally {
     isSearching.value = false

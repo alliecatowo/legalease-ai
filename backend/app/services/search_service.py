@@ -202,6 +202,72 @@ class HybridSearchEngine:
 
         return results
 
+    def search_keyword_only(
+        self,
+        request: HybridSearchRequest,
+    ) -> List[Dict[str, Any]]:
+        """
+        Pure BM25 keyword search - no fusion, no dense vectors, no reranking.
+
+        Used for exact keyword/phrase matching.
+
+        Args:
+            request: Search request
+
+        Returns:
+            List of search results with BM25 scores
+        """
+        try:
+            # Build filters
+            filters = build_filter(
+                case_ids=request.case_ids,
+                document_ids=request.document_ids,
+                chunk_types=request.chunk_types,
+            )
+
+            # Create BM25 sparse vector
+            sparse_vector = self._create_sparse_vector(request.query)
+            logger.info(f"BM25 query vector: {len(sparse_vector.indices)} tokens")
+            if sparse_vector.indices:
+                logger.info(f"First 3 token IDs: {sparse_vector.indices[:3]}, values: {sparse_vector.values[:3]}")
+
+            # Search with BM25 only using Prefetch (which supports filters)
+            results = self.client.query_points(
+                collection_name=self.collection_name,
+                prefetch=[
+                    Prefetch(
+                        query=sparse_vector,
+                        using="bm25",
+                        filter=filters,
+                        limit=request.top_k * 3,  # Get more for threshold filtering
+                    )
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),  # Single prefetch, no actual fusion
+                limit=request.top_k * 3,
+                with_payload=True,
+            )
+
+            # Convert to standard format
+            formatted_results = []
+            for point in results.points:
+                score = point.score if point.score is not None else 0.0
+
+                formatted_results.append({
+                    "id": str(point.id),
+                    "score": score,  # Raw BM25 score
+                    "payload": point.payload if point.payload else {},
+                    "bm25_score": score,  # Same as score for keyword-only
+                })
+
+            logger.info(
+                f"Keyword-only search returned {len(formatted_results)} results"
+            )
+            return formatted_results
+
+        except Exception as e:
+            logger.error(f"Error in keyword-only search: {e}", exc_info=True)
+            raise
+
     def search_with_query_api(
         self,
         request: HybridSearchRequest,
@@ -229,7 +295,6 @@ class HybridSearchEngine:
             prefetch_queries = []
 
             # Add BM25 sparse prefetch if enabled
-            bm25_results = {}  # Track BM25-only results for boosting
             if request.use_bm25:
                 sparse_vector = self._create_sparse_vector(request.query)
                 prefetch_queries.append(
@@ -240,22 +305,6 @@ class HybridSearchEngine:
                         limit=request.top_k * 2,  # Get more for fusion
                     )
                 )
-
-                # Get BM25-only results for keyword match detection
-                try:
-                    bm25_only = self.client.query_points(
-                        collection_name=self.collection_name,
-                        query=sparse_vector,
-                        using="bm25",
-                        filter=filters,
-                        limit=request.top_k * 2,
-                        with_payload=False,
-                    )
-                    # Store BM25 scores by point ID for boosting
-                    for point in bm25_only.points:
-                        bm25_results[str(point.id)] = point.score if point.score else 0.0
-                except Exception as e:
-                    logger.warning(f"Failed to get BM25-only results: {e}")
 
             # Add dense vector prefetch if enabled
             if request.use_dense:
@@ -290,27 +339,32 @@ class HybridSearchEngine:
                 with_payload=True,
             )
 
-            # Convert to standard format with score normalization
+            # Convert to standard format - collect BM25 scores from results
             formatted_results = []
             raw_scores = []
+            bm25_scores = {}  # Track BM25 scores from fusion results
 
             for point in results.points:
                 score = point.score if point.score is not None else 0.0
                 raw_scores.append(score)
+                point_id = str(point.id)
 
                 formatted_results.append({
-                    "id": str(point.id),  # Convert to string to handle UUIDs
+                    "id": point_id,
                     "score": score,
                     "payload": point.payload if point.payload else {},
-                    "bm25_score": bm25_results.get(str(point.id), 0.0),  # Track BM25 score
+                    "bm25_score": 0.0,  # Will be updated by normalization
                 })
+
+                # Use fusion score as BM25 score proxy for boosting
+                bm25_scores[point_id] = score
 
             # Normalize and boost scores
             formatted_results = self._normalize_and_boost_scores(
                 formatted_results,
                 raw_scores,
                 request.fusion_method,
-                bm25_results,
+                bm25_scores,
             )
 
             logger.info(
@@ -390,19 +444,25 @@ class HybridSearchEngine:
                 # Extract highlights (simple implementation)
                 highlights = self._extract_highlights(text, request.query)
 
+                # Determine match type based on BM25 score
+                # High BM25 score (>5) = keyword match, otherwise semantic
+                bm25_score = result.get("bm25_score", 0.0)
+                match_type = "bm25" if bm25_score > 5.0 else "semantic"
+
                 formatted_results.append(
                     SearchResult(
                         id=result["id"],
                         score=result["score"],
                         text=text,
+                        match_type=match_type,
+                        page_number=payload.get("page_number"),
+                        bboxes=payload.get("bboxes", []),
                         metadata={
                             "document_id": payload.get("document_id"),
                             "case_id": payload.get("case_id"),
                             "chunk_type": payload.get("chunk_type"),
-                            "page_number": payload.get("page_number"),
                             "position": payload.get("position"),
-                            "bboxes": payload.get("bboxes", []),
-                            "bm25_score": result.get("bm25_score", 0.0),
+                            "bm25_score": bm25_score,
                             "score_debug": result.get("_score_debug"),
                         },
                         highlights=highlights,
