@@ -73,7 +73,7 @@ function handleSearch(query: string) {
         </template>
 
         <template #trailing>
-          <UButtonGroup>
+          <UFieldGroup>
             <!-- Search -->
             <UInput
               :model-value="transcription.searchQuery.value"
@@ -131,7 +131,7 @@ function handleSearch(query: string) {
                 variant="ghost"
               />
             </UDropdownMenu>
-          </UButtonGroup>
+          </UFieldGroup>
         </template>
       </UDashboardNavbar>
     </template>

@@ -23,7 +23,9 @@ export default defineNuxtConfig({
       proxy: {
         to: `${process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000'}/api/**`
       }
-    }
+    },
+    '/documents/**': { ssr: false },
+    '/documents': { ssr: false }
   },
 
   compatibilityDate: '2024-07-11',

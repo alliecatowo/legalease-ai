@@ -94,7 +94,7 @@ const selectedRelationshipTypes = computed({
           <UDashboardSidebarCollapse />
         </template>
         <template #trailing>
-          <UButtonGroup>
+          <UFieldGroup>
             <UTooltip text="Filters">
               <UButton
                 icon="i-lucide-filter"
@@ -114,7 +114,7 @@ const selectedRelationshipTypes = computed({
                 </div>
               </template>
             </UDropdownMenu>
-          </UButtonGroup>
+          </UFieldGroup>
         </template>
       </UDashboardNavbar>
     </template>
@@ -268,7 +268,7 @@ const selectedRelationshipTypes = computed({
 
         <!-- Graph Controls Overlay -->
         <div class="absolute bottom-4 left-4 flex items-center gap-2">
-          <UButtonGroup>
+          <UFieldGroup>
             <UTooltip text="Zoom In">
               <UButton icon="i-lucide-zoom-in" color="neutral" variant="outline" />
             </UTooltip>
@@ -278,7 +278,7 @@ const selectedRelationshipTypes = computed({
             <UTooltip text="Reset Zoom">
               <UButton icon="i-lucide-maximize-2" color="neutral" variant="outline" />
             </UTooltip>
-          </UButtonGroup>
+          </UFieldGroup>
         </div>
 
         <!-- Graph Stats Overlay -->

@@ -120,7 +120,7 @@ const stats = computed(() => ({
           <UDashboardSidebarCollapse />
         </template>
         <template #trailing>
-          <UButtonGroup>
+          <UFieldGroup>
             <UButton
               icon="i-lucide-history"
               color="neutral"
@@ -134,7 +134,7 @@ const stats = computed(() => ({
               label="New Transcription"
               @click="activeTab = 'upload'"
             />
-          </UButtonGroup>
+          </UFieldGroup>
         </template>
       </UDashboardNavbar>
     </template>

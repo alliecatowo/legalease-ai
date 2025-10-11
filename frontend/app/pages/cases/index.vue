@@ -198,7 +198,7 @@ async function onCaseCreated(caseData: any) {
               class="w-full sm:w-auto"
               size="md"
             />
-            <UButtonGroup size="md">
+            <UFieldGroup size="md">
               <UTooltip text="Grid view">
                 <UButton
                   icon="i-lucide-layout-grid"
@@ -215,7 +215,7 @@ async function onCaseCreated(caseData: any) {
                   @click="viewMode = 'list'"
                 />
               </UTooltip>
-            </UButtonGroup>
+            </UFieldGroup>
           </div>
         </div>
 
@@ -358,7 +358,7 @@ async function onCaseCreated(caseData: any) {
         </div>
 
         <!-- Create Case Modal -->
-        <CreateCaseModal v-model:open="showCreateModal" @created="onCaseCreated" />
+        <ModalsCreateCaseModal v-model:open="showCreateModal" @created="onCaseCreated" />
       </div>
     </div>
   </UDashboardPanel>

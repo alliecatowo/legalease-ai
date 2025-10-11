@@ -342,7 +342,7 @@ onMounted(() => {
           />
         </template>
         <template #trailing>
-          <UButtonGroup v-if="transcript">
+          <UFieldGroup v-if="transcript">
             <UButton
               icon="i-lucide-copy"
               color="neutral"
@@ -374,7 +374,7 @@ onMounted(() => {
               variant="ghost"
               @click="showMetadataSidebar = !showMetadataSidebar"
             />
-          </UButtonGroup>
+          </UFieldGroup>
         </template>
       </UDashboardNavbar>
     </template>
