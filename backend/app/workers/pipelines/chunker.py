@@ -83,7 +83,7 @@ class DocumentChunker:
         logger.info(f"Chunking document ({len(text)} chars, {len(text.split())} words)")
 
         result = {
-            "summary": self._create_summary_chunks(text, metadata),
+            "summary": self._create_summary_chunks(text, pages, metadata),
             "section": self._create_section_chunks(text, pages, metadata),
             "microblock": self._create_microblock_chunks(text, pages, metadata),
         }
@@ -101,6 +101,7 @@ class DocumentChunker:
     def _create_summary_chunks(
         self,
         text: str,
+        pages: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> List[TextChunk]:
         """
@@ -108,6 +109,7 @@ class DocumentChunker:
 
         Args:
             text: Document text
+            pages: Optional page data
             metadata: Optional metadata
 
         Returns:
@@ -115,16 +117,42 @@ class DocumentChunker:
         """
         chunks = []
 
-        # Extract bboxes from metadata if available
+        # Extract bboxes from metadata or collect from pages (like section/microblock do)
         all_bboxes = metadata.get("bboxes", []) if metadata else []
+        if not all_bboxes and pages:
+            # Collect bboxes from all pages (Docling stores them in items array)
+            for page in pages:
+                page_num = page.get("page_number", 1)
+                # First check if page has direct bboxes array (PyMuPDF fallback)
+                if "bboxes" in page:
+                    for bbox in page.get("bboxes", []):
+                        # Add page number to bbox
+                        bbox_with_page = bbox.copy() if isinstance(bbox, dict) else {}
+                        bbox_with_page["page"] = page_num
+                        all_bboxes.append(bbox_with_page)
+                # Then check for items with bbox fields (Docling format)
+                elif "items" in page:
+                    for item in page["items"]:
+                        if "bbox" in item and item["bbox"]:
+                            # Add bbox with text and page number for matching
+                            all_bboxes.append({
+                                "bbox": item["bbox"],
+                                "text": item.get("text", ""),
+                                "type": item.get("type", "unknown"),
+                                "page": page_num,
+                            })
 
         # For shorter documents, use entire text as summary
         word_count = len(text.split())
         if word_count <= self.summary_max_tokens:
+            # Determine page number from bboxes
+            page_number = self._determine_page_number(all_bboxes)
+
             chunks.append(TextChunk(
                 text=text,
                 chunk_type="summary",
                 position=0,
+                page_number=page_number,
                 metadata=metadata,
                 bboxes=all_bboxes,  # Include all bboxes for summary
             ))
@@ -140,10 +168,14 @@ class DocumentChunker:
                 # Extract relevant bboxes for this chunk
                 chunk_bboxes = self._extract_bboxes_for_text(chunk_text, all_bboxes)
 
+                # Determine page number from bboxes
+                page_number = self._determine_page_number(chunk_bboxes)
+
                 chunks.append(TextChunk(
                     text=chunk_text,
                     chunk_type="summary",
                     position=position,
+                    page_number=page_number,
                     metadata=metadata,
                     bboxes=chunk_bboxes,
                 ))
@@ -175,18 +207,24 @@ class DocumentChunker:
         if not all_bboxes and pages:
             # Collect bboxes from all pages (Docling stores them in items array)
             for page in pages:
+                page_num = page.get("page_number", 1)
                 # First check if page has direct bboxes array (PyMuPDF fallback)
                 if "bboxes" in page:
-                    all_bboxes.extend(page.get("bboxes", []))
+                    for bbox in page.get("bboxes", []):
+                        # Add page number to bbox
+                        bbox_with_page = bbox.copy() if isinstance(bbox, dict) else {}
+                        bbox_with_page["page"] = page_num
+                        all_bboxes.append(bbox_with_page)
                 # Then check for items with bbox fields (Docling format)
                 elif "items" in page:
                     for item in page["items"]:
                         if "bbox" in item and item["bbox"]:
-                            # Add bbox with text for matching
+                            # Add bbox with text and page number for matching
                             all_bboxes.append({
                                 "bbox": item["bbox"],
                                 "text": item.get("text", ""),
                                 "type": item.get("type", "unknown"),
+                                "page": page_num,
                             })
 
         if self.use_semantic_splitting:
@@ -209,10 +247,14 @@ class DocumentChunker:
                 # Extract relevant bboxes for this chunk
                 chunk_bboxes = self._extract_bboxes_for_text(sub_chunk, all_bboxes)
 
+                # Determine page number from bboxes
+                page_number = self._determine_page_number(chunk_bboxes)
+
                 chunks.append(TextChunk(
                     text=sub_chunk,
                     chunk_type="section",
                     position=position,
+                    page_number=page_number,
                     metadata=metadata,
                     bboxes=chunk_bboxes,
                 ))
@@ -244,18 +286,24 @@ class DocumentChunker:
         if not all_bboxes and pages:
             # Collect bboxes from all pages (Docling stores them in items array)
             for page in pages:
+                page_num = page.get("page_number", 1)
                 # First check if page has direct bboxes array (PyMuPDF fallback)
                 if "bboxes" in page:
-                    all_bboxes.extend(page.get("bboxes", []))
+                    for bbox in page.get("bboxes", []):
+                        # Add page number to bbox
+                        bbox_with_page = bbox.copy() if isinstance(bbox, dict) else {}
+                        bbox_with_page["page"] = page_num
+                        all_bboxes.append(bbox_with_page)
                 # Then check for items with bbox fields (Docling format)
                 elif "items" in page:
                     for item in page["items"]:
                         if "bbox" in item and item["bbox"]:
-                            # Add bbox with text for matching
+                            # Add bbox with text and page number for matching
                             all_bboxes.append({
                                 "bbox": item["bbox"],
                                 "text": item.get("text", ""),
                                 "type": item.get("type", "unknown"),
+                                "page": page_num,
                             })
 
         # Split into sentences
@@ -276,10 +324,14 @@ class DocumentChunker:
                 # Extract relevant bboxes for this chunk
                 chunk_bboxes = self._extract_bboxes_for_text(block_text, all_bboxes)
 
+                # Determine page number from bboxes
+                page_number = self._determine_page_number(chunk_bboxes)
+
                 chunks.append(TextChunk(
                     text=block_text,
                     chunk_type="microblock",
                     position=position,
+                    page_number=page_number,
                     metadata=metadata,
                     bboxes=chunk_bboxes,
                 ))
@@ -303,10 +355,14 @@ class DocumentChunker:
             # Extract relevant bboxes for this chunk
             chunk_bboxes = self._extract_bboxes_for_text(block_text, all_bboxes)
 
+            # Determine page number from bboxes
+            page_number = self._determine_page_number(chunk_bboxes)
+
             chunks.append(TextChunk(
                 text=block_text,
                 chunk_type="microblock",
                 position=position,
+                page_number=page_number,
                 metadata=metadata,
                 bboxes=chunk_bboxes,
             ))
@@ -508,6 +564,35 @@ class DocumentChunker:
                 chunk_bboxes.append(bbox)
 
         return chunk_bboxes
+
+    def _determine_page_number(self, chunk_bboxes: List[Dict[str, Any]]) -> Optional[int]:
+        """
+        Determine the primary page number for a chunk based on its bboxes.
+
+        Uses the most common page number among the bboxes. For chunks spanning
+        multiple pages, returns the page with the most bboxes.
+
+        Args:
+            chunk_bboxes: List of bboxes for this chunk
+
+        Returns:
+            Page number or None if no bboxes have page info
+        """
+        if not chunk_bboxes:
+            return None
+
+        # Count page occurrences
+        page_counts = {}
+        for bbox in chunk_bboxes:
+            page = bbox.get("page")
+            if page is not None:
+                page_counts[page] = page_counts.get(page, 0) + 1
+
+        if not page_counts:
+            return None
+
+        # Return the page with the most bboxes
+        return max(page_counts, key=page_counts.get)
 
 
 # Convenience function for quick chunking

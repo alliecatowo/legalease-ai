@@ -26,9 +26,18 @@ interface PageData {
   bboxes?: Array<BBox | { bbox?: BBox; x0?: number; y0?: number; x1?: number; y1?: number; text?: string }>
 }
 
+interface SearchResult {
+  chunk_id: number
+  score: number
+  text: string
+  page_number?: number
+  bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
+}
+
 interface Props {
   documentId: number | string
   searchQuery?: string
+  searchResults?: SearchResult[]  // Semantic search results
   highlightBboxes?: BBox[]
   initialPage?: number
   chunkId?: number
@@ -36,6 +45,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   searchQuery: '',
+  searchResults: () => [],
   highlightBboxes: () => [],
   initialPage: 1
 })
@@ -116,19 +126,61 @@ const collectBoxesForPage = (page: PageData) => {
   return out
 }
 
-// Get ALL highlights across ALL pages with page numbers
-const allHighlights = computed(() => {
+// Get semantic search result highlights (from search API) - limit total bboxes
+const semanticHighlights = computed(() => {
+  if (!props.searchResults || props.searchResults.length === 0) return []
+
+  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'semantic'; score: number }> = []
+  const MAX_TOTAL_BBOXES = 10  // Limit total bounding boxes displayed
+
+  // Take top results until we have enough bboxes
+  for (const result of props.searchResults) {
+    if (out.length >= MAX_TOTAL_BBOXES) break
+
+    const page = result.page_number || 1
+
+    // Take first few bboxes from each result
+    const bboxesToTake = Math.min((result.bboxes || []).length, MAX_TOTAL_BBOXES - out.length)
+    const resultBboxes = (result.bboxes || []).slice(0, bboxesToTake)
+
+    for (const entry of resultBboxes) {
+      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+      const nb = normalizeBBox(box)
+      out.push({
+        x: nb.x,
+        y: nb.y,
+        width: nb.width,
+        height: nb.height,
+        text: (entry as any).text || result.text,
+        page,
+        type: 'semantic',
+        score: result.score
+      })
+
+      if (out.length >= MAX_TOTAL_BBOXES) break
+    }
+  }
+
+  console.log(`[DocumentViewer] Semantic highlights: ${out.length} total bboxes (max: ${MAX_TOTAL_BBOXES})`)
+  return out
+})
+
+// Get text-based highlights (exact query matches) from document content
+// Only highlight individual bboxes whose text contains the query (not whole items)
+const textHighlights = computed(() => {
   if (!documentContent.value) return []
   const q = (props.searchQuery || '').toLowerCase().trim()
   if (!q) return []
 
-  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number }> = []
+  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'text' }> = []
 
   for (const page of documentContent.value.pages) {
     for (const item of page.items) {
       for (const entry of item.bboxes || []) {
-        const t = (entry as any).text || item.text || ''
-        if (t.toLowerCase().includes(q)) {
+        const bboxText = (entry as any).text || ''
+
+        // Only highlight this specific bbox if ITS text contains the query
+        if (bboxText && bboxText.toLowerCase().includes(q)) {
           const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
           const nb = normalizeBBox(box)
           out.push({
@@ -136,16 +188,25 @@ const allHighlights = computed(() => {
             y: nb.y,
             width: nb.width,
             height: nb.height,
-            text: t,
-            page: page.page_number
+            text: bboxText,
+            page: page.page_number,
+            type: 'text'
           })
         }
       }
     }
   }
 
-  console.log(`[DocumentViewer] Total highlights: ${out.length}`)
+  console.log(`[DocumentViewer] Text highlights: ${out.length}`)
   return out
+})
+
+// Only use hybrid search results (not text matches)
+const allHighlights = computed(() => {
+  // Only show semantic highlights from hybrid search API
+  const highlights = semanticHighlights.value
+  console.log(`[DocumentViewer] Total highlights: ${highlights.length} (from hybrid search)`)
+  return highlights
 })
 
 // Just the highlights for the current page
@@ -336,12 +397,12 @@ watch(() => props.documentId, () => {
       </div>
 
       <div class="flex items-center gap-2">
-        <UTooltip v-if="searchQuery" text="Highlighting search results">
+        <UTooltip v-if="searchQuery" :text="`Showing ${allHighlights.length} most relevant highlights`">
           <UBadge color="warning" variant="soft" size="sm">
             <template #leading>
               <UIcon name="i-lucide-search" class="size-3" />
             </template>
-            {{ allHighlights.length }} total
+            {{ pageHighlights.length }} on page
           </UBadge>
         </UTooltip>
         <UButton
@@ -398,7 +459,8 @@ watch(() => props.documentId, () => {
             width: b.width,
             height: b.height,
             text: b.text,
-            type: 'highlight'
+            type: b.type === 'semantic' ? 'semantic' : 'highlight',
+            entityType: b.type === 'semantic' ? 'SEMANTIC_MATCH' : 'TEXT_MATCH'
           }))"
           @page-change="(p:number) => currentPage = p"
         />
