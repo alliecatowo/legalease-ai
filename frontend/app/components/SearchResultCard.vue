@@ -24,6 +24,7 @@ interface SearchResult {
 
 interface Props {
   result: SearchResult
+  query?: string
 }
 
 const props = defineProps<Props>()
@@ -74,15 +75,9 @@ const formattedDate = computed(() => {
 const handleClick = () => {
   const query: any = {}
 
-  // Pass page number if available
-  if (props.result.pageNumber) {
-    query.page = props.result.pageNumber
-  }
-
-  // Pass chunk ID if available
-  if (props.result.metadata?.chunk_id) {
-    query.chunk = props.result.metadata.chunk_id
-  }
+  if (props.result.pageNumber) query.page = props.result.pageNumber
+  if (props.result.metadata?.chunk_id) query.chunk = props.result.metadata.chunk_id
+  if (props.query) query.q = props.query
 
   router.push({
     path: `/documents/${props.result.metadata?.document_id || props.result.id}`,
