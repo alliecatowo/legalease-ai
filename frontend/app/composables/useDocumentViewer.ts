@@ -25,6 +25,7 @@ export interface DocumentItem {
   text: string
   type: string
   bbox?: BBox
+  bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
   chunk_id?: number
 }
 
@@ -133,11 +134,18 @@ export const useDocumentViewer = () => {
     if (!targetBboxes || targetBboxes.length === 0) return []
 
     return items.filter(item => {
-      if (!item.bbox) return false
+      const boxes: BBox[] = []
+      if (item.bbox) boxes.push(item.bbox)
+      if (item.bboxes && item.bboxes.length) {
+        for (const entry of item.bboxes) {
+          boxes.push((entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox))
+        }
+      }
+      if (boxes.length === 0) return false
 
-      return targetBboxes.some(targetBbox =>
-        calculateOverlap(item.bbox!, targetBbox) >= overlapThreshold
-      )
+      return boxes.some(b => targetBboxes.some(targetBbox =>
+        calculateOverlap(b, targetBbox) >= overlapThreshold
+      ))
     })
   }
 
