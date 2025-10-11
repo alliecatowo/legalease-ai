@@ -293,11 +293,17 @@ class DocumentService:
                 "text": chunk.text,
                 "type": chunk.chunk_type,
                 "chunk_id": chunk.id,
+                "bboxes": [],
             }
 
-            # Add bboxes if available in metadata
-            if "bboxes" in chunk_meta and chunk_meta["bboxes"]:
-                item_data["bboxes"] = chunk_meta["bboxes"]
+            # Add bboxes if available in metadata (handle nested)
+            bbs = []
+            if isinstance(chunk_meta, dict):
+                if "bboxes" in chunk_meta and chunk_meta["bboxes"]:
+                    bbs = chunk_meta["bboxes"] or []
+                elif "additional_metadata" in chunk_meta and isinstance(chunk_meta["additional_metadata"], dict):
+                    bbs = chunk_meta["additional_metadata"].get("bboxes", []) or []
+            item_data["bboxes"] = bbs
 
             pages_dict[page_num]["items"].append(item_data)
             pages_dict[page_num]["text"].append(chunk.text)

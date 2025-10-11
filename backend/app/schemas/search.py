@@ -59,13 +59,13 @@ class PageItem(BaseModel):
     Attributes:
         text: Text content of the item
         type: Type of element (e.g., 'TextItem', 'TableItem')
-        bbox: Optional bounding box coordinates
+        bboxes: Optional list of bounding boxes
         chunk_id: Optional associated chunk ID
     """
 
     text: str = Field(..., description="Item text content")
     type: Optional[str] = Field(None, description="Item type")
-    bbox: Optional[Dict[str, Any]] = Field(None, description="Bounding box data")
+    bboxes: List[Dict[str, Any]] = Field(default_factory=list, description="Bounding boxes for this item")
     chunk_id: Optional[int] = Field(None, description="Associated chunk ID")
 
     class Config:
@@ -73,7 +73,7 @@ class PageItem(BaseModel):
             "example": {
                 "text": "This is the contract text...",
                 "type": "TextItem",
-                "bbox": {"l": 72.0, "t": 100.0, "r": 500.0, "b": 120.0},
+                "bboxes": [{"l": 72.0, "t": 100.0, "r": 500.0, "b": 120.0}],
                 "chunk_id": 42,
             }
         }
