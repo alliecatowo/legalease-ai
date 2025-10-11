@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Tuple
 import re
 from collections import Counter
 import math
+import hashlib
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -224,9 +225,11 @@ class BM25Encoder:
         values = []
 
         for token, score in bm25_scores.items():
-            # Get or create token ID
+            # Get or create token ID using deterministic hash
             if token not in token_to_id:
-                token_to_id[token] = hash(token) % (2**32)  # 32-bit hash
+                # Use SHA256 for deterministic hashing across Python processes
+                token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+                token_to_id[token] = int(token_hash[:8], 16)  # Use first 8 hex chars (32-bit)
 
             token_id = token_to_id[token]
             indices.append(token_id)

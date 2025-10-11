@@ -73,7 +73,8 @@ const showDeleteModal = ref(false)
 const showAddToCaseModal = ref(false)
 const isDeleting = ref(false)
 const searchWithinQuery = ref('')
-const searchResults = ref<any[]>([])
+const bm25Results = ref<any[]>([])  // Blue boxes
+const fusionResults = ref<any[]>([])  // Yellow boxes
 const isSearching = ref(false)
 
 // Initialize from route query
@@ -85,42 +86,53 @@ watch(() => route.query.q, (q) => {
   searchWithinQuery.value = q ? String(q) : ''
 })
 
-// Perform search when query changes - call both keyword and semantic APIs
+// Perform search - BM25 only (blue) + Fusion (yellow)
 async function performHybridSearch(query: string) {
   if (!query || !document.value) {
-    searchResults.value = []
+    bm25Results.value = []
+    fusionResults.value = []
     return
   }
 
   isSearching.value = true
   try {
-    // Use hybrid search - it correctly identifies BM25 vs semantic matches via match_type
-    const semanticResponse = await api.search.hybrid({
-      query,
-      document_ids: [parseInt(documentId.value)],
-      top_k: 10,
-      use_bm25: true,
-      use_dense: true,
-      fusion_method: 'rrf',
-      score_threshold: 0.0
-    })
+    const [bm25Response, fusionResponse] = await Promise.all([
+      // 1. BM25 only (blue boxes) - strong keyword matches
+      api.search.hybrid({
+        query,
+        document_ids: [parseInt(documentId.value)],
+        top_k: 5,
+        use_bm25: true,
+        use_dense: false,
+        score_threshold: 0.5  // Reasonable threshold for BM25 matches
+      }),
+      // 2. Fusion: BM25 + semantic (yellow boxes)
+      api.search.hybrid({
+        query,
+        document_ids: [parseInt(documentId.value)],
+        top_k: 5,
+        use_bm25: true,
+        use_dense: true,
+        fusion_method: 'rrf',
+        score_threshold: 0.0
+      })
+    ])
 
-    // Backend returns match_type='bm25' for keyword matches, 'semantic' for semantic matches
-    searchResults.value = (semanticResponse.results || []).map((result: any) => ({
-      chunk_id: result.id,
-      score: result.score,
-      text: result.text,
-      page_number: result.page_number || result.metadata?.page_number,
-      bboxes: result.bboxes || result.metadata?.bboxes || [],
-      match_type: result.match_type || 'semantic'
-    }))
+    // Store separately - no combining
+    bm25Results.value = bm25Response.results || []
+    fusionResults.value = fusionResponse.results || []
 
-    const bm25Count = searchResults.value.filter(r => r.match_type === 'bm25').length
-    const semanticCount = searchResults.value.filter(r => r.match_type === 'semantic').length
-    console.log(`[DocumentPage] Search for "${query}": ${bm25Count} BM25 + ${semanticCount} semantic = ${searchResults.value.length} total results`)
+    console.log(`[DocumentPage] ${bm25Results.value.length} BM25 (blue), ${fusionResults.value.length} fusion (yellow)`)
+    if (bm25Results.value.length > 0) {
+      console.log('[DocumentPage] BM25 scores:', bm25Results.value.map(r => r.score.toFixed(2)))
+    }
+    if (fusionResults.value.length > 0) {
+      console.log('[DocumentPage] Fusion scores:', fusionResults.value.slice(0, 5).map(r => r.score.toFixed(2)))
+    }
   } catch (error) {
     console.error('Search failed:', error)
-    searchResults.value = []
+    bm25Results.value = []
+    fusionResults.value = []
   } finally {
     isSearching.value = false
   }
@@ -586,8 +598,8 @@ const tabItems = computed(() => [
                       />
                     </template>
                   </UInput>
-                  <div v-if="searchResults.length > 0" class="mt-2 text-sm text-muted">
-                    Found {{ searchResults.length }} hybrid matches (showing top 5)
+                  <div v-if="bm25Results.length > 0 || fusionResults.length > 0" class="mt-2 text-sm text-muted">
+                    {{ bm25Results.length }} BM25 (blue) + {{ fusionResults.length }} fusion (yellow)
                   </div>
                 </div>
 
@@ -596,7 +608,8 @@ const tabItems = computed(() => [
                   <DocumentViewer
                     :document-id="documentId"
                     :search-query="searchWithinQuery"
-                    :search-results="searchResults"
+                    :bm25-results="bm25Results"
+                    :fusion-results="fusionResults"
                     :initial-page="parseInt(route.query.page as string) || 1"
                     :chunk-id="parseInt(route.query.chunk as string) || undefined"
                   />
