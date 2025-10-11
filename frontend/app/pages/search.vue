@@ -23,8 +23,17 @@ const searchSettings = ref({
 })
 
 // Case filters - fetch available cases
-const { data: casesData } = await useAsyncData('search-cases', () => useApi().cases.list())
-const availableCases = computed(() => casesData.value?.cases || [])
+const { data: casesData } = await useAsyncData('search-cases', () => api.cases.list(), {
+  default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
+})
+const availableCases = computed(() =>
+  (casesData.value?.cases || []).map((c: any) => ({
+    label: c.name,
+    value: c.id,
+    case_number: c.case_number,
+    ...c
+  }))
+)
 
 // Filter state
 const selectedCases = ref<number[]>([])
@@ -413,12 +422,12 @@ defineShortcuts({
           v-show="searchResults.length === 0 && !isSearching"
           class="flex items-center justify-center min-h-full px-6 py-12"
         >
-          <div class="w-full max-w-4xl mx-auto text-center space-y-8">
+          <div class="w-full max-w-5xl mx-auto text-center space-y-12">
             <!-- Logo/Icon -->
-            <div class="flex items-center justify-center gap-4">
-              <UIcon name="i-lucide-scale" class="size-16 text-primary" />
-              <h1 class="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                LegalSearch AI
+            <div class="flex items-center justify-center gap-5">
+              <UIcon name="i-lucide-scale" class="size-20 text-primary" />
+              <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
+                LegalEase AI
               </h1>
             </div>
 
@@ -426,8 +435,8 @@ defineShortcuts({
               Intelligent hybrid search across your legal documents, contracts, and case files
             </p>
 
-            <!-- Hero Search Bar - Centered -->
-            <div class="w-full max-w-3xl mx-auto">
+            <!-- Hero Search Bar - Centered and Large -->
+            <div class="w-full max-w-5xl mx-auto space-y-6">
               <UInput
                 ref="heroSearchInput"
                 v-model="searchQuery"
@@ -436,11 +445,28 @@ defineShortcuts({
                 size="xl"
                 :loading="isLoading"
                 autofocus
+                class="!text-lg shadow-xl hover:shadow-2xl transition-shadow"
+                :ui="{
+                  base: 'px-6 py-5 text-lg rounded-2xl',
+                  leadingIcon: 'size-7'
+                }"
               >
                 <template #trailing>
                   <UKbd value="/" />
                 </template>
               </UInput>
+
+              <!-- Prominent Filter Bar in Hero View -->
+              <div class="flex justify-center">
+                <SearchFilters
+                  v-model:selected-cases="selectedCases"
+                  v-model:selected-document-types="selectedDocumentTypes"
+                  v-model:selected-chunk-types="selectedChunkTypes"
+                  :available-cases="availableCases"
+                  :show-chunk-types="true"
+                  @clear="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+                />
+              </div>
             </div>
 
             <!-- Quick Examples -->
@@ -487,7 +513,7 @@ defineShortcuts({
         <div v-show="searchResults.length > 0 || isSearching" class="p-6">
           <UContainer>
             <!-- Compact Search Bar (kept in DOM to prevent focus loss) -->
-            <div class="mb-6">
+            <div class="mb-6 space-y-3">
               <UInput
                 ref="compactSearchInput"
                 v-model="searchQuery"
@@ -507,29 +533,26 @@ defineShortcuts({
                   />
                 </template>
               </UInput>
+
+              <!-- Filter Bar - Always Visible in Results View -->
+              <SearchFilters
+                v-model:selected-cases="selectedCases"
+                v-model:selected-document-types="selectedDocumentTypes"
+                v-model:selected-chunk-types="selectedChunkTypes"
+                :available-cases="availableCases"
+                :show-chunk-types="true"
+                :is-compact="true"
+                @clear="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+              />
             </div>
 
             <!-- Results Header -->
-            <div v-if="searchResults.length > 0" class="mb-6 flex items-center justify-between flex-wrap gap-3">
-              <div class="flex items-center gap-3 flex-wrap">
-                <p class="text-sm text-muted">
-                  About <span class="font-semibold text-highlighted">{{ searchResults.length }}</span> results
-                </p>
-                <UBadge :label="searchMode" color="primary" variant="soft" size="sm" />
-                <UBadge v-if="searchSettings.fusion_method !== 'rrf'" :label="`Fusion: ${searchSettings.fusion_method}`" color="neutral" variant="outline" size="sm" />
-                <UBadge v-if="selectedCases.length > 0" :label="`${selectedCases.length} case${selectedCases.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
-                <UBadge v-if="selectedDocumentTypes.length > 0" :label="`${selectedDocumentTypes.length} type filter${selectedDocumentTypes.length > 1 ? 's' : ''}`" color="info" variant="outline" size="sm" />
-                <UBadge v-if="selectedChunkTypes.length > 0" :label="`${selectedChunkTypes.length} chunk filter${selectedChunkTypes.length > 1 ? 's' : ''}`" color="secondary" variant="outline" size="sm" />
-              </div>
-              <UButton
-                v-if="selectedCases.length > 0 || selectedDocumentTypes.length > 0 || selectedChunkTypes.length > 0"
-                label="Clear Filters"
-                icon="i-lucide-x"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                @click="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
-              />
+            <div v-if="searchResults.length > 0" class="mb-6 flex items-center gap-3 flex-wrap">
+              <p class="text-sm text-muted">
+                About <span class="font-semibold text-highlighted">{{ searchResults.length }}</span> results
+              </p>
+              <UBadge :label="searchMode" color="primary" variant="soft" size="sm" />
+              <UBadge v-if="searchSettings.fusion_method !== 'rrf'" :label="`Fusion: ${searchSettings.fusion_method}`" color="neutral" variant="outline" size="sm" />
             </div>
 
             <!-- Search Results List -->

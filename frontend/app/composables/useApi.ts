@@ -1,3 +1,11 @@
+// API Response Types
+interface CaseListResponse {
+  cases: any[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export const useApi = () => {
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase
@@ -26,7 +34,7 @@ export const useApi = () => {
   return {
     // Cases
     cases: {
-      list: () => api<any[]>('/api/v1/cases'),
+      list: () => api<CaseListResponse>('/api/v1/cases'),
       get: (id: string) => api(`/api/v1/cases/${id}`),
       create: (data: any) => api('/api/v1/cases', { method: 'POST', body: data }),
       update: (id: string, data: any) => api(`/api/v1/cases/${id}`, { method: 'PUT', body: data }),
