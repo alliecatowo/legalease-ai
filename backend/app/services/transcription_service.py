@@ -50,6 +50,7 @@ class TranscriptionService:
         case_id: int,
         file: UploadFile,
         db: Session,
+        options: Optional["TranscriptionOptions"] = None,
     ) -> Document:
         """
         Upload an audio/video file for transcription.
@@ -58,6 +59,7 @@ class TranscriptionService:
             case_id: ID of the case
             file: Uploaded audio/video file
             db: Database session
+            options: Optional transcription configuration options
 
         Returns:
             Document: Created document record
@@ -81,8 +83,18 @@ class TranscriptionService:
             db=db,
         )
 
+        document = documents[0]
+
+        # Queue transcription task with options
+        from app.workers.tasks.transcription import transcribe_audio
+
+        options_dict = options.model_dump() if options else {}
+        transcribe_audio.delay(document.id, options=options_dict)
+
+        logger.info(f"Queued transcription task for document {document.id} with options: {options_dict}")
+
         # Return the first (and only) document
-        return documents[0]
+        return document
 
     @staticmethod
     def get_transcription(transcription_id: int, db: Session) -> Transcription:

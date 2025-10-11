@@ -120,7 +120,10 @@ class WhisperTranscriber:
     def transcribe(
         self,
         audio_path: str,
-        language: str = "en",
+        language: Optional[str] = None,
+        task: str = "transcribe",
+        temperature: float = 0.0,
+        initial_prompt: Optional[str] = None,
         task_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -128,7 +131,10 @@ class WhisperTranscriber:
 
         Args:
             audio_path: Path to audio file
-            language: Language code (e.g., 'en', 'es')
+            language: Language code (e.g., 'en', 'es') or None for auto-detect
+            task: 'transcribe' for same-language or 'translate' for English translation
+            temperature: Sampling temperature (0.0-1.0)
+            initial_prompt: Optional context prompt
             task_id: Optional Celery task ID for progress updates
 
         Returns:
@@ -139,17 +145,29 @@ class WhisperTranscriber:
 
             client = OpenAI(api_key=self.api_key)
 
-            logger.info(f"Starting Whisper API transcription for {audio_path}")
+            logger.info(f"Starting Whisper API transcription for {audio_path} (task={task}, language={language})")
 
             with open(audio_path, 'rb') as audio_file:
-                # Use Whisper API with timestamp granularities
-                response = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language=language,
-                    response_format="verbose_json",
-                    timestamp_granularities=["segment", "word"]
-                )
+                # Build API parameters
+                api_params = {
+                    "model": "whisper-1",
+                    "file": audio_file,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities": ["segment", "word"],
+                    "temperature": temperature,
+                }
+
+                # Add optional parameters
+                if language and language != "auto":
+                    api_params["language"] = language
+                if initial_prompt:
+                    api_params["prompt"] = initial_prompt
+
+                # Use transcriptions or translations API based on task
+                if task == "translate":
+                    response = client.audio.translations.create(**api_params)
+                else:
+                    response = client.audio.transcriptions.create(**api_params)
 
             # Parse response into segments format
             segments = []
@@ -480,7 +498,7 @@ class TranscriptionExporter:
 def transcribe_audio(
     self,
     document_id: int,
-    language: str = "en"
+    options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Transcribe an audio/video file to text with timestamps and speaker diarization.
@@ -489,7 +507,7 @@ def transcribe_audio(
     1. Download audio/video from MinIO
     2. Preprocess with FFmpeg (convert to 16kHz mono WAV)
     3. Transcribe with OpenAI Whisper API
-    4. Diarize speakers (simple heuristic-based)
+    4. Diarize speakers (optional, based on options)
     5. Export to DOCX, SRT, VTT, JSON formats
     6. Upload exports to MinIO
     7. Update transcription record in PostgreSQL
@@ -497,13 +515,26 @@ def transcribe_audio(
 
     Args:
         document_id: ID of the document to transcribe
-        language: Language code for transcription (default: "en")
+        options: Optional dict containing transcription configuration:
+            - language: Language code or None for auto-detect
+            - task: 'transcribe' or 'translate'
+            - enable_diarization: Enable speaker identification
+            - temperature: Sampling temperature
+            - initial_prompt: Optional context prompt
 
     Returns:
         Dict containing transcription status and results
     """
     db = SessionLocal()
     temp_dir = None
+
+    # Parse options with defaults
+    options = options or {}
+    language = options.get("language")
+    task = options.get("task", "transcribe")
+    enable_diarization = options.get("enable_diarization", True)
+    temperature = options.get("temperature", 0.0)
+    initial_prompt = options.get("initial_prompt")
 
     try:
         # Update task state to STARTED
@@ -571,28 +602,161 @@ def transcribe_audio(
             meta={'status': 'Transcribing audio', 'progress': 30}
         )
 
-        logger.info("Starting Whisper transcription")
-        transcriber = WhisperTranscriber()
-        transcription_result = transcriber.transcribe(
-            processed_wav,
-            language=language,
-            task_id=self.request.id
-        )
+        # Use self-hosted transcription with Pyannote diarization (NO HuggingFace token needed)
+        logger.info(f"Starting self-hosted transcription (language={language or 'auto'}, diarization={enable_diarization})")
 
-        segments = transcription_result['segments']
-        full_text = transcription_result['text']
+        try:
+            import torch
+            from app.services.model_manager import get_pyannote_model_paths
+            from app.services.device_manager import get_device, get_compute_type
 
-        logger.info(f"Transcription completed: {len(segments)} segments, {len(full_text)} characters")
+            # Get device and compute type (supports both CUDA and ROCm)
+            device = get_device()
+            compute_type = get_compute_type(prefer_fp16=True)
 
-        # Step 5: Diarize speakers
-        self.update_state(
-            state='PROCESSING',
-            meta={'status': 'Identifying speakers', 'progress': 60}
-        )
+            logger.info(f"Using device: {device} with compute type: {compute_type}")
 
-        logger.info("Performing speaker diarization")
-        diarizer = SpeakerDiarizer()
-        diarized_segments = diarizer.diarize_segments(segments)
+            # Ensure Pyannote models are downloaded (first run only)
+            if enable_diarization:
+                logger.info("Ensuring Pyannote models are available...")
+                try:
+                    pyannote_models = get_pyannote_model_paths()
+                    logger.info(f"Pyannote models ready: {list(pyannote_models.keys())}")
+                except Exception as e:
+                    logger.warning(f"Failed to download Pyannote models: {e}")
+                    logger.warning("Falling back to simple diarization")
+                    enable_diarization = False
+
+            # Try WhisperX for transcription + alignment (faster, more accurate)
+            try:
+                from app.workers.pipelines.whisperx_pipeline import WhisperXPipeline
+
+                min_speakers = options.get("min_speakers", 2)
+                max_speakers = options.get("max_speakers", 10)
+
+                # Initialize WhisperX WITHOUT diarization (we'll use Pyannote directly)
+                pipeline = WhisperXPipeline(
+                    model_name="large-v3",
+                    device=device,
+                    compute_type=compute_type,
+                    language=language if language and language != "auto" else None,
+                    hf_token=None  # No HF token needed!
+                )
+
+                # Transcribe with alignment only (no diarization yet)
+                result = pipeline.transcribe(
+                    audio_path=processed_wav,
+                    enable_alignment=True,
+                    enable_diarization=False,  # We'll do this separately
+                    batch_size=16
+                )
+
+                # Convert WhisperX result to our format
+                segments = [seg.to_dict() for seg in result.segments]
+                full_text = result.get_full_text()
+                detected_language = result.language
+
+                logger.info(f"WhisperX transcription completed: {len(segments)} segments, language={detected_language}")
+
+                # Cleanup WhisperX models from memory
+                pipeline.cleanup()
+
+            except ImportError:
+                logger.info("WhisperX not available, using OpenAI Whisper API")
+
+                # Fallback to OpenAI Whisper API
+                transcriber = WhisperTranscriber()
+                transcription_result = transcriber.transcribe(
+                    processed_wav,
+                    language=language,
+                    task=task,
+                    temperature=temperature,
+                    initial_prompt=initial_prompt,
+                    task_id=self.request.id
+                )
+
+                segments = transcription_result['segments']
+                full_text = transcription_result['text']
+                detected_language = transcription_result.get('language', language)
+
+                logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+
+            # Step 5: Speaker diarization (if enabled)
+            if enable_diarization:
+                self.update_state(
+                    state='PROCESSING',
+                    meta={'status': 'Identifying speakers with Pyannote (self-hosted)', 'progress': 60}
+                )
+
+                try:
+                    # Use Pyannote.audio directly with our local models
+                    from pyannote.audio import Pipeline
+                    from pyannote.audio.pipelines.speaker_diarization import SpeakerDiarization
+
+                    logger.info("Running Pyannote speaker diarization...")
+
+                    min_speakers = options.get("min_speakers", 2)
+                    max_speakers = options.get("max_speakers", 10)
+
+                    # Load diarization pipeline with local models
+                    diarization_pipeline = Pipeline.from_pretrained(
+                        pyannote_models["segmentation"],
+                        use_auth_token=None  # No token needed!
+                    )
+
+                    # Move to GPU if available
+                    if device == "cuda":
+                        diarization_pipeline.to(torch.device("cuda"))
+
+                    # Run diarization on audio file
+                    diarization = diarization_pipeline(
+                        processed_wav,
+                        min_speakers=min_speakers,
+                        max_speakers=max_speakers
+                    )
+
+                    # Assign speakers to segments
+                    diarized_segments = []
+                    for segment in segments:
+                        # Find overlapping speaker from diarization
+                        segment_start = segment['start']
+                        segment_end = segment['end']
+
+                        # Find most common speaker in this segment
+                        speaker_times = {}
+                        for turn, _, speaker in diarization.itertracks(yield_label=True):
+                            # Calculate overlap with this segment
+                            overlap_start = max(segment_start, turn.start)
+                            overlap_end = min(segment_end, turn.end)
+                            overlap_duration = max(0, overlap_end - overlap_start)
+
+                            if overlap_duration > 0:
+                                speaker_times[speaker] = speaker_times.get(speaker, 0) + overlap_duration
+
+                        # Assign speaker with most overlap
+                        if speaker_times:
+                            assigned_speaker = max(speaker_times, key=speaker_times.get)
+                            segment['speaker'] = f"SPEAKER_{assigned_speaker}"
+                        else:
+                            segment['speaker'] = "SPEAKER_00"
+
+                        diarized_segments.append(segment)
+
+                    logger.info(f"Diarization completed: {len(set(s['speaker'] for s in diarized_segments))} speakers detected")
+
+                except Exception as e:
+                    logger.error(f"Pyannote diarization failed: {e}", exc_info=True)
+                    logger.warning("Falling back to simple heuristic diarization")
+
+                    diarizer = SpeakerDiarizer()
+                    diarized_segments = diarizer.diarize_segments(segments)
+            else:
+                logger.info("Speaker diarization disabled")
+                diarized_segments = segments
+
+        except Exception as e:
+            logger.error(f"Self-hosted transcription failed: {e}", exc_info=True)
+            raise TranscriptionError(f"Transcription failed: {str(e)}")
 
         # Extract speaker information
         speakers = {}
@@ -724,7 +888,16 @@ def transcribe_audio(
 
         logger.info(f"Transcription completed successfully for document {document_id}")
 
-        # Step 9: Return success result
+        # Step 9: Queue transcript indexing for search
+        try:
+            from app.workers.tasks.transcript_indexing import index_transcript
+            logger.info(f"Queueing transcript indexing for transcription {transcription.id}")
+            index_transcript.delay(transcription.id)
+        except Exception as e:
+            logger.warning(f"Failed to queue transcript indexing: {e}")
+            # Don't fail the whole transcription if indexing fails to queue
+
+        # Step 10: Return success result
         return {
             'status': 'completed',
             'document_id': document_id,
