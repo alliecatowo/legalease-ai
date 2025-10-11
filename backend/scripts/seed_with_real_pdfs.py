@@ -1,19 +1,21 @@
 """
-Seed database with real PDF legal documents and process through LlamaIndex pipeline.
+Seed database with real PDF legal documents and process through DocumentProcessor pipeline.
 
 This script:
-1. Downloads or uses real PDF legal documents
-2. Creates database records
-3. Uploads PDFs to MinIO
-4. Processes through complete LlamaIndex pipeline:
-   - Docling parsing (tables, images, structure)
-   - FastEmbed embeddings
-   - BM25 sparse vectors
+1. Downloads real PDF legal documents from public sources
+2. Creates database records with correct Document model fields
+3. Uploads PDFs to MinIO storage
+4. Processes through complete DocumentProcessor pipeline:
+   - Docling parsing (OCR, tables, images, structure)
+   - Hierarchical chunking (summary, section, microblock)
+   - FastEmbed dense embeddings (BAAI/bge-small-en-v1.5)
+   - BM25 sparse vectors for keyword matching
    - Qdrant indexing with named vectors
 """
 
 import sys
 import os
+import argparse
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -22,19 +24,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.database import SessionLocal
 from app.models.document import Document, DocumentStatus
 from app.models.case import Case
-from app.workers.pipelines.llamaindex_pipeline import LlamaIndexDocumentPipeline
-from app.core.minio_client import get_minio_client
-from datetime import datetime
+from app.workers.pipelines.document_pipeline import DocumentProcessor
+from app.core.minio_client import minio_client
+from app.services.page_image_service import PageImageService
+from datetime import datetime, UTC
 import io
 import requests
 
-# Real legal documents to download (public domain / CC0 license)
+# Real legal documents to download (public domain / free legal resources)
 SAMPLE_DOCUMENTS = {
-    "employment_agreement_sample.pdf": {
-        "url": "https://www.sec.gov/Archives/edgar/data/1018724/000119312513171796/d515263dex101.htm",
-        "description": "Employment Agreement - SEC Filing Sample",
-        "case": "Smith v. Johnson Employment",
-        "type": "Employment Agreement",
+    "supreme_court_opinion_2024.pdf": {
+        "url": "https://www.supremecourt.gov/opinions/24pdf/23-1275_e2pg.pdf",
+        "description": "Supreme Court Opinion - Medina v. Planned Parenthood (2024)",
+        "case": "Medina v. Planned Parenthood South Atlantic",
+        "type": "Court Opinion",
     },
     "nda_template.pdf": {
         "url": None,  # Will create from text
@@ -262,40 +265,104 @@ def create_pdf_from_text(text: str) -> bytes:
     return buffer.getvalue()
 
 
+def clear_database(db):
+    """Clear all data from the database."""
+    from app.models.chunk import Chunk
+    from app.models.entity import Entity
+    from app.core.qdrant import get_qdrant_client
+    from app.core.config import settings
+
+    print("🗑️  Clearing database...\n")
+
+    try:
+        # Delete in order to respect foreign key constraints
+        print("   Deleting chunks...")
+        db.query(Chunk).delete()
+        print("   Deleting documents...")
+        db.query(Document).delete()
+        print("   Deleting cases...")
+        db.query(Case).delete()
+        print("   Deleting entities...")
+        db.query(Entity).delete()
+
+        # Reset Qdrant collection
+        try:
+            qdrant_client = get_qdrant_client()
+            collection_name = settings.QDRANT_COLLECTION
+            qdrant_client.delete_collection(collection_name)
+            print(f"   ✅ Deleted Qdrant collection: {collection_name}")
+        except Exception as e:
+            print(f"   ⚠️  Qdrant collection deletion: {e}")
+
+        db.commit()
+        print("   ✅ Database cleared\n")
+    except Exception as e:
+        print(f"   ❌ Error clearing database: {e}\n")
+        db.rollback()
+        raise
+
+
 def main():
     """Seed database with real PDF documents and process through pipeline."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Seed database with legal documents")
+    parser.add_argument(
+        "--clear-db",
+        action="store_true",
+        help="Clear the database before seeding"
+    )
+    args = parser.parse_args()
+
     print("🌱 Seeding database with real PDF legal documents...\n")
 
     db = SessionLocal()
+
+    # Clear database if requested
+    if args.clear_db:
+        clear_database(db)
     try:
-        # Initialize MinIO and LlamaIndex pipeline
-        minio_client = get_minio_client()
-        pipeline = LlamaIndexDocumentPipeline(
+        # Ensure Qdrant collection exists (create if needed after clear)
+        from app.core.qdrant import create_collection
+        print("📊 Ensuring Qdrant collection exists...")
+        create_collection(
+            summary_vector_size=384,  # BAAI/bge-small-en-v1.5 embedding size
+            section_vector_size=384,
+            microblock_vector_size=384,
+            recreate=False,  # Don't recreate if already exists
+        )
+        print("✅ Qdrant collection ready\n")
+
+        # Initialize DocumentProcessor pipeline
+        processor = DocumentProcessor(
             embedding_model="BAAI/bge-small-en-v1.5",
             use_bm25=True,
-            use_docling_ocr=True,
+            use_ocr=True,
         )
 
-        print("✅ Initialized MinIO and LlamaIndex pipeline\n")
+        print("✅ Initialized MinIO and DocumentProcessor pipeline\n")
 
         # Get or create cases
         cases_dict = {}
+        existing_case_count = db.query(Case).count()
+
         for doc_info in SAMPLE_DOCUMENTS.values():
             case_name = doc_info["case"]
             if case_name not in cases_dict:
                 case = db.query(Case).filter(Case.name == case_name).first()
                 if not case:
+                    # Use a unique case number based on existing cases
+                    case_number = f"CASE-{existing_case_count + len(cases_dict) + 1:03d}"
                     case = Case(
                         name=case_name,
-                        case_number=f"CASE-{len(cases_dict) + 1:03d}",
+                        case_number=case_number,
                         client=case_name.split(" v. ")[0] if " v. " in case_name else case_name,
                         status="ACTIVE",
                         matter_type=doc_info["type"],
-                        created_at=datetime.utcnow(),
+                        created_at=datetime.now(UTC),
                     )
                     db.add(case)
                     db.flush()
-                    print(f"📁 Created case: {case_name} (ID: {case.id})")
+                    print(f"📁 Created case: {case_name} (ID: {case.id}, Number: {case_number})")
                 else:
                     print(f"📁 Found existing case: {case_name} (ID: {case.id})")
                 cases_dict[case_name] = case
@@ -328,15 +395,16 @@ def main():
 
                 # Create database record
                 case = cases_dict[doc_info["case"]]
+                file_path = f"documents/{case.id}/{filename}"
+
                 doc = Document(
                     case_id=case.id,
                     filename=filename,
-                    original_filename=filename,
+                    file_path=file_path,
                     mime_type="application/pdf",
-                    file_size=len(pdf_content),
-                    storage_path=f"documents/{case.id}/{filename}",
+                    size=len(pdf_content),
                     status=DocumentStatus.PENDING,
-                    uploaded_at=datetime.utcnow(),
+                    uploaded_at=datetime.now(UTC),
                 )
                 db.add(doc)
                 db.flush()
@@ -345,46 +413,97 @@ def main():
 
                 # Upload to MinIO
                 print(f"   ☁️  Uploading to MinIO...")
-                minio_client.put_object(
-                    "legalease",
-                    doc.storage_path,
+                minio_client.upload_file(
                     io.BytesIO(pdf_content),
-                    len(pdf_content),
+                    file_path,
                     content_type="application/pdf",
+                    length=len(pdf_content),
                 )
-                print(f"   ✅ Uploaded to MinIO: {doc.storage_path}")
+                print(f"   ✅ Uploaded to MinIO: {file_path}")
 
-                # Process through LlamaIndex pipeline
-                print(f"   🔄 Processing through LlamaIndex pipeline...")
-                result = pipeline.process(
+                # Process through DocumentProcessor pipeline
+                print(f"   🔄 Processing through DocumentProcessor pipeline...")
+                result = processor.process(
                     file_content=pdf_content,
                     filename=filename,
                     document_id=doc.id,
                     case_id=case.id,
-                    document_metadata={
-                        "description": doc_info["description"],
-                        "type": doc_info["type"],
-                    },
+                    mime_type="application/pdf",
                 )
 
-                if result["success"]:
+                if result.success:
+                    # Save chunks to database (DocumentProcessor only indexes to Qdrant)
+                    print(f"   💾 Saving chunks to database...")
+                    from app.models.chunk import Chunk
+                    from app.core.qdrant import get_qdrant_client
+                    from app.core.config import settings
+
+                    # Fetch chunks from Qdrant to save to database
+                    qdrant_client = get_qdrant_client()
+                    collection_name = settings.QDRANT_COLLECTION
+
+                    # Scroll through all points for this document
+                    scroll_result = qdrant_client.scroll(
+                        collection_name=collection_name,
+                        scroll_filter={
+                            "must": [
+                                {"key": "document_id", "match": {"value": doc.id}}
+                            ]
+                        },
+                        limit=1000,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
+
+                    points = scroll_result[0]
+                    chunks_saved = 0
+
+                    for point in points:
+                        payload = point.payload
+                        chunk = Chunk(
+                            document_id=doc.id,
+                            text=payload.get("text", ""),
+                            chunk_type=payload.get("chunk_type", "section"),
+                            position=payload.get("position", 0),
+                            page_number=payload.get("page_number"),
+                            meta_data={
+                                "bbox": payload.get("bbox"),
+                                **payload.get("metadata", {}),
+                            },
+                        )
+                        db.add(chunk)
+                        chunks_saved += 1
+
+                    db.flush()
+                    print(f"   ✅ Saved {chunks_saved} chunks to database")
+                    # Generate page images for PDF documents
+                    print(f"   🖼️  Generating page images...")
+                    try:
+                        page_image_service = PageImageService()
+                        image_count = page_image_service.generate_page_images(
+                            document_id=doc.id,
+                            case_id=case.id,
+                            pdf_content=pdf_content
+                        )
+                        print(f"   ✅ Generated {image_count} page images")
+                    except Exception as e:
+                        print(f"   ⚠️  Page image generation failed: {e}")
+                        # Don't fail the entire process if image generation fails
+
                     # Update document status
                     doc.status = DocumentStatus.COMPLETED
-                    doc.processed_at = datetime.utcnow()
                     db.commit()
 
                     print(f"   ✅ Processing complete!")
-                    print(f"      - Chunks created: {result['chunks_created']['total']}")
-                    print(f"        • Summary: {result['chunks_created']['summary']}")
-                    print(f"        • Section: {result['chunks_created']['section']}")
-                    print(f"        • Microblock: {result['chunks_created']['microblock']}")
-                    print(f"      - Indexed points: {result['indexed_points']}")
+                    print(f"      - Chunks created: {result.data.get('chunks_count', 0)}")
+                    print(f"      - Text length: {result.data.get('text_length', 0)} chars")
+                    print(f"      - Pages: {result.data.get('pages_count', 0)}")
 
                     total_processed += 1
                 else:
                     doc.status = DocumentStatus.FAILED
                     db.commit()
-                    print(f"   ❌ Processing failed: {result.get('error')}")
+                    print(f"   ❌ Processing failed: {result.error}")
                     total_failed += 1
 
             except Exception as e:
@@ -403,11 +522,16 @@ def main():
         print(f"   Failed: {total_failed}/{len(SAMPLE_DOCUMENTS)}")
         print(f"\n📊 Cases created: {len(cases_dict)}")
         print(f"\n✅ Documents are now indexed in Qdrant with:")
-        print(f"   - Dense vectors (summary, section, microblock) via FastEmbed")
+        print(f"   - Dense embeddings via FastEmbed (BAAI/bge-small-en-v1.5)")
         print(f"   - Sparse vectors (BM25) for keyword matching")
-        print(f"   - Parsed with Docling (tables, structure, images)")
-        print(f"\n🔍 Test the search API:")
-        print(f"   curl 'http://localhost:8000/api/v1/search?q=confidential&limit=5'")
+        print(f"   - Parsed with Docling (GPU-accelerated, OCR, bounding boxes)")
+        print(f"   - Hierarchical chunking (summary, section, microblock)")
+        print(f"   - Bounding boxes preserved in chunk metadata")
+        print(f"   - Page images generated and stored in MinIO")
+        print(f"\n🔍 Test the APIs:")
+        print(f"   Search: curl 'http://localhost:8000/api/v1/search?q=agreement&limit=5'")
+        print(f"   Content: curl 'http://localhost:8000/api/v1/documents/1/content?include_images=true'")
+        print(f"   Page Image: curl 'http://localhost:8000/api/v1/documents/1/pages/1'")
 
     except Exception as e:
         print(f"\n❌ Fatal error: {e}")

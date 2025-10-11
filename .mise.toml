@@ -24,10 +24,27 @@ down = "docker compose down"
 logs = "docker compose logs -f"
 build = "docker compose build"
 
-# Database
-db-migrate = "cd backend && uv run alembic upgrade head"
-db-rollback = "cd backend && uv run alembic downgrade -1"
-db-seed = "cd backend && uv run python scripts/seed_data.py"
+# Database - Migration
+migrate = "docker compose exec backend bash -c 'cd /app && uv run alembic upgrade head'"
+"migrate:down" = "docker compose exec backend bash -c 'cd /app && uv run alembic downgrade -1'"
+"migrate:current" = "docker compose exec backend bash -c 'cd /app && uv run alembic current'"
+"migrate:history" = "docker compose exec backend bash -c 'cd /app && uv run alembic history'"
+
+# Database - Seeding
+seed = "docker compose exec backend bash -c 'cd /app && uv run python scripts/seed_with_real_pdfs.py'"
+"seed:clear" = "docker compose exec backend bash -c 'cd /app && uv run python scripts/seed_with_real_pdfs.py --clear-db'"
+
+# Database - Old seed script (simple data)
+"seed:old" = "cd backend && uv run python scripts/seed_data.py"
+
+# Database - Admin
+shell = "docker compose exec backend bash"
+psql = "docker compose exec postgres psql -U legalease -d legalease"
+
+# Logs
+"logs:backend" = "docker compose logs -f backend"
+"logs:worker" = "docker compose logs -f worker"
+"logs:all" = "docker compose logs -f"
 
 # Models
 download-models = "./scripts/download_models.sh"

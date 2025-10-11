@@ -21,6 +21,7 @@ class TextChunk:
     position: int  # Position in document
     page_number: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
+    bboxes: Optional[List[Dict[str, Any]]] = None  # Bounding boxes for this chunk
 
 
 class DocumentChunker:
@@ -114,6 +115,9 @@ class DocumentChunker:
         """
         chunks = []
 
+        # Extract bboxes from metadata if available
+        all_bboxes = metadata.get("bboxes", []) if metadata else []
+
         # For shorter documents, use entire text as summary
         word_count = len(text.split())
         if word_count <= self.summary_max_tokens:
@@ -122,6 +126,7 @@ class DocumentChunker:
                 chunk_type="summary",
                 position=0,
                 metadata=metadata,
+                bboxes=all_bboxes,  # Include all bboxes for summary
             ))
         else:
             # For longer documents, create overlapping summary chunks
@@ -132,11 +137,15 @@ class DocumentChunker:
                 chunk_words = words[i:i + self.summary_max_tokens]
                 chunk_text = " ".join(chunk_words)
 
+                # Extract relevant bboxes for this chunk
+                chunk_bboxes = self._extract_bboxes_for_text(chunk_text, all_bboxes)
+
                 chunks.append(TextChunk(
                     text=chunk_text,
                     chunk_type="summary",
                     position=position,
                     metadata=metadata,
+                    bboxes=chunk_bboxes,
                 ))
                 position += 1
 
@@ -161,6 +170,13 @@ class DocumentChunker:
         """
         chunks = []
 
+        # Extract bboxes from metadata or pages
+        all_bboxes = metadata.get("bboxes", []) if metadata else []
+        if not all_bboxes and pages:
+            # Collect bboxes from all pages
+            for page in pages:
+                all_bboxes.extend(page.get("bboxes", []))
+
         if self.use_semantic_splitting:
             # Try to split on legal section markers
             sections = self._split_on_legal_sections(text)
@@ -178,11 +194,15 @@ class DocumentChunker:
             )
 
             for sub_chunk in sub_chunks:
+                # Extract relevant bboxes for this chunk
+                chunk_bboxes = self._extract_bboxes_for_text(sub_chunk, all_bboxes)
+
                 chunks.append(TextChunk(
                     text=sub_chunk,
                     chunk_type="section",
                     position=position,
                     metadata=metadata,
+                    bboxes=chunk_bboxes,
                 ))
                 position += 1
 
@@ -207,6 +227,13 @@ class DocumentChunker:
         """
         chunks = []
 
+        # Extract bboxes from metadata or pages
+        all_bboxes = metadata.get("bboxes", []) if metadata else []
+        if not all_bboxes and pages:
+            # Collect bboxes from all pages
+            for page in pages:
+                all_bboxes.extend(page.get("bboxes", []))
+
         # Split into sentences
         sentences = self._split_into_sentences(text)
 
@@ -222,11 +249,15 @@ class DocumentChunker:
             if current_tokens + sentence_tokens > self.microblock_max_tokens and current_block:
                 # Create chunk from current block
                 block_text = " ".join(current_block)
+                # Extract relevant bboxes for this chunk
+                chunk_bboxes = self._extract_bboxes_for_text(block_text, all_bboxes)
+
                 chunks.append(TextChunk(
                     text=block_text,
                     chunk_type="microblock",
                     position=position,
                     metadata=metadata,
+                    bboxes=chunk_bboxes,
                 ))
                 position += 1
 
@@ -245,11 +276,15 @@ class DocumentChunker:
         # Add final block
         if current_block:
             block_text = " ".join(current_block)
+            # Extract relevant bboxes for this chunk
+            chunk_bboxes = self._extract_bboxes_for_text(block_text, all_bboxes)
+
             chunks.append(TextChunk(
                 text=block_text,
                 chunk_type="microblock",
                 position=position,
                 metadata=metadata,
+                bboxes=chunk_bboxes,
             ))
 
         return chunks
@@ -419,6 +454,36 @@ class DocumentChunker:
             Estimated token count
         """
         return len(text.split())
+
+    def _extract_bboxes_for_text(
+        self,
+        chunk_text: str,
+        all_bboxes: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Extract relevant bounding boxes for a text chunk.
+
+        Matches bboxes to chunk text by finding bboxes whose text appears in the chunk.
+
+        Args:
+            chunk_text: The chunk text to match
+            all_bboxes: List of all available bboxes
+
+        Returns:
+            List of relevant bboxes for this chunk
+        """
+        if not all_bboxes:
+            return []
+
+        chunk_bboxes = []
+        chunk_lower = chunk_text.lower()
+
+        for bbox in all_bboxes:
+            bbox_text = bbox.get("text", "")
+            if bbox_text and bbox_text.lower() in chunk_lower:
+                chunk_bboxes.append(bbox)
+
+        return chunk_bboxes
 
 
 # Convenience function for quick chunking

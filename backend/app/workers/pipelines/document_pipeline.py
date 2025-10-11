@@ -264,6 +264,7 @@ class DocumentProcessor:
                         "position": chunk.position,
                         "page_number": chunk.page_number,
                         "metadata": chunk.metadata or {},
+                        "bboxes": chunk.bboxes or [],  # Include bboxes
                     })
 
             if not all_chunks:

@@ -220,6 +220,114 @@ class DocumentService:
             )
 
     @staticmethod
+    def get_document_content(document_id: int, db: Session) -> dict:
+        """
+        Get parsed document content including text, pages, and bounding boxes.
+
+        Args:
+            document_id: ID of the document
+            db: Database session
+
+        Returns:
+            dict: Document content with structure:
+                {
+                    "text": str,  # Full document text
+                    "pages": List[dict],  # Page-level content with items and bboxes
+                    "metadata": dict,  # Document metadata
+                }
+
+        Raises:
+            HTTPException: If document not found or content not available
+        """
+        from app.models.chunk import Chunk
+
+        # Get document from database
+        document = DocumentService.get_document(document_id, db)
+
+        # Check if document has been processed
+        if document.status != DocumentStatus.COMPLETED:
+            logger.warning(f"Document {document_id} not yet processed (status: {document.status})")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Document is not processed yet. Current status: {document.status.value}",
+            )
+
+        # Get all chunks for this document ordered by page/position
+        chunks = (
+            db.query(Chunk)
+            .filter(Chunk.document_id == document_id)
+            .order_by(Chunk.page_number, Chunk.position)
+            .all()
+        )
+
+        if not chunks:
+            logger.warning(f"No chunks found for document {document_id}")
+            # Return basic structure with document metadata
+            return {
+                "text": "",
+                "pages": [],
+                "metadata": document.meta_data or {},
+                "filename": document.filename,
+                "document_id": document_id,
+                "total_chunks": 0,
+                "total_pages": 0,
+            }
+
+        # Group chunks by page
+        pages_dict = {}
+        full_text = []
+
+        for chunk in chunks:
+            page_num = chunk.page_number or 1
+
+            if page_num not in pages_dict:
+                pages_dict[page_num] = {
+                    "page_number": page_num,
+                    "items": [],
+                    "text": [],
+                }
+
+            # Extract bbox data from chunk metadata
+            chunk_meta = chunk.meta_data or {}
+            item_data = {
+                "text": chunk.text,
+                "type": chunk.chunk_type,
+                "chunk_id": chunk.id,
+            }
+
+            # Add bbox if available in metadata
+            if "bbox" in chunk_meta:
+                item_data["bbox"] = chunk_meta["bbox"]
+
+            pages_dict[page_num]["items"].append(item_data)
+            pages_dict[page_num]["text"].append(chunk.text)
+            full_text.append(chunk.text)
+
+        # Build ordered pages list
+        pages = []
+        for page_num in sorted(pages_dict.keys()):
+            page_data = pages_dict[page_num]
+            page_data["text"] = "\n".join(page_data["text"])
+            pages.append(page_data)
+
+        result = {
+            "text": "\n\n".join(full_text),
+            "pages": pages,
+            "metadata": document.meta_data or {},
+            "filename": document.filename,
+            "document_id": document_id,
+            "total_chunks": len(chunks),
+            "total_pages": len(pages),
+        }
+
+        logger.info(
+            f"Retrieved content for document {document_id}: "
+            f"{len(pages)} pages, {len(chunks)} chunks"
+        )
+
+        return result
+
+    @staticmethod
     def delete_document(document_id: int, db: Session) -> Document:
         """
         Delete a document (from both database and MinIO).

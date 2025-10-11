@@ -1,13 +1,13 @@
 """
 Docling Document Parser
 
-Extracts text and structure from various document formats using Docling library.
+Extracts text, structure, and bounding boxes from various document formats using Docling library.
 Supports PDF, DOCX, and other common legal document formats with OCR fallback.
 """
 
 import logging
 import io
-from typing import Dict, Any, Optional, List, BinaryIO
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 import tempfile
 
@@ -16,24 +16,27 @@ logger = logging.getLogger(__name__)
 
 class DoclingParser:
     """
-    Document parser using Docling for text extraction.
+    Document parser using Docling for text extraction and layout analysis.
 
     Features:
     - Multi-format support (PDF, DOCX, DOC, TXT)
     - Structure preservation (headers, paragraphs, tables)
     - OCR fallback for scanned documents
+    - Bounding box extraction for visual highlighting
     - Metadata extraction
     """
 
-    def __init__(self, use_ocr: bool = True):
+    def __init__(self, use_ocr: bool = True, force_full_page_ocr: bool = False):
         """
         Initialize the Docling parser.
 
         Args:
             use_ocr: Whether to use OCR for scanned documents
+            force_full_page_ocr: Force OCR on all pages (for scanned documents)
         """
         self.use_ocr = use_ocr
-        logger.info(f"Initialized DoclingParser (OCR: {use_ocr})")
+        self.force_full_page_ocr = force_full_page_ocr
+        logger.info(f"Initialized DoclingParser (OCR: {use_ocr}, Force Full Page OCR: {force_full_page_ocr})")
 
     def parse(
         self,
@@ -42,7 +45,7 @@ class DoclingParser:
         mime_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Parse a document and extract text and metadata.
+        Parse a document and extract text, metadata, and bounding boxes.
 
         Args:
             file_content: Raw bytes of the document
@@ -52,9 +55,10 @@ class DoclingParser:
         Returns:
             Dictionary containing:
                 - text: Full extracted text
-                - pages: List of page texts
+                - pages: List of page texts with bounding boxes
                 - metadata: Document metadata
                 - structure: Document structure information
+                - bboxes: Bounding box data for visual highlighting
         """
         logger.info(f"Parsing document: {filename} (MIME: {mime_type})")
 
@@ -64,7 +68,7 @@ class DoclingParser:
         try:
             # Route to appropriate parser based on file type
             if file_ext == '.pdf':
-                return self._parse_pdf(file_content, filename)
+                return self._parse_pdf_with_docling(file_content, filename)
             elif file_ext in ['.docx', '.doc']:
                 return self._parse_docx(file_content, filename)
             elif file_ext == '.txt':
@@ -75,11 +79,231 @@ class DoclingParser:
 
         except Exception as e:
             logger.error(f"Error parsing document {filename}: {e}")
+            # Fallback to PyMuPDF if Docling fails
+            if file_ext == '.pdf':
+                logger.warning("Falling back to PyMuPDF parser")
+                return self._parse_pdf_fallback(file_content, filename)
             raise
 
-    def _parse_pdf(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+    def _parse_pdf_with_docling(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
-        Parse PDF document with OCR fallback.
+        Parse PDF document with Docling library for advanced layout analysis.
+        Uses GPU acceleration when available and extracts detailed bounding boxes.
+
+        Args:
+            file_content: PDF file bytes
+            filename: Original filename
+
+        Returns:
+            Parsed document data with bounding boxes
+        """
+        try:
+            from docling.document_converter import DocumentConverter, PdfFormatOption
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
+            from docling.datamodel.base_models import InputFormat
+            import torch
+        except ImportError as e:
+            logger.error(f"Docling or torch not installed: {e}. Falling back to PyMuPDF")
+            return self._parse_pdf_fallback(file_content, filename)
+
+        try:
+            # Detect GPU availability
+            device = "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+                logger.info("GPU detected - enabling CUDA acceleration for Docling")
+            else:
+                logger.info("No GPU detected - using CPU for Docling")
+
+            # Configure pipeline options with GPU support
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = self.use_ocr
+            pipeline_options.do_table_structure = True
+            pipeline_options.table_structure_options.do_cell_matching = True
+
+            # Set device for GPU acceleration
+            if hasattr(pipeline_options, 'accelerator_options'):
+                pipeline_options.accelerator_options.device = device
+
+            # Configure OCR options for scanned documents
+            if self.use_ocr:
+                ocr_options = EasyOcrOptions(force_full_page_ocr=self.force_full_page_ocr)
+                # Enable GPU for OCR if available
+                if device == "cuda" and hasattr(ocr_options, 'use_gpu'):
+                    ocr_options.use_gpu = True
+                pipeline_options.ocr_options = ocr_options
+
+            # Create document converter
+            converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+                }
+            )
+
+            # Write to temporary file (Docling needs file path)
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
+                tmp_file.write(file_content)
+                tmp_path = tmp_file.name
+
+            try:
+                # Convert document
+                result = converter.convert(tmp_path)
+                doc = result.document
+
+                # Extract pages with bounding boxes using doc.iterate_items()
+                pages_dict = {}  # page_num -> {"text": [], "items": []}
+                full_text = []
+
+                # Use iterate_items() to get proper tuple structure
+                if hasattr(doc, 'iterate_items'):
+                    logger.info("Using doc.iterate_items() for bbox extraction")
+
+                    for item_tuple in doc.iterate_items():
+                        # Items are tuples: (ContentObject, page_number)
+                        if not isinstance(item_tuple, tuple) or len(item_tuple) < 2:
+                            continue
+
+                        content_obj = item_tuple[0]
+                        page_num = item_tuple[1]
+
+                        # Initialize page if not seen
+                        if page_num not in pages_dict:
+                            pages_dict[page_num] = {
+                                "text": [],
+                                "items": []
+                            }
+
+                        # Extract text
+                        item_text = getattr(content_obj, 'text', '')
+                        if item_text:
+                            pages_dict[page_num]["text"].append(item_text)
+
+                        # Extract bounding box from prov structure
+                        prov = getattr(content_obj, 'prov', None)
+                        bbox = None
+
+                        if prov and len(prov) > 0:
+                            bbox_obj = getattr(prov[0], 'bbox', None)
+                            if bbox_obj:
+                                bbox = {
+                                    "l": getattr(bbox_obj, 'l', 0),
+                                    "t": getattr(bbox_obj, 't', 0),
+                                    "r": getattr(bbox_obj, 'r', 0),
+                                    "b": getattr(bbox_obj, 'b', 0)
+                                }
+
+                        # Create item entry
+                        item_data = {
+                            "text": item_text,
+                            "type": content_obj.__class__.__name__,
+                        }
+
+                        if bbox:
+                            item_data["bbox"] = bbox
+
+                        pages_dict[page_num]["items"].append(item_data)
+
+                else:
+                    # Fallback to old method if iterate_items not available
+                    logger.warning("doc.iterate_items() not available, using page.items fallback")
+                    for page_num, page in enumerate(doc.pages):
+                        if page_num not in pages_dict:
+                            pages_dict[page_num] = {
+                                "text": [],
+                                "items": []
+                            }
+
+                        for item in page.items:
+                            item_text = getattr(item, 'text', '')
+                            if item_text:
+                                pages_dict[page_num]["text"].append(item_text)
+
+                            # Try to get bbox
+                            bbox = None
+                            if hasattr(item, 'bbox') and item.bbox:
+                                bbox_obj = item.bbox
+                                bbox = {
+                                    "l": getattr(bbox_obj, 'l', 0),
+                                    "t": getattr(bbox_obj, 't', 0),
+                                    "r": getattr(bbox_obj, 'r', 0),
+                                    "b": getattr(bbox_obj, 'b', 0)
+                                }
+
+                            item_data = {
+                                "text": item_text,
+                                "type": item.__class__.__name__,
+                            }
+
+                            if bbox:
+                                item_data["bbox"] = bbox
+
+                            pages_dict[page_num]["items"].append(item_data)
+
+                # Build pages list in order
+                pages = []
+                for page_num in sorted(pages_dict.keys()):
+                    page_data = pages_dict[page_num]
+                    page_text = "\n".join(page_data["text"])
+
+                    pages.append({
+                        "page_number": page_num,
+                        "text": page_text,
+                        "items": page_data["items"],
+                    })
+                    full_text.append(page_text)
+
+                # Extract metadata
+                metadata = {
+                    "page_count": len(pages),
+                    "title": doc.metadata.get("title", "") if hasattr(doc, 'metadata') else "",
+                    "author": doc.metadata.get("author", "") if hasattr(doc, 'metadata') else "",
+                    "device": device,  # Track whether GPU was used
+                }
+
+                # Count total items with bboxes for logging
+                total_items = sum(len(p["items"]) for p in pages)
+                items_with_bbox = sum(
+                    1 for p in pages for item in p["items"] if "bbox" in item
+                )
+
+                result = {
+                    "text": "\n\n".join(full_text),
+                    "pages": pages,
+                    "metadata": metadata,
+                }
+
+                logger.info(
+                    f"Successfully parsed PDF with Docling ({device}): "
+                    f"{len(pages)} pages, {total_items} items, "
+                    f"{items_with_bbox} with bboxes "
+                    f"({items_with_bbox/total_items*100:.1f}% coverage)"
+                )
+                return result
+
+            finally:
+                # Clean up temporary file
+                import os
+                try:
+                    os.unlink(tmp_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temporary file: {e}")
+
+                # Clear GPU cache if used
+                if device == "cuda":
+                    try:
+                        torch.cuda.empty_cache()
+                        logger.debug("Cleared CUDA cache")
+                    except Exception as e:
+                        logger.debug(f"Failed to clear CUDA cache: {e}")
+
+        except Exception as e:
+            logger.error(f"Error parsing PDF with Docling: {e}", exc_info=True)
+            logger.warning("Falling back to PyMuPDF")
+            return self._parse_pdf_fallback(file_content, filename)
+
+    def _parse_pdf_fallback(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Fallback PDF parser using PyMuPDF with basic bbox extraction.
 
         Args:
             file_content: PDF file bytes
@@ -92,8 +316,7 @@ class DoclingParser:
             import fitz  # PyMuPDF
         except ImportError:
             logger.error("PyMuPDF (fitz) not installed. Install with: pip install pymupdf")
-            # Fallback to basic text extraction
-            return self._parse_pdf_fallback(file_content, filename)
+            raise
 
         try:
             # Open PDF from bytes
@@ -101,6 +324,7 @@ class DoclingParser:
 
             pages = []
             full_text = []
+            all_bboxes = []
             metadata = {}
 
             # Extract metadata
@@ -112,10 +336,31 @@ class DoclingParser:
                 "creator": pdf_document.metadata.get("creator", ""),
             }
 
-            # Extract text from each page
+            # Extract text and bboxes from each page
             for page_num in range(pdf_document.page_count):
                 page = pdf_document[page_num]
+
+                # Get text with word-level bounding boxes
+                words = page.get_text("words")  # Returns list of (x0, y0, x1, y1, word, block_no, line_no, word_no)
+
                 page_text = page.get_text()
+                page_bboxes = []
+
+                # Extract bounding boxes for each word
+                for word_data in words:
+                    if len(word_data) >= 5:
+                        x0, y0, x1, y1, word = word_data[:5]
+                        bbox_data = {
+                            "x0": x0,
+                            "y0": y0,
+                            "x1": x1,
+                            "y1": y1,
+                            "page": page_num + 1,
+                            "text": word,
+                            "type": "word"
+                        }
+                        page_bboxes.append(bbox_data)
+                        all_bboxes.append(bbox_data)
 
                 # If page is mostly empty and OCR is enabled, try OCR
                 if self.use_ocr and len(page_text.strip()) < 50:
@@ -126,6 +371,7 @@ class DoclingParser:
                     "page_number": page_num + 1,
                     "text": page_text,
                     "char_count": len(page_text),
+                    "bboxes": page_bboxes,
                 })
                 full_text.append(page_text)
 
@@ -139,64 +385,10 @@ class DoclingParser:
                     "type": "pdf",
                     "page_count": len(pages),
                 },
+                "bboxes": all_bboxes,
             }
 
-            logger.info(f"Successfully parsed PDF: {len(pages)} pages, {len(result['text'])} chars")
-            return result
-
-        except Exception as e:
-            logger.error(f"Error parsing PDF with PyMuPDF: {e}")
-            return self._parse_pdf_fallback(file_content, filename)
-
-    def _parse_pdf_fallback(self, file_content: bytes, filename: str) -> Dict[str, Any]:
-        """
-        Fallback PDF parser using pypdf.
-
-        Args:
-            file_content: PDF file bytes
-            filename: Original filename
-
-        Returns:
-            Parsed document data
-        """
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            logger.error("pypdf not installed. Install with: pip install pypdf")
-            raise
-
-        try:
-            pdf_reader = PdfReader(io.BytesIO(file_content))
-
-            pages = []
-            full_text = []
-
-            for page_num, page in enumerate(pdf_reader.pages):
-                page_text = page.extract_text()
-                pages.append({
-                    "page_number": page_num + 1,
-                    "text": page_text,
-                    "char_count": len(page_text),
-                })
-                full_text.append(page_text)
-
-            metadata = {
-                "page_count": len(pdf_reader.pages),
-                "title": pdf_reader.metadata.get("/Title", "") if pdf_reader.metadata else "",
-                "author": pdf_reader.metadata.get("/Author", "") if pdf_reader.metadata else "",
-            }
-
-            result = {
-                "text": "\n\n".join(full_text),
-                "pages": pages,
-                "metadata": metadata,
-                "structure": {
-                    "type": "pdf",
-                    "page_count": len(pages),
-                },
-            }
-
-            logger.info(f"Successfully parsed PDF (fallback): {len(pages)} pages")
+            logger.info(f"Successfully parsed PDF (PyMuPDF): {len(pages)} pages, {len(all_bboxes)} bboxes")
             return result
 
         except Exception as e:
@@ -271,6 +463,7 @@ class DoclingParser:
                     "paragraphs": paragraphs,
                     "tables": tables,
                 },
+                "bboxes": [],  # DOCX doesn't have bounding boxes
             }
 
             logger.info(f"Successfully parsed DOCX: {len(paragraphs)} paragraphs, {len(tables)} tables")
@@ -312,6 +505,7 @@ class DoclingParser:
                     "type": "text",
                     "lines": len(lines),
                 },
+                "bboxes": [],  # Text files don't have bounding boxes
             }
 
             logger.info(f"Successfully parsed text file: {len(lines)} lines")
@@ -348,6 +542,7 @@ class DoclingParser:
                 "structure": {
                     "type": "generic",
                 },
+                "bboxes": [],
             }
         except Exception as e:
             logger.error(f"Error in generic parser: {e}")

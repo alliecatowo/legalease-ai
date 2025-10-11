@@ -13,7 +13,13 @@ from app.schemas.document import (
     DocumentListResponse,
     DocumentDeleteResponse,
 )
+from app.schemas.search import (
+    DocumentContentResponse,
+    PageImageResponse,
+    PageListResponse,
+)
 from app.services.document_service import DocumentService
+from app.services.page_image_service import PageImageService
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +169,167 @@ def download_document(
             "Content-Length": str(len(content)),
         },
     )
+
+
+@router.get(
+    "/documents/{document_id}/content",
+    response_model=DocumentContentResponse,
+    summary="Get document content with bboxes",
+    description="Get the parsed content of a document including text, pages, and bounding boxes for visual highlighting.",
+)
+def get_document_content(
+    document_id: int,
+    include_images: bool = False,
+    db: Session = Depends(get_db),
+):
+    """
+    Get document content with bounding boxes.
+
+    Args:
+        document_id: ID of the document
+        include_images: Whether to include presigned URLs for page images
+        db: Database session
+
+    Returns:
+        DocumentContentResponse: Document content with text, pages, and bboxes
+    """
+    logger.info(f"Getting content for document {document_id} (include_images={include_images})")
+
+    content = DocumentService.get_document_content(document_id=document_id, db=db)
+
+    # Add page image URLs if requested
+    if include_images and content.get("total_pages", 0) > 0:
+        document = DocumentService.get_document(document_id=document_id, db=db)
+
+        try:
+            page_images = PageImageService.get_all_page_image_urls(
+                case_id=document.case_id,
+                document_id=document_id,
+                page_count=content["total_pages"],
+            )
+
+            # Add image URLs to pages
+            for page in content.get("pages", []):
+                page_num = page.get("page_number", 0)
+                if page_num > 0 and page_num <= len(page_images):
+                    page["image_url"] = page_images[page_num - 1].get("image_url")
+
+        except Exception as e:
+            logger.warning(f"Failed to get page images for document {document_id}: {e}")
+
+    return content
+
+
+@router.get(
+    "/documents/{document_id}/pages/{page_num}",
+    response_model=PageImageResponse,
+    summary="Get page image URL",
+    description="Get a presigned URL for a specific page image.",
+)
+def get_document_page(
+    document_id: int,
+    page_num: int,
+    expires_in: int = 3600,
+    db: Session = Depends(get_db),
+):
+    """
+    Get page image URL.
+
+    Args:
+        document_id: ID of the document
+        page_num: Page number (1-indexed)
+        expires_in: URL expiration time in seconds (default: 3600)
+        db: Database session
+
+    Returns:
+        PageImageResponse: Page image URL and metadata
+    """
+    logger.info(f"Getting page {page_num} image for document {document_id}")
+
+    # Get document to retrieve case_id
+    document = DocumentService.get_document(document_id=document_id, db=db)
+
+    try:
+        image_url = PageImageService.get_page_image_url(
+            case_id=document.case_id,
+            document_id=document_id,
+            page_num=page_num,
+            expires_in_seconds=expires_in,
+        )
+
+        return PageImageResponse(
+            page_number=page_num,
+            image_url=image_url,
+            document_id=document_id,
+            expires_in=expires_in,
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting page image: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Page image not found: {str(e)}",
+        )
+
+
+@router.get(
+    "/documents/{document_id}/pages",
+    response_model=PageListResponse,
+    summary="List all page images",
+    description="Get presigned URLs for all page images in a document.",
+)
+def list_document_pages(
+    document_id: int,
+    expires_in: int = 3600,
+    db: Session = Depends(get_db),
+):
+    """
+    List all page images for a document.
+
+    Args:
+        document_id: ID of the document
+        expires_in: URL expiration time in seconds (default: 3600)
+        db: Database session
+
+    Returns:
+        PageListResponse: List of page image URLs
+    """
+    logger.info(f"Listing page images for document {document_id}")
+
+    # Get document
+    document = DocumentService.get_document(document_id=document_id, db=db)
+
+    # Get page count from metadata
+    page_count = document.meta_data.get("page_count", 0) if document.meta_data else 0
+
+    if page_count == 0:
+        logger.warning(f"No page count metadata for document {document_id}")
+        return PageListResponse(
+            document_id=document_id,
+            total_pages=0,
+            pages=[],
+        )
+
+    try:
+        pages = PageImageService.get_all_page_image_urls(
+            case_id=document.case_id,
+            document_id=document_id,
+            page_count=page_count,
+            expires_in_seconds=expires_in,
+        )
+
+        return PageListResponse(
+            document_id=document_id,
+            total_pages=page_count,
+            pages=pages,
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing page images: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list page images: {str(e)}",
+        )
 
 
 @router.delete(

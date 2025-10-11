@@ -444,7 +444,7 @@ const documentTypeIcons: Record<string, string> = {
                     <span>•</span>
                     <span>{{ formatDate(doc.updated_at) }}</span>
                     <UBadge
-                      v-if="doc.status === 'processing'"
+                      v-if="doc.status?.toLowerCase() === 'processing'"
                       color="warning"
                       variant="subtle"
                       size="sm"
@@ -452,12 +452,12 @@ const documentTypeIcons: Record<string, string> = {
                       Processing
                     </UBadge>
                     <UBadge
-                      v-else-if="doc.status === 'indexed'"
+                      v-else-if="['indexed', 'completed'].includes(doc.status?.toLowerCase())"
                       color="success"
                       variant="subtle"
                       size="sm"
                     >
-                      Indexed
+                      {{ doc.status?.toLowerCase() === 'completed' ? 'Completed' : 'Indexed' }}
                     </UBadge>
                   </div>
                   <p v-if="doc.summary" class="text-sm text-muted mt-2 line-clamp-2">

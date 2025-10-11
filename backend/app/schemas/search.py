@@ -10,6 +10,204 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
 
+# Bounding Box and Page Schemas
+
+class BoundingBox(BaseModel):
+    """
+    Bounding box coordinates for text highlighting.
+
+    Attributes:
+        x0: Left coordinate (or 'l' for Docling format)
+        y0: Top coordinate (or 't' for Docling format)
+        x1: Right coordinate (or 'r' for Docling format)
+        y1: Bottom coordinate (or 'b' for Docling format)
+        page: Page number this bbox belongs to
+        text: Text content within this bbox
+        type: Type of element (e.g., 'word', 'TextItem', 'TableItem')
+    """
+
+    x0: Optional[float] = Field(None, description="Left X coordinate")
+    y0: Optional[float] = Field(None, description="Top Y coordinate")
+    x1: Optional[float] = Field(None, description="Right X coordinate")
+    y1: Optional[float] = Field(None, description="Bottom Y coordinate")
+    l: Optional[float] = Field(None, description="Left coordinate (Docling format)")
+    t: Optional[float] = Field(None, description="Top coordinate (Docling format)")
+    r: Optional[float] = Field(None, description="Right coordinate (Docling format)")
+    b: Optional[float] = Field(None, description="Bottom coordinate (Docling format)")
+    page: Optional[int] = Field(None, description="Page number")
+    text: Optional[str] = Field(None, description="Text content")
+    type: Optional[str] = Field(None, description="Element type")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "x0": 72.0,
+                "y0": 100.0,
+                "x1": 200.0,
+                "y1": 120.0,
+                "page": 1,
+                "text": "contract",
+                "type": "word",
+            }
+        }
+
+
+class PageItem(BaseModel):
+    """
+    Structured item on a document page.
+
+    Attributes:
+        text: Text content of the item
+        type: Type of element (e.g., 'TextItem', 'TableItem')
+        bbox: Optional bounding box coordinates
+        chunk_id: Optional associated chunk ID
+    """
+
+    text: str = Field(..., description="Item text content")
+    type: Optional[str] = Field(None, description="Item type")
+    bbox: Optional[Dict[str, Any]] = Field(None, description="Bounding box data")
+    chunk_id: Optional[int] = Field(None, description="Associated chunk ID")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "text": "This is the contract text...",
+                "type": "TextItem",
+                "bbox": {"l": 72.0, "t": 100.0, "r": 500.0, "b": 120.0},
+                "chunk_id": 42,
+            }
+        }
+
+
+class DocumentPage(BaseModel):
+    """
+    Single page of a document with items and metadata.
+
+    Attributes:
+        page_number: Page number (1-indexed)
+        text: Full text content of the page
+        items: List of structured items on this page
+        image_url: Optional presigned URL for page image
+    """
+
+    page_number: int = Field(..., description="Page number (1-indexed)")
+    text: str = Field(..., description="Full page text")
+    items: List[PageItem] = Field(default_factory=list, description="Structured page items")
+    image_url: Optional[str] = Field(None, description="Presigned URL for page image")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "page_number": 1,
+                "text": "Contract Agreement...",
+                "items": [
+                    {
+                        "text": "Contract Agreement",
+                        "type": "TextItem",
+                        "bbox": {"l": 72.0, "t": 100.0, "r": 500.0, "b": 120.0},
+                    }
+                ],
+                "image_url": "https://minio.example.com/...",
+            }
+        }
+
+
+class DocumentContentResponse(BaseModel):
+    """
+    Complete document content with pages, items, and bounding boxes.
+
+    Attributes:
+        document_id: Database document ID
+        filename: Original filename
+        text: Full document text
+        pages: List of pages with items and bboxes
+        metadata: Document metadata
+        total_chunks: Total number of indexed chunks
+        total_pages: Total number of pages
+    """
+
+    document_id: int = Field(..., description="Document ID")
+    filename: str = Field(..., description="Original filename")
+    text: str = Field(..., description="Full document text")
+    pages: List[DocumentPage] = Field(..., description="Document pages with items")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
+    total_chunks: int = Field(..., description="Total indexed chunks")
+    total_pages: int = Field(..., description="Total pages")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "document_id": 5,
+                "filename": "contract.pdf",
+                "text": "Full document text...",
+                "pages": [
+                    {
+                        "page_number": 1,
+                        "text": "Page 1 text...",
+                        "items": [],
+                    }
+                ],
+                "metadata": {"author": "John Doe", "page_count": 10},
+                "total_chunks": 45,
+                "total_pages": 10,
+            }
+        }
+
+
+class PageImageResponse(BaseModel):
+    """
+    Response containing page image URL.
+
+    Attributes:
+        page_number: Page number (1-indexed)
+        image_url: Presigned URL for the page image
+        document_id: Document ID
+        expires_in: Seconds until URL expires
+    """
+
+    page_number: int = Field(..., description="Page number")
+    image_url: str = Field(..., description="Presigned image URL")
+    document_id: int = Field(..., description="Document ID")
+    expires_in: int = Field(3600, description="URL expiration in seconds")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "page_number": 1,
+                "image_url": "https://minio.example.com/documents/1/5/pages/page_1.png?...",
+                "document_id": 5,
+                "expires_in": 3600,
+            }
+        }
+
+
+class PageListResponse(BaseModel):
+    """
+    List of page images for a document.
+
+    Attributes:
+        document_id: Document ID
+        total_pages: Total number of pages
+        pages: List of pages with image URLs
+    """
+
+    document_id: int = Field(..., description="Document ID")
+    total_pages: int = Field(..., description="Total pages")
+    pages: List[Dict[str, Any]] = Field(..., description="Page data with image URLs")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "document_id": 5,
+                "total_pages": 10,
+                "pages": [
+                    {"page_number": 1, "image_url": "https://..."},
+                    {"page_number": 2, "image_url": "https://..."},
+                ],
+            }
+        }
+
+
 class SearchQuery(BaseModel):
     """
     Base search query parameters.
