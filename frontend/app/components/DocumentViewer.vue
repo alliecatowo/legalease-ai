@@ -23,6 +23,7 @@ interface PageData {
   page_number: number
   text: string
   items: DocumentItem[]
+  bboxes?: Array<BBox | { bbox?: BBox; x0?: number; y0?: number; x1?: number; y1?: number; text?: string }>
 }
 
 interface Props {
@@ -72,16 +73,42 @@ const currentPageHighlights = computed(() => {
   const results: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
   const query = (props.searchQuery || '').toLowerCase()
 
+  // Prefer item-level highlights that match query; fallback to page-level bboxes if query present but no item match
+  let hadItemMatches = false
   for (const item of currentPageData.value.items) {
-    if (query && !(item.text && item.text.toLowerCase().includes(query))) continue
-
-    const boxes = item.bboxes || []
-    for (const entry of boxes) {
+    const matches = !query || (item.text && item.text.toLowerCase().includes(query))
+    if (!matches) continue
+    hadItemMatches = true
+    for (const entry of item.bboxes || []) {
       const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
       const norm = normalizeBBox(box)
       results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
     }
   }
+  if (query && !hadItemMatches) {
+    results.push(...collectBoxesForPage(currentPageData.value))
+  }
+
+
+// Collect boxes from page-level and item-level
+const collectBoxesForPage = (page: PageData) => {
+  const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+  // Page-level bboxes
+  for (const pb of page.bboxes || []) {
+    const box = (pb as any).bbox ? (pb as any).bbox as BBox : (pb as any)
+    const norm = normalizeBBox(box)
+    out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (pb as any).text })
+  }
+  // Item-level bboxes
+  for (const item of page.items) {
+    for (const entry of item.bboxes || []) {
+      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+      const norm = normalizeBBox(box)
+      out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
+    }
+  }
+  return out
+}
 
   return results
 })
