@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
-import * as pdfjsLib from 'pdfjs-dist'
-import type { BoundingBox } from '~/composables/usePDFHighlights'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { VuePDF, usePDF } from '@tato30/vue-pdf'
+import '@tato30/vue-pdf/style.css'
 
-// PDF.js worker setup
-if (process.client) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+interface BoundingBox {
+  id?: string
+  page: number
+  x: number
+  y: number
+  width: number
+  height: number
+  text?: string
+  type?: string
+  entityType?: string
 }
 
 const props = defineProps<{
@@ -18,122 +25,56 @@ const emit = defineEmits<{
   'box-click': [box: BoundingBox]
   'box-hover': [box: BoundingBox | null]
   'page-change': [page: number]
-  'text-select': [selection: { text: string; page: number; rect: DOMRect }]
 }>()
 
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-const overlayRef = ref<HTMLCanvasElement | null>(null)
-const containerRef = ref<HTMLDivElement | null>(null)
-
-const pdf = ref<any>(null)
+// PDF state
+const { pdf, pages, info } = usePDF(props.documentUrl)
 const currentPage = ref(1)
-const totalPages = ref(0)
-const scale = ref(1.5)
-const isLoading = ref(true)
+const scale = ref(1.0)
+const isLoading = computed(() => !pdf.value)
 const error = ref<string | null>(null)
 
-const pageWidth = ref(0)
-const pageHeight = ref(0)
+// Page dimensions tracking
+const pageElements = ref<HTMLElement[]>([])
+const pageDimensions = ref<Map<number, { width: number; height: number; offsetTop: number }>>(new Map())
 
-// Load PDF document
-async function loadPDF() {
-  if (!props.documentUrl) return
+// Computed values
+const totalPages = computed(() => pages.value?.length || 0)
+const currentPageData = computed(() => {
+  const pageNum = currentPage.value
+  return pageDimensions.value.get(pageNum)
+})
 
-  try {
-    isLoading.value = true
-    error.value = null
+// Filter bounding boxes for current page
+const currentPageBoxes = computed(() => {
+  const filtered = (props.boundingBoxes || []).filter(box => box.page === currentPage.value)
+  console.log(`[PDFViewer] Page ${currentPage.value}: ${filtered.length} boxes to render`)
+  return filtered
+})
 
-    const loadingTask = pdfjsLib.getDocument(props.documentUrl)
-    pdf.value = await loadingTask.promise
-    totalPages.value = pdf.value.numPages
-
-    await renderPage(currentPage.value)
-  } catch (err) {
-    console.error('Error loading PDF:', err)
-    error.value = 'Failed to load PDF document'
-  } finally {
-    isLoading.value = false
-  }
-}
-
-// Render specific page
-async function renderPage(pageNum: number) {
-  if (!pdf.value || !canvasRef.value) return
-
-  try {
-    const page = await pdf.value.getPage(pageNum)
-    const viewport = page.getViewport({ scale: scale.value })
-
-    const canvas = canvasRef.value
-    const context = canvas.getContext('2d')
-    if (!context) return
-
-    canvas.height = viewport.height
-    canvas.width = viewport.width
-    pageWidth.value = viewport.width
-    pageHeight.value = viewport.height
-
-    const renderContext = {
-      canvasContext: context,
-      viewport: viewport
+// Update page dimensions when pages render
+function updatePageDimensions() {
+  nextTick(() => {
+    // Look for the canvas rendered by VuePDF
+    const canvas = document.querySelector('canvas')
+    if (!canvas) {
+      console.log('[PDFViewer] Canvas not found, retrying...')
+      setTimeout(updatePageDimensions, 200)
+      return
     }
 
-    await page.render(renderContext).promise
-
-    // Render overlay after page is rendered
-    await nextTick()
-    renderOverlay()
-
-    emit('page-change', pageNum)
-  } catch (err) {
-    console.error('Error rendering page:', err)
-  }
-}
-
-// Render bounding box overlay
-function renderOverlay() {
-  if (!overlayRef.value) return
-
-  const canvas = overlayRef.value
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  // Match overlay canvas size to PDF canvas
-  canvas.width = pageWidth.value
-  canvas.height = pageHeight.value
-
-  // Clear previous drawings
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-  // Filter boxes for current page
-  const currentBoxes = props.boundingBoxes?.filter(box => box.page === currentPage.value) || []
-
-  // Draw each bounding box
-  currentBoxes.forEach(box => {
-    const isSelected = box.id === props.selectedBoxId
-    const color = getBoxColor(box.entityType || box.type)
-
-    // Draw rectangle
-    ctx.strokeStyle = color
-    ctx.lineWidth = isSelected ? 3 : 2
-    ctx.setLineDash(isSelected ? [] : [5, 5])
-    ctx.strokeRect(box.x, box.y, box.width, box.height)
-
-    // Fill with semi-transparent color
-    ctx.fillStyle = color + '20' // 20 = 12% opacity in hex
-    ctx.fillRect(box.x, box.y, box.width, box.height)
-
-    // Draw label if selected
-    if (isSelected && box.entityType) {
-      ctx.fillStyle = color
-      ctx.font = '12px sans-serif'
-      ctx.fillText(box.entityType, box.x, box.y - 5)
-    }
+    const rect = canvas.getBoundingClientRect()
+    pageDimensions.value.set(currentPage.value, {
+      width: rect.width,
+      height: rect.height,
+      offsetTop: 0
+    })
+    console.log(`[PDFViewer] Page ${currentPage.value} canvas dimensions:`, { width: rect.width, height: rect.height })
   })
 }
 
-// Get color for box type
-function getBoxColor(type: string): string {
+// Get color for bounding box type
+function getBoxColor(type?: string): string {
   const colors: Record<string, string> = {
     PERSON: '#3B82F6',
     ORGANIZATION: '#8B5CF6',
@@ -147,59 +88,15 @@ function getBoxColor(type: string): string {
     annotation: '#8B5CF6',
     clause: '#F97316'
   }
-  return colors[type] || '#6B7280'
-}
-
-// Handle canvas click to detect box clicks
-function handleCanvasClick(event: MouseEvent) {
-  if (!overlayRef.value) return
-
-  const rect = overlayRef.value.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
-
-  // Find clicked box (check in reverse order for top-most)
-  const currentBoxes = props.boundingBoxes?.filter(box => box.page === currentPage.value) || []
-
-  for (let i = currentBoxes.length - 1; i >= 0; i--) {
-    const box = currentBoxes[i]
-    if (x >= box.x && x <= box.x + box.width &&
-        y >= box.y && y <= box.y + box.height) {
-      emit('box-click', box)
-      return
-    }
-  }
-}
-
-// Handle mouse move for hover effects
-function handleCanvasHover(event: MouseEvent) {
-  if (!overlayRef.value) return
-
-  const rect = overlayRef.value.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
-
-  const currentBoxes = props.boundingBoxes?.filter(box => box.page === currentPage.value) || []
-
-  for (let i = currentBoxes.length - 1; i >= 0; i--) {
-    const box = currentBoxes[i]
-    if (x >= box.x && x <= box.x + box.width &&
-        y >= box.y && y <= box.y + box.height) {
-      overlayRef.value.style.cursor = 'pointer'
-      emit('box-hover', box)
-      return
-    }
-  }
-
-  overlayRef.value.style.cursor = 'default'
-  emit('box-hover', null)
+  return colors[type || ''] || '#FBBF24'
 }
 
 // Navigation
 function goToPage(page: number) {
   if (page >= 1 && page <= totalPages.value) {
+    console.log(`[PDFViewer] Navigating to page ${page}`)
     currentPage.value = page
-    renderPage(page)
+    emit('page-change', page)
   }
 }
 
@@ -214,26 +111,44 @@ function prevPage() {
 // Zoom controls
 function zoomIn() {
   scale.value = Math.min(scale.value + 0.25, 3.0)
-  renderPage(currentPage.value)
 }
 
 function zoomOut() {
   scale.value = Math.max(scale.value - 0.25, 0.5)
-  renderPage(currentPage.value)
 }
 
 function resetZoom() {
   scale.value = 1.5
-  renderPage(currentPage.value)
 }
 
-// Watch for prop changes
-watch(() => props.documentUrl, loadPDF)
-watch(() => props.boundingBoxes, renderOverlay, { deep: true })
-watch(() => props.selectedBoxId, renderOverlay)
+// Handle bounding box interactions
+function handleBoxClick(box: BoundingBox) {
+  emit('box-click', box)
+}
+
+function handleBoxHover(box: BoundingBox | null) {
+  emit('box-hover', box)
+}
+
+// Watch for PDF load and update dimensions
+watch(pdf, (newPdf) => {
+  if (newPdf) {
+    setTimeout(updatePageDimensions, 500)
+  }
+})
+
+watch(() => props.documentUrl, () => {
+  error.value = null
+  currentPage.value = 1
+})
+
+// Update dimensions on scale or page change
+watch([scale, currentPage], () => {
+  setTimeout(updatePageDimensions, 100)
+})
 
 onMounted(() => {
-  loadPDF()
+  setTimeout(updatePageDimensions, 1000)
 })
 
 defineExpose({
@@ -250,122 +165,191 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="containerRef" class="relative w-full h-full flex flex-col bg-muted/20">
-    <!-- Toolbar -->
-    <div class="flex items-center justify-between p-3 border-b border-default bg-default">
-      <!-- Page Navigation -->
-      <div class="flex items-center gap-2">
-        <UButtonGroup>
-          <UButton
-            icon="i-lucide-chevron-left"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="currentPage <= 1"
-            @click="prevPage"
-          />
-          <UInput
-            :model-value="currentPage"
-            type="number"
-            :min="1"
-            :max="totalPages"
-            class="w-16 text-center"
-            size="sm"
-            @update:model-value="(val: any) => goToPage(Number(val))"
-          />
-          <UButton
-            icon="i-lucide-chevron-right"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            :disabled="currentPage >= totalPages"
-            @click="nextPage"
-          />
-        </UButtonGroup>
-        <span class="text-sm text-muted">/ {{ totalPages }}</span>
+  <ClientOnly>
+    <div class="relative w-full h-full flex flex-col bg-muted/20">
+      <!-- Toolbar -->
+      <div class="flex items-center justify-between p-3 border-b border-default bg-default">
+        <!-- Page Navigation -->
+        <div class="flex items-center gap-2">
+          <div class="inline-flex items-center gap-1">
+            <UButton
+              icon="i-lucide-chevron-left"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :disabled="currentPage <= 1"
+              @click="prevPage"
+            />
+            <UInput
+              :model-value="currentPage"
+              type="number"
+              :min="1"
+              :max="totalPages"
+              class="w-16 text-center"
+              size="sm"
+              @update:model-value="(val: any) => goToPage(Number(val))"
+            />
+            <UButton
+              icon="i-lucide-chevron-right"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :disabled="currentPage >= totalPages"
+              @click="nextPage"
+            />
+          </div>
+          <span class="text-sm text-muted">/ {{ totalPages }}</span>
+        </div>
+
+        <!-- Zoom Controls -->
+        <div class="flex items-center gap-2">
+          <div class="inline-flex items-center gap-1">
+            <UButton
+              icon="i-lucide-zoom-out"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              @click="zoomOut"
+            />
+            <UButton
+              :label="`${Math.round(scale * 100)}%`"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              @click="resetZoom"
+            />
+            <UButton
+              icon="i-lucide-zoom-in"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              @click="zoomIn"
+            />
+          </div>
+        </div>
+
+        <!-- Additional Tools -->
+        <div class="flex items-center gap-2">
+          <UTooltip text="Download">
+            <UButton
+              icon="i-lucide-download"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+            />
+          </UTooltip>
+          <UTooltip text="Print">
+            <UButton
+              icon="i-lucide-printer"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+            />
+          </UTooltip>
+        </div>
       </div>
 
-      <!-- Zoom Controls -->
-      <div class="flex items-center gap-2">
-        <UButtonGroup>
-          <UButton
-            icon="i-lucide-zoom-out"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            @click="zoomOut"
-          />
-          <UButton
-            :label="`${Math.round(scale * 100)}%`"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            @click="resetZoom"
-          />
-          <UButton
-            icon="i-lucide-zoom-in"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            @click="zoomIn"
-          />
-        </UButtonGroup>
-      </div>
+      <!-- PDF Canvas Container -->
+      <div class="flex-1 overflow-auto pdf-container">
+        <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
+          <UIcon name="i-lucide-loader" class="size-12 text-primary animate-spin mb-4" />
+          <p class="text-muted">Loading document...</p>
+        </div>
 
-      <!-- Additional Tools -->
-      <div class="flex items-center gap-2">
-        <UTooltip text="Download">
-          <UButton
-            icon="i-lucide-download"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-          />
-        </UTooltip>
-        <UTooltip text="Print">
-          <UButton
-            icon="i-lucide-printer"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-          />
-        </UTooltip>
+        <div v-else-if="error" class="flex flex-col items-center justify-center py-20">
+          <UIcon name="i-lucide-file-x" class="size-12 text-error mb-4" />
+          <p class="text-error font-medium mb-2">{{ error }}</p>
+        </div>
+
+        <div v-else class="relative flex items-start justify-center p-6">
+          <!-- PDF Renderer -->
+          <div class="relative shadow-2xl">
+            <div class="relative">
+              <VuePDF
+                :pdf="pdf"
+                :page="currentPage"
+                :scale="scale"
+                @loaded="updatePageDimensions"
+              />
+
+              <!-- Bounding Box Overlay -->
+              <svg
+                v-if="currentPageData && currentPageBoxes.length > 0"
+                class="absolute top-0 left-0 pointer-events-none"
+                :width="currentPageData.width"
+                :height="currentPageData.height"
+                style="z-index: 10;"
+              >
+              <g
+                v-for="box in currentPageBoxes"
+                :key="box.id || `${box.x}-${box.y}`"
+                class="pointer-events-auto cursor-pointer"
+                @click="handleBoxClick(box)"
+                @mouseenter="handleBoxHover(box)"
+                @mouseleave="handleBoxHover(null)"
+              >
+                <!-- Background Rectangle -->
+                <rect
+                  :x="box.x * scale"
+                  :y="box.y * scale"
+                  :width="box.width * scale"
+                  :height="box.height * scale"
+                  :fill="getBoxColor(box.entityType || box.type)"
+                  fill-opacity="0.15"
+                />
+                <!-- Border Rectangle -->
+                <rect
+                  :x="box.x * scale"
+                  :y="box.y * scale"
+                  :width="box.width * scale"
+                  :height="box.height * scale"
+                  :stroke="getBoxColor(box.entityType || box.type)"
+                  :stroke-width="box.id === selectedBoxId ? 3 : 2"
+                  :stroke-dasharray="box.id === selectedBoxId ? '0' : '5,5'"
+                  fill="none"
+                />
+                <!-- Label for selected box -->
+                <text
+                  v-if="box.id === selectedBoxId && box.entityType"
+                  :x="box.x * scale"
+                  :y="box.y * scale - 5"
+                  :fill="getBoxColor(box.entityType)"
+                  font-size="12"
+                  font-weight="bold"
+                >
+                  {{ box.entityType }}
+                </text>
+              </g>
+            </svg>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- PDF Canvas Container -->
-    <div class="flex-1 overflow-auto p-6 flex items-start justify-center">
-      <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
-        <UIcon name="i-lucide-loader" class="size-12 text-primary animate-spin mb-4" />
-        <p class="text-muted">Loading document...</p>
+    <template #fallback>
+      <div class="flex items-center justify-center h-full">
+        <UIcon name="i-lucide-loader" class="size-12 text-primary animate-spin" />
       </div>
-
-      <div v-else-if="error" class="flex flex-col items-center justify-center py-20">
-        <UIcon name="i-lucide-file-x" class="size-12 text-error mb-4" />
-        <p class="text-error font-medium mb-2">{{ error }}</p>
-        <UButton
-          label="Retry"
-          color="neutral"
-          variant="outline"
-          @click="loadPDF"
-        />
-      </div>
-
-      <div v-else class="relative shadow-2xl">
-        <!-- PDF Canvas -->
-        <canvas
-          ref="canvasRef"
-          class="block"
-        />
-
-        <!-- Overlay Canvas for Bounding Boxes -->
-        <canvas
-          ref="overlayRef"
-          class="absolute top-0 left-0 pointer-events-auto"
-          @click="handleCanvasClick"
-          @mousemove="handleCanvasHover"
-        />
-      </div>
-    </div>
-  </div>
+    </template>
+  </ClientOnly>
 </template>
+
+<style scoped>
+.pdf-container {
+  background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.03));
+}
+
+/* Override vue-pdf styles if needed */
+:deep(.vue-pdf-main) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+:deep(.vue-pdf-page) {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  background: white;
+}
+</style>
