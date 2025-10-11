@@ -422,12 +422,12 @@ defineShortcuts({
           v-show="searchResults.length === 0 && !isSearching"
           class="flex items-center justify-center min-h-full px-6 py-12"
         >
-          <div class="w-full max-w-4xl mx-auto text-center space-y-8">
+          <div class="w-full max-w-5xl mx-auto text-center space-y-12">
             <!-- Logo/Icon -->
-            <div class="flex items-center justify-center gap-4">
-              <UIcon name="i-lucide-scale" class="size-16 text-primary" />
-              <h1 class="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                LegalSearch AI
+            <div class="flex items-center justify-center gap-5">
+              <UIcon name="i-lucide-scale" class="size-20 text-primary" />
+              <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
+                LegalEase AI
               </h1>
             </div>
 
@@ -435,16 +435,21 @@ defineShortcuts({
               Intelligent hybrid search across your legal documents, contracts, and case files
             </p>
 
-            <!-- Hero Search Bar - Centered -->
-            <div class="w-full max-w-3xl mx-auto space-y-4">
+            <!-- Hero Search Bar - Centered and Large -->
+            <div class="w-full max-w-5xl mx-auto space-y-6">
               <UInput
                 ref="heroSearchInput"
                 v-model="searchQuery"
                 icon="i-lucide-search"
-                placeholder="Search for legal terms, clauses, concepts, or natural language queries..."
+                placeholder="Search for legal terms, clauses, concepts..."
                 size="xl"
                 :loading="isLoading"
                 autofocus
+                class="!text-lg shadow-xl hover:shadow-2xl transition-shadow"
+                :ui="{
+                  base: 'px-6 py-5 text-lg rounded-2xl',
+                  leadingIcon: 'size-7'
+                }"
               >
                 <template #trailing>
                   <UKbd value="/" />
