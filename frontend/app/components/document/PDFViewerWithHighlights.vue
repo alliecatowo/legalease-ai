@@ -36,41 +36,118 @@ const error = ref<string | null>(null)
 
 // Page dimensions tracking
 const pageElements = ref<HTMLElement[]>([])
-const pageDimensions = ref<Map<number, { width: number; height: number; offsetTop: number }>>(new Map())
+const pageDimensions = ref<Map<number, { width: number; height: number; offsetTop: number; pdfWidth?: number; pdfHeight?: number }>>(new Map())
 
 // Computed values
-const totalPages = computed(() => pages.value?.length || 0)
+const totalPages = computed(() => {
+  // pages.value is a number (page count), not an array
+  return typeof pages.value === 'number' ? pages.value : (info.value?.numPages || 0)
+})
+
 const currentPageData = computed(() => {
   const pageNum = currentPage.value
   return pageDimensions.value.get(pageNum)
 })
 
-// Filter bounding boxes for current page
+// Filter and transform bounding boxes for current page
 const currentPageBoxes = computed(() => {
+  const pageData = currentPageData.value
+
+  // Don't render boxes until we have complete page dimensions
+  if (!pageData || !pageData.pdfWidth || !pageData.pdfHeight) {
+    return []
+  }
+
   const filtered = (props.boundingBoxes || []).filter(box => box.page === currentPage.value)
-  console.log(`[PDFViewer] Page ${currentPage.value}: ${filtered.length} boxes to render`)
-  return filtered
+
+  // Transform all boxes to canvas space
+  const transformed = filtered.map(box => ({
+    original: box,
+    coords: transformBBox(box)
+  }))
+
+  // Debug logging (can be removed in production)
+  if (transformed.length > 0) {
+    console.log(`[PDFViewer] Rendering ${transformed.length} bounding boxes on page ${currentPage.value}`)
+  }
+
+  return transformed
 })
 
 // Update page dimensions when pages render
-function updatePageDimensions() {
-  nextTick(() => {
-    // Look for the canvas rendered by VuePDF
-    const canvas = document.querySelector('canvas')
-    if (!canvas) {
-      console.log('[PDFViewer] Canvas not found, retrying...')
-      setTimeout(updatePageDimensions, 200)
-      return
-    }
+async function updatePageDimensions() {
+  await nextTick()
 
-    const rect = canvas.getBoundingClientRect()
-    pageDimensions.value.set(currentPage.value, {
-      width: rect.width,
-      height: rect.height,
-      offsetTop: 0
-    })
-    console.log(`[PDFViewer] Page ${currentPage.value} canvas dimensions:`, { width: rect.width, height: rect.height })
+  // Look for the canvas rendered by VuePDF
+  const canvas = document.querySelector('canvas')
+  if (!canvas) {
+    console.log('[PDFViewer] Canvas not found, retrying...')
+    setTimeout(updatePageDimensions, 200)
+    return
+  }
+
+  const rect = canvas.getBoundingClientRect()
+
+  // Get PDF page natural dimensions
+  let pdfWidth = rect.width / scale.value
+  let pdfHeight = rect.height / scale.value
+
+  // Try to get actual PDF page dimensions from the PDF object
+  if (pdf.value && pages.value && pages.value[currentPage.value - 1]) {
+    try {
+      const page = await pdf.value.getPage(currentPage.value)
+      const viewport = page.getViewport({ scale: 1.0 })
+      pdfWidth = viewport.width
+      pdfHeight = viewport.height
+      console.log(`[PDFViewer] PDF page ${currentPage.value} natural size:`, { width: pdfWidth, height: pdfHeight })
+    } catch (e) {
+      console.warn('[PDFViewer] Could not get PDF page dimensions:', e)
+    }
+  }
+
+  pageDimensions.value.set(currentPage.value, {
+    width: rect.width,
+    height: rect.height,
+    offsetTop: 0,
+    pdfWidth,
+    pdfHeight
   })
+}
+
+// Transform bbox from PDF coordinate space to canvas space
+function transformBBox(box: BoundingBox) {
+  const pageData = currentPageData.value
+  if (!pageData || !pageData.pdfWidth || !pageData.pdfHeight) {
+    // Fallback - don't render if we don't have dimensions
+    return {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    }
+  }
+
+  // Calculate the scale from PDF coordinate space to rendered canvas space
+  const scaleX = pageData.width / pageData.pdfWidth
+  const scaleY = pageData.height / pageData.pdfHeight
+
+  // Docling bboxes use PDF coordinate system (bottom-left origin, Y increases upward)
+  // The bbox format is {l, t, r, b} but in PDF coords where:
+  // - t is actually the BOTTOM edge (larger Y value)
+  // - b is actually the TOP edge (smaller Y value)
+  // DocumentViewer normalizes this to {x, y, width, height} using Math.min for y
+  // BUT we still need to flip from PDF (bottom-left) to SVG (top-left) coords
+
+  const canvasX = box.x * scaleX
+  // Flip Y-axis: SVG Y = pdfHeight - (PDF Y + height)
+  const canvasY = (pageData.pdfHeight - (box.y + box.height)) * scaleY
+
+  return {
+    x: canvasX,
+    y: canvasY,
+    width: box.width * scaleX,
+    height: box.height * scaleY
+  }
 }
 
 // Get color for bounding box type
@@ -277,49 +354,48 @@ defineExpose({
               <!-- Bounding Box Overlay -->
               <svg
                 v-if="currentPageData && currentPageBoxes.length > 0"
-                class="absolute top-0 left-0 pointer-events-none"
+                class="bbox-overlay"
                 :width="currentPageData.width"
                 :height="currentPageData.height"
-                style="z-index: 10;"
               >
               <g
                 v-for="box in currentPageBoxes"
-                :key="box.id || `${box.x}-${box.y}`"
+                :key="box.original.id || `${box.original.x}-${box.original.y}`"
                 class="pointer-events-auto cursor-pointer"
-                @click="handleBoxClick(box)"
-                @mouseenter="handleBoxHover(box)"
+                @click="handleBoxClick(box.original)"
+                @mouseenter="handleBoxHover(box.original)"
                 @mouseleave="handleBoxHover(null)"
               >
                 <!-- Background Rectangle -->
                 <rect
-                  :x="box.x * scale"
-                  :y="box.y * scale"
-                  :width="box.width * scale"
-                  :height="box.height * scale"
-                  :fill="getBoxColor(box.entityType || box.type)"
+                  :x="box.coords.x"
+                  :y="box.coords.y"
+                  :width="box.coords.width"
+                  :height="box.coords.height"
+                  :fill="getBoxColor(box.original.entityType || box.original.type)"
                   fill-opacity="0.15"
                 />
                 <!-- Border Rectangle -->
                 <rect
-                  :x="box.x * scale"
-                  :y="box.y * scale"
-                  :width="box.width * scale"
-                  :height="box.height * scale"
-                  :stroke="getBoxColor(box.entityType || box.type)"
-                  :stroke-width="box.id === selectedBoxId ? 3 : 2"
-                  :stroke-dasharray="box.id === selectedBoxId ? '0' : '5,5'"
+                  :x="box.coords.x"
+                  :y="box.coords.y"
+                  :width="box.coords.width"
+                  :height="box.coords.height"
+                  :stroke="getBoxColor(box.original.entityType || box.original.type)"
+                  :stroke-width="box.original.id === selectedBoxId ? 3 : 2"
+                  :stroke-dasharray="box.original.id === selectedBoxId ? '0' : '5,5'"
                   fill="none"
                 />
                 <!-- Label for selected box -->
                 <text
-                  v-if="box.id === selectedBoxId && box.entityType"
-                  :x="box.x * scale"
-                  :y="box.y * scale - 5"
-                  :fill="getBoxColor(box.entityType)"
+                  v-if="box.original.id === selectedBoxId && box.original.entityType"
+                  :x="box.coords.x"
+                  :y="box.coords.y - 5"
+                  :fill="getBoxColor(box.original.entityType)"
                   font-size="12"
                   font-weight="bold"
                 >
-                  {{ box.entityType }}
+                  {{ box.original.entityType }}
                 </text>
               </g>
             </svg>
@@ -340,6 +416,15 @@ defineExpose({
 <style scoped>
 .pdf-container {
   background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.03));
+}
+
+/* Bounding box overlay positioning */
+.bbox-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* Override vue-pdf styles if needed */
