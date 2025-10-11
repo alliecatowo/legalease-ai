@@ -63,7 +63,7 @@ const clearAllFilters = () => {
     <!-- Case Filter -->
     <USelectMenu
       v-model="localCases"
-      :options="availableCases"
+      :items="availableCases"
       multiple
       :placeholder="selectedCases.length > 0 ? `${selectedCases.length} case${selectedCases.length > 1 ? 's' : ''}` : 'All Cases'"
       :ui="{
@@ -71,6 +71,7 @@ const clearAllFilters = () => {
         width: 'w-auto min-w-[160px]'
       }"
       value-attribute="id"
+      option-attribute="name"
     >
       <template #label>
         <UIcon name="i-lucide-briefcase" class="size-4" />
@@ -89,7 +90,7 @@ const clearAllFilters = () => {
     <!-- Document Type Filter -->
     <USelectMenu
       v-model="localDocTypes"
-      :options="documentTypeOptions"
+      :items="documentTypeOptions"
       multiple
       :placeholder="selectedDocumentTypes.length > 0 ? `${selectedDocumentTypes.length} type${selectedDocumentTypes.length > 1 ? 's' : ''}` : 'All Types'"
       :ui="{
@@ -116,7 +117,7 @@ const clearAllFilters = () => {
     <USelectMenu
       v-if="showChunkTypes"
       v-model="localChunkTypes"
-      :options="chunkTypeOptions"
+      :items="chunkTypeOptions"
       multiple
       :placeholder="(selectedChunkTypes?.length || 0) > 0 ? `${selectedChunkTypes?.length} level${(selectedChunkTypes?.length || 0) > 1 ? 's' : ''}` : 'All Levels'"
       :ui="{
