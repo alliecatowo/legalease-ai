@@ -61,6 +61,7 @@ Built with Nuxt 4 and Nuxt UI 4. Native PDF viewer with search highlighting, res
 
 ### Prerequisites
 
+- [mise](https://mise.jdx.dev/) - Dev tools, environments, and task runner
 - Docker Engine 24.0+ with Docker Compose V2
 - Minimum 8GB RAM (16GB recommended)
 - 20GB available disk space
@@ -73,23 +74,26 @@ Built with Nuxt 4 and Nuxt UI 4. Native PDF viewer with search highlighting, res
    cd legalease-ai
    ```
 
-2. **Start all services**
+2. **Install mise** (if not already installed)
    ```bash
-   docker compose up -d
+   curl https://mise.run | sh
    ```
 
-3. **Initialize the platform**
+3. **Start all services and initialize**
    ```bash
-   # Pull Ollama models
-   docker compose exec ollama ollama pull llama3.1
-   docker compose exec ollama ollama pull nomic-embed-text
+   mise run setup
+   ```
 
-   # Run database migrations
-   docker compose exec backend alembic upgrade head
+   This single command will:
+   - Start all Docker services
+   - Pull Ollama AI models
+   - Run database migrations
 
-   # Setup storage and vector DB
-   docker compose exec backend python -m app.scripts.setup_storage
-   docker compose exec backend python -m app.scripts.setup_qdrant
+   Or run steps individually:
+   ```bash
+   mise run up              # Start all services
+   mise run setup:models    # Download AI models
+   mise run migrate         # Run database migrations
    ```
 
 4. **Access the platform**
@@ -146,26 +150,59 @@ Built with Nuxt 4 and Nuxt UI 4. Native PDF viewer with search highlighting, res
 
 ## 🔧 Development
 
-### View Logs
+### Common Commands
+
 ```bash
-docker compose logs -f              # All services
-docker compose logs -f backend      # Specific service
+# Start/stop services
+mise run up                  # Start all services
+mise run down                # Stop all services
+mise run restart             # Restart services
+mise run rebuild             # Rebuild and restart
+mise run clean               # Stop and remove all data
+mise run ps                  # Check service status
+
+# View logs
+mise run logs                # All services
+mise run logs:backend        # Backend only
+mise run logs:worker         # Worker only
+mise run logs:frontend       # Frontend only
+
+# Database operations
+mise run migrate             # Run migrations
+mise run migrate:create      # Create new migration (use DESCRIPTION env var)
+mise run migrate:down        # Rollback one migration
+mise run migrate:history     # View migration history
+mise run psql                # Open PostgreSQL shell
+
+# Testing
+mise run test                # Run tests
+mise run test:cov            # Run tests with coverage
+
+# Shell access
+mise run shell               # Backend container shell
+mise run shell:frontend      # Frontend container shell
+
+# Data seeding
+mise run seed                # Seed with real PDFs
+mise run seed:clear          # Clear and reseed database
 ```
 
-### Run Tests
+### Local Development (without Docker)
+
 ```bash
-docker compose exec backend pytest -v --cov=app
-docker compose exec frontend pnpm test
+# Frontend
+mise run dev-frontend
+
+# Backend
+mise run dev-backend
+
+# Worker
+mise run dev-worker
 ```
 
-### Database Migrations
-```bash
-docker compose exec backend alembic revision --autogenerate -m "description"
-docker compose exec backend alembic upgrade head
-```
+### Available Tasks
 
-### Hot Reload
-Both frontend and backend support hot reload in development mode. Code changes trigger automatic rebuilds.
+Run `mise tasks` to see all available tasks with descriptions.
 
 ---
 
@@ -176,15 +213,15 @@ Both frontend and backend support hot reload in development mode. Code changes t
 
 Check logs and disk space:
 ```bash
-docker compose logs
+mise run logs
 df -h
 ```
 
 Reset everything:
 ```bash
-docker compose down -v
+mise run clean
 docker system prune -a
-docker compose up -d
+mise run up
 ```
 </details>
 
@@ -193,16 +230,15 @@ docker compose up -d
 
 Check PostgreSQL health:
 ```bash
-docker compose ps postgres
-docker compose logs postgres
+mise run ps
+mise run logs:backend
 ```
 
 Reset database:
 ```bash
-docker compose down
-docker volume rm legalease-postgres-data
-docker compose up -d postgres
-docker compose exec backend alembic upgrade head
+mise run clean
+mise run up
+mise run migrate
 ```
 </details>
 
@@ -210,6 +246,33 @@ docker compose exec backend alembic upgrade head
 <summary><b>Out of memory</b></summary>
 
 Increase Docker memory limit in Docker Desktop settings, or adjust service limits in `docker-compose.yml`.
+</details>
+
+<details>
+<summary><b>mise not found</b></summary>
+
+Install mise:
+```bash
+curl https://mise.run | sh
+```
+
+Or use your package manager:
+```bash
+# macOS
+brew install mise
+
+# Ubuntu/Debian
+apt install mise
+
+# Arch Linux
+pacman -S mise
+```
+
+After installation, activate it in your shell:
+```bash
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc  # for bash
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc    # for zsh
+```
 </details>
 
 ---
