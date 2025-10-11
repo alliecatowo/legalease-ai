@@ -132,6 +132,94 @@ async def hybrid_search(request: HybridSearchRequest):
         raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
 
 
+@router.post("/keyword")
+async def keyword_search(
+    query: str = Query(..., description="Search query"),
+    case_ids: Optional[List[int]] = Query(None, description="Filter by case IDs"),
+    document_ids: Optional[List[int]] = Query(None, description="Filter by document IDs"),
+    chunk_types: Optional[List[str]] = Query(None, description="Filter by chunk types"),
+    top_k: int = Query(10, ge=1, le=100, description="Number of results"),
+    score_threshold: Optional[float] = Query(0.1, ge=0.0, le=1.0, description="Minimum BM25 score threshold"),
+):
+    """
+    Pure BM25 keyword search (no dense vectors, no fusion, no reranking).
+
+    This endpoint is useful for exact keyword/phrase matching.
+    BM25 scores are raw and not normalized.
+
+    Args:
+        query: Search query string
+        case_ids: Optional case ID filters
+        document_ids: Optional document ID filters
+        chunk_types: Optional chunk type filters (summary, section, microblock)
+        top_k: Number of results to return
+        score_threshold: Minimum BM25 score (default: 0.1 for permissive matching)
+
+    Returns:
+        Keyword search results with raw BM25 scores
+    """
+    try:
+        # Create request with only BM25
+        request = HybridSearchRequest(
+            query=query,
+            case_ids=case_ids,
+            document_ids=document_ids,
+            chunk_types=chunk_types,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            use_bm25=True,  # Only BM25
+            use_dense=False,  # Disable dense vectors
+            fusion_method="rrf",
+        )
+
+        search_engine = get_search_engine()
+        # Use keyword-only search method
+        search_results = search_engine.search_keyword_only(request)
+
+        # Log scores for debugging
+        if search_results:
+            print(f"DEBUG: Keyword search returned {len(search_results)} results with scores: {[r['score'] for r in search_results[:5]]}")
+        else:
+            print(f"DEBUG: Keyword search returned 0 results from Qdrant")
+
+        # Apply score threshold filtering
+        filtered_results = [
+            r for r in search_results
+            if r["score"] >= score_threshold
+        ][:top_k]
+
+        # Format results
+        formatted_results = []
+        for result in filtered_results:
+            payload = result.get("payload", {})
+            formatted_results.append({
+                "id": result["id"],
+                "score": result["score"],
+                "text": payload.get("text", ""),
+                "metadata": {
+                    "document_id": payload.get("document_id"),
+                    "case_id": payload.get("case_id"),
+                    "chunk_type": payload.get("chunk_type"),
+                    "page_number": payload.get("page_number"),
+                    "position": payload.get("position"),
+                    "bboxes": payload.get("bboxes", []),
+                    "bm25_score": result.get("bm25_score", 0.0),
+                },
+            })
+
+        return {
+            "query": query,
+            "results": formatted_results,
+            "total": len(formatted_results),
+            "score_threshold": score_threshold,
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
+
+
 @router.post("/semantic")
 async def semantic_search(
     query: str = Query(..., description="Search query"),

@@ -126,53 +126,33 @@ const collectBoxesForPage = (page: PageData) => {
   return out
 }
 
-// Get semantic search result highlights (from search API) - limit total bboxes
+// Get search result highlights separated by type (BM25 = blue, hybrid = yellow)
 const semanticHighlights = computed(() => {
   if (!props.searchResults || props.searchResults.length === 0) return []
 
-  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'semantic'; score: number }> = []
-  const MAX_TOTAL_BBOXES = 20  // Limit total bounding boxes displayed
-
-  // Get query terms for filtering (case-insensitive)
-  const queryLower = (props.searchQuery || '').toLowerCase().trim()
-  const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 2)  // Filter out very short terms
+  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'bm25' | 'semantic'; score: number }> = []
 
   // Track seen positions to avoid duplicates
   const seenPositions = new Set<string>()
 
-  // Take top results until we have enough bboxes
-  for (const result of props.searchResults) {
-    if (out.length >= MAX_TOTAL_BBOXES) break
-
+  // Take top 5 results, show their bboxes
+  for (const result of props.searchResults.slice(0, 5)) {
+    const matchType = (result as any).match_type || 'semantic'
     const page = result.page_number || 1
 
-    // Filter bboxes to only those containing query terms (case-insensitive)
-    const matchingBboxes = (result.bboxes || []).filter(entry => {
-      const bboxText = ((entry as any).text || '').toLowerCase()
-      // Check if bbox text contains any of the query terms (case-insensitive)
-      return queryTerms.some(term => bboxText.includes(term))
-    })
-
-    // Deduplicate by position (same x, y, width, height = duplicate)
-    const uniqueBboxes = matchingBboxes.filter(entry => {
+    // Add ALL bboxes from this result
+    for (const entry of result.bboxes || []) {
       const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
       const nb = normalizeBBox(box)
+
+      // Skip if dimensions are invalid
+      if (nb.width === 0 || nb.height === 0) continue
+
+      // Deduplicate by position
       const posKey = `${page}-${Math.round(nb.x)}-${Math.round(nb.y)}-${Math.round(nb.width)}-${Math.round(nb.height)}`
-
-      if (seenPositions.has(posKey)) {
-        return false  // Skip duplicate
-      }
+      if (seenPositions.has(posKey)) continue
       seenPositions.add(posKey)
-      return true
-    })
 
-    // Take unique matching bboxes up to the limit
-    const bboxesToTake = Math.min(uniqueBboxes.length, MAX_TOTAL_BBOXES - out.length)
-    const resultBboxes = uniqueBboxes.slice(0, bboxesToTake)
-
-    for (const entry of resultBboxes) {
-      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
-      const nb = normalizeBBox(box)
       out.push({
         x: nb.x,
         y: nb.y,
@@ -180,15 +160,20 @@ const semanticHighlights = computed(() => {
         height: nb.height,
         text: (entry as any).text || result.text,
         page,
-        type: 'semantic',
+        type: matchType === 'bm25' ? 'bm25' : 'semantic',
         score: result.score
       })
 
-      if (out.length >= MAX_TOTAL_BBOXES) break
+      // Limit total boxes to prevent overcrowding
+      if (out.length >= 10) break
     }
+
+    if (out.length >= 10) break
   }
 
-  console.log(`[DocumentViewer] Semantic highlights: ${out.length} unique matching bboxes from query "${queryLower}" (max: ${MAX_TOTAL_BBOXES})`)
+  const bm25Count = out.filter(h => h.type === 'bm25').length
+  const semanticCount = out.filter(h => h.type === 'semantic').length
+  console.log(`[DocumentViewer] Highlights: ${bm25Count} BM25 (blue), ${semanticCount} hybrid (yellow)`)
   return out
 })
 
@@ -486,8 +471,8 @@ watch(() => props.documentId, () => {
             width: b.width,
             height: b.height,
             text: b.text,
-            type: b.type === 'semantic' ? 'semantic' : 'highlight',
-            entityType: b.type === 'semantic' ? 'SEMANTIC_MATCH' : 'TEXT_MATCH'
+            type: b.type,
+            entityType: b.type === 'bm25' ? 'BM25_MATCH' : 'SEMANTIC_MATCH'
           }))"
           @page-change="(p:number) => currentPage = p"
         />
