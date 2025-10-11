@@ -173,9 +173,21 @@ class DocumentChunker:
         # Extract bboxes from metadata or pages
         all_bboxes = metadata.get("bboxes", []) if metadata else []
         if not all_bboxes and pages:
-            # Collect bboxes from all pages
+            # Collect bboxes from all pages (Docling stores them in items array)
             for page in pages:
-                all_bboxes.extend(page.get("bboxes", []))
+                # First check if page has direct bboxes array (PyMuPDF fallback)
+                if "bboxes" in page:
+                    all_bboxes.extend(page.get("bboxes", []))
+                # Then check for items with bbox fields (Docling format)
+                elif "items" in page:
+                    for item in page["items"]:
+                        if "bbox" in item and item["bbox"]:
+                            # Add bbox with text for matching
+                            all_bboxes.append({
+                                "bbox": item["bbox"],
+                                "text": item.get("text", ""),
+                                "type": item.get("type", "unknown"),
+                            })
 
         if self.use_semantic_splitting:
             # Try to split on legal section markers
@@ -230,9 +242,21 @@ class DocumentChunker:
         # Extract bboxes from metadata or pages
         all_bboxes = metadata.get("bboxes", []) if metadata else []
         if not all_bboxes and pages:
-            # Collect bboxes from all pages
+            # Collect bboxes from all pages (Docling stores them in items array)
             for page in pages:
-                all_bboxes.extend(page.get("bboxes", []))
+                # First check if page has direct bboxes array (PyMuPDF fallback)
+                if "bboxes" in page:
+                    all_bboxes.extend(page.get("bboxes", []))
+                # Then check for items with bbox fields (Docling format)
+                elif "items" in page:
+                    for item in page["items"]:
+                        if "bbox" in item and item["bbox"]:
+                            # Add bbox with text for matching
+                            all_bboxes.append({
+                                "bbox": item["bbox"],
+                                "text": item.get("text", ""),
+                                "type": item.get("type", "unknown"),
+                            })
 
         # Split into sentences
         sentences = self._split_into_sentences(text)
