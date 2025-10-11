@@ -24,7 +24,6 @@ export interface NormalizedBBox {
 export interface DocumentItem {
   text: string
   type: string
-  bbox?: BBox
   bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
   chunk_id?: number
 }
@@ -118,7 +117,7 @@ export const useDocumentViewer = () => {
 
     return items.filter(item => {
       const hasMatch = item.text && item.text.toLowerCase().includes(lowerQuery)
-      const hasBbox = !requireBbox || Boolean(item.bbox)
+      const hasBbox = !requireBbox || (item.bboxes && item.bboxes.length > 0)
       return hasMatch && hasBbox
     })
   }
@@ -135,7 +134,6 @@ export const useDocumentViewer = () => {
 
     return items.filter(item => {
       const boxes: BBox[] = []
-      if (item.bbox) boxes.push(item.bbox)
       if (item.bboxes && item.bboxes.length) {
         for (const entry of item.bboxes) {
           boxes.push((entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox))

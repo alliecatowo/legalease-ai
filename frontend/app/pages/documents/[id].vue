@@ -68,6 +68,15 @@ const { data: relatedDocs } = useLazyAsyncData(
 )
 
 // UI State
+// Initialize from route query
+if (route.query.q) {
+  searchWithinQuery.value = String(route.query.q)
+}
+
+watch(() => route.query.q, (q) => {
+  searchWithinQuery.value = q ? String(q) : ''
+})
+
 const selectedTab = ref('content')
 const showDeleteModal = ref(false)
 const showAddToCaseModal = ref(false)
