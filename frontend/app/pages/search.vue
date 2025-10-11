@@ -38,6 +38,7 @@ const availableCases = computed(() =>
 // Filter state
 const selectedCases = ref<number[]>([])
 const selectedDocumentTypes = ref<string[]>([])
+const selectedSpeakers = ref<string[]>([])
 
 const documentTypeOptions = [
   { value: 'contract', label: 'Contracts', icon: 'i-lucide-file-text' },
