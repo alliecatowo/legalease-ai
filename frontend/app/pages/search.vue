@@ -537,7 +537,7 @@ defineShortcuts({
               <SearchResultCard
                 v-for="result in searchResults"
                 :key="`${result.id}-${result.metadata?.chunk_id || result.pageNumber}`"
-                :result="result"
+                :result="result" :query="searchQuery"
               />
             </div>
 

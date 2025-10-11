@@ -15,7 +15,6 @@ interface BBox {
 interface DocumentItem {
   text: string
   type: string
-  bbox?: BBox
   bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
   chunk_id?: number
 }
@@ -63,6 +62,27 @@ const documentContent = ref<{
 const currentPageData = computed(() => {
   if (!documentContent.value) return null
   return documentContent.value.pages.find(p => p.page_number === currentPage.value)
+})
+
+
+// Build highlight rectangles for current page from item.bboxes
+const currentPageHighlights = computed(() => {
+  if (!currentPageData.value) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
+  const results: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+  const query = (props.searchQuery || '').toLowerCase()
+
+  for (const item of currentPageData.value.items) {
+    if (query && !(item.text && item.text.toLowerCase().includes(query))) continue
+
+    const boxes = item.bboxes || []
+    for (const entry of boxes) {
+      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+      const norm = normalizeBBox(box)
+      results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
+    }
+  }
+
+  return results
 })
 
 // Normalize bbox coordinates (handle both {l,t,r,b} and {x0,y0,x1,y1} formats)
@@ -115,7 +135,7 @@ const currentPageHighlights = computed(() => {
     // Skip items that don't match search when a query is provided
     if (query && !(item.text && item.text.toLowerCase().includes(query))) continue
 
-    const boxes = item.bboxes || (item.bbox ? [item.bbox] : [])
+    const boxes = item.bboxes || []
     for (const entry of boxes) {
       const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
       const norm = normalizeBBox(box)
