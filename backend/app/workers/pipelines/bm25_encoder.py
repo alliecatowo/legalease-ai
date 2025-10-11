@@ -152,19 +152,37 @@ class BM25Encoder:
         # Compute BM25 scores
         bm25_scores = {}
 
-        for token, tf in term_freqs.items():
-            # Get IDF (or use epsilon if token not seen during fitting)
-            idf_score = self.idf.get(token, self.epsilon)
+        # If not fitted, use default values for better keyword matching
+        if not self.idf:
+            # Not fitted - use TF-based scoring with default IDF
+            default_idf = 2.0  # Reasonable default IDF value
+            avg_len = 100.0  # Assume average document length
 
-            # BM25 formula
-            numerator = tf * (self.k1 + 1)
-            denominator = tf + self.k1 * (
-                1 - self.b + self.b * (doc_length / max(self.avg_doc_length, 1))
-            )
-            bm25_score = idf_score * (numerator / denominator)
+            for token, tf in term_freqs.items():
+                # BM25 formula with default values
+                numerator = tf * (self.k1 + 1)
+                denominator = tf + self.k1 * (
+                    1 - self.b + self.b * (doc_length / avg_len)
+                )
+                bm25_score = default_idf * (numerator / denominator)
 
-            if bm25_score > 0:
-                bm25_scores[token] = float(bm25_score)
+                if bm25_score > 0:
+                    bm25_scores[token] = float(bm25_score)
+        else:
+            # Fitted - use actual IDF scores
+            for token, tf in term_freqs.items():
+                # Get IDF (or use default if token not seen during fitting)
+                idf_score = self.idf.get(token, 1.0)  # Increased from epsilon (0.25) to 1.0
+
+                # BM25 formula
+                numerator = tf * (self.k1 + 1)
+                denominator = tf + self.k1 * (
+                    1 - self.b + self.b * (doc_length / max(self.avg_doc_length, 1))
+                )
+                bm25_score = idf_score * (numerator / denominator)
+
+                if bm25_score > 0:
+                    bm25_scores[token] = float(bm25_score)
 
         return bm25_scores
 

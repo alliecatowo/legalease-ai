@@ -153,7 +153,8 @@ function transformBBox(box: BoundingBox) {
 // Get color for bounding box type
 function getBoxColor(type?: string): string {
   const colors: Record<string, string> = {
-    SEMANTIC_MATCH: '#3B82F6',    // Blue for semantic matches
+    BM25_MATCH: '#3B82F6',        // Blue for BM25 keyword matches
+    SEMANTIC_MATCH: '#FBBF24',    // Yellow for semantic matches
     TEXT_MATCH: '#FBBF24',        // Yellow for exact text matches
     PERSON: '#3B82F6',
     ORGANIZATION: '#8B5CF6',
