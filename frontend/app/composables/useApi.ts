@@ -79,13 +79,24 @@ export const useApi = () => {
 
     // Transcriptions
     transcriptions: {
-      list: () => api('/api/v1/transcriptions'),
-      get: (id: string) => api(`/api/v1/transcriptions/${id}`),
-      create: (formData: FormData) => api('/api/v1/transcriptions', { method: 'POST', body: formData }),
-      bulkCreate: (formData: FormData) => api('/api/v1/transcriptions/bulk', { method: 'POST', body: formData }),
-      delete: (id: string) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
-      export: (id: string, format: 'docx' | 'srt' | 'vtt') =>
-        api(`/api/v1/transcriptions/${id}/export/${format}`)
+      listForCase: (caseId: number) => api(`/api/v1/cases/${caseId}/transcriptions`),
+      get: (id: number) => api(`/api/v1/transcriptions/${id}`),
+      upload: (caseId: number, formData: FormData) =>
+        api(`/api/v1/cases/${caseId}/transcriptions`, { method: 'POST', body: formData }),
+      delete: (id: number) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
+      download: (id: number, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') =>
+        api(`/api/v1/transcriptions/${id}/download/${format}`),
+
+      // Summarization
+      getSummary: (id: number) => api(`/api/v1/transcriptions/${id}/summary`),
+      generateSummary: (id: number, options?: any) =>
+        api(`/api/v1/transcriptions/${id}/summarize`, { method: 'POST', body: options || {} }),
+      regenerateSummary: (id: number, components?: string[]) =>
+        api(`/api/v1/transcriptions/${id}/summary/regenerate`, { method: 'POST', body: components }),
+      quickSummary: (id: number) =>
+        api(`/api/v1/transcriptions/${id}/summary/quick`, { method: 'POST' }),
+      summaryStatus: (transcriptionId: number, taskId: string) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/summary/status/${taskId}`)
     },
 
     // Stats & Analytics

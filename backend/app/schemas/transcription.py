@@ -1,7 +1,7 @@
 """Transcription schemas for API requests and responses."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
@@ -14,6 +14,47 @@ class TranscriptionFormat(str, Enum):
     SRT = "srt"
     VTT = "vtt"
     TXT = "txt"
+
+
+class TranscriptionOptions(BaseModel):
+    """Configuration options for transcription processing."""
+
+    language: Optional[str] = Field(
+        None,
+        description="Language code (e.g., 'en', 'es', 'fr'). Use None or 'auto' for auto-detection"
+    )
+    task: Literal["transcribe", "translate"] = Field(
+        "transcribe",
+        description="Task type: 'transcribe' for same-language transcription, 'translate' for translation to English"
+    )
+    enable_diarization: bool = Field(
+        True,
+        description="Enable speaker diarization (identification)"
+    )
+    min_speakers: Optional[int] = Field(
+        2,
+        ge=1,
+        le=20,
+        description="Minimum number of speakers to detect (hint for diarization algorithm)"
+    )
+    max_speakers: Optional[int] = Field(
+        10,
+        ge=1,
+        le=20,
+        description="Maximum number of speakers to detect (hint for diarization algorithm)"
+    )
+    temperature: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature (0.0 = deterministic, 1.0 = creative)"
+    )
+    initial_prompt: Optional[str] = Field(
+        None,
+        description="Optional initial prompt to provide context for better transcription accuracy"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SpeakerInfo(BaseModel):

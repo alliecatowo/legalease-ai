@@ -5,55 +5,67 @@ definePageMeta({
   layout: 'default'
 })
 
+const api = useApi()
+const toast = useToast()
+
 const activeTab = ref('upload')
-const selectedCase = ref('')
+const selectedCase = ref<number | null>(null)
 const selectedFiles = ref<File[]>([])
-const uploadOptions = ref({
-  autoCategorize: true,
-  enableDiarization: true,
-  autoDetectTimestamps: true,
-  processSequentially: false
+const transcriptionOptions = ref({
+  language: null as string | null,
+  task: 'transcribe' as 'transcribe' | 'translate',
+  enable_diarization: true,
+  min_speakers: 2,
+  max_speakers: 10,
+  temperature: 0.0,
+  initial_prompt: null as string | null
 })
+const isUploading = ref(false)
+const uploadError = ref<string | null>(null)
 
-// Mock data - TODO: Replace with API
-const cases = ref([
-  { label: 'Acme Corp v. Global Tech Inc (Active)', value: '1' },
-  { label: 'Smith v. Johnson Employment (Active)', value: '2' },
-  { label: 'Patent Case - Tech Innovations (Pending)', value: '3' }
-])
+// Fetch real cases from API
+const { data: casesData, pending: loadingCases } = await useAsyncData(
+  'cases',
+  () => api.cases.list(),
+  { default: () => ({ cases: [], total: 0, page: 1, page_size: 50 }) }
+)
 
-const recentTranscriptions = ref([
-  {
-    id: '1',
-    title: 'Deposition - John Johnson',
-    case_name: 'Acme Corp v. Global Tech Inc',
-    created_at: '2024-03-10T10:30:00Z',
-    duration: 3620,
-    status: 'completed',
-    speakers: 3,
-    segments: 142
+const cases = computed(() =>
+  (casesData.value?.cases || []).map((c: any) => ({
+    label: `${c.name} (${c.status})`,
+    value: c.id
+  }))
+)
+
+// Fetch all transcriptions across all cases
+const { data: transcriptionsData, pending: loadingTranscriptions, refresh: refreshTranscriptions } = await useAsyncData(
+  'all-transcriptions',
+  async () => {
+    // Get transcriptions from all cases
+    const allCases = casesData.value?.cases || []
+    const allTranscriptions = []
+
+    for (const case_ of allCases) {
+      try {
+        const response = await api.transcriptions.listForCase(case_.id)
+        // Add case name to each transcription
+        const transcriptionsWithCase = response.transcriptions.map((t: any) => ({
+          ...t,
+          case_name: case_.name,
+          case_id: case_.id
+        }))
+        allTranscriptions.push(...transcriptionsWithCase)
+      } catch (error) {
+        console.error(`Error fetching transcriptions for case ${case_.id}:`, error)
+      }
+    }
+
+    return allTranscriptions
   },
-  {
-    id: '2',
-    title: 'Client Interview - Jane Smith',
-    case_name: 'Smith v. Johnson Employment',
-    created_at: '2024-03-09T14:15:00Z',
-    duration: 1820,
-    status: 'completed',
-    speakers: 2,
-    segments: 87
-  },
-  {
-    id: '3',
-    title: 'Expert Testimony - Dr. Williams',
-    case_name: 'Patent Case - Tech Innovations',
-    created_at: '2024-03-08T09:00:00Z',
-    duration: 5400,
-    status: 'processing',
-    speakers: 4,
-    segments: 0
-  }
-])
+  { default: () => [] }
+)
+
+const recentTranscriptions = computed(() => transcriptionsData.value || [])
 
 const fileInputRef = ref<HTMLInputElement>()
 
@@ -69,14 +81,49 @@ function removeFile(index: number) {
 }
 
 async function startTranscription() {
-  if (!selectedCase.value || selectedFiles.value.length === 0) return
+  if (!selectedCase.value || selectedFiles.value.length === 0) {
+    toast.add({
+      title: 'Missing Information',
+      description: 'Please select a case and at least one file',
+      color: 'error'
+    })
+    return
+  }
 
-  // TODO: Implement actual upload
-  console.log('Starting transcription...', {
-    case: selectedCase.value,
-    files: selectedFiles.value,
-    options: uploadOptions.value
-  })
+  isUploading.value = true
+  uploadError.value = null
+
+  try {
+    // Upload files one by one with transcription options
+    for (const file of selectedFiles.value) {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('options', JSON.stringify(transcriptionOptions.value))
+
+      await api.transcriptions.upload(selectedCase.value, formData)
+
+      toast.add({
+        title: 'Upload Successful',
+        description: `${file.name} is being transcribed`,
+        color: 'success'
+      })
+    }
+
+    // Clear form and refresh transcriptions list
+    selectedFiles.value = []
+    selectedCase.value = null
+    await refreshTranscriptions()
+    activeTab.value = 'recent'
+  } catch (error: any) {
+    uploadError.value = error.message || 'Upload failed'
+    toast.add({
+      title: 'Upload Failed',
+      description: error.message || 'An error occurred during upload',
+      color: 'error'
+    })
+  } finally {
+    isUploading.value = false
+  }
 }
 
 function formatDuration(seconds: number) {
@@ -106,9 +153,9 @@ const statusColors = {
 
 const stats = computed(() => ({
   total: recentTranscriptions.value.length,
-  completed: recentTranscriptions.value.filter(t => t.status === 'completed').length,
-  processing: recentTranscriptions.value.filter(t => t.status === 'processing').length,
-  totalDuration: recentTranscriptions.value.reduce((acc, t) => acc + t.duration, 0)
+  completed: recentTranscriptions.value.filter((t: any) => t.status === 'completed').length,
+  processing: recentTranscriptions.value.filter((t: any) => t.status === 'processing').length,
+  totalDuration: recentTranscriptions.value.reduce((acc: number, t: any) => acc + (t.duration || 0), 0)
 }))
 </script>
 
@@ -229,6 +276,7 @@ const stats = computed(() => ({
                 :items="cases"
                 placeholder="Select a case..."
                 size="lg"
+                value-key="value"
               />
             </UFormField>
           </UCard>
@@ -324,53 +372,8 @@ const stats = computed(() => ({
             </div>
           </UCard>
 
-          <!-- Options -->
-          <UCard class="shadow-md hover:shadow-lg transition-shadow duration-200">
-            <template #header>
-              <div class="flex items-center gap-3">
-                <div class="p-2 bg-primary/10 rounded-lg">
-                  <UIcon name="i-lucide-settings" class="size-5 text-primary" />
-                </div>
-                <h3 class="font-semibold text-lg">Transcription Options</h3>
-              </div>
-            </template>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <UCheckboxGroup class="space-y-4">
-                <div class="flex items-start gap-3 p-3 rounded-lg hover:bg-primary/5 transition-colors">
-                  <UCheckbox v-model="uploadOptions.autoCategorize" class="mt-1" />
-                  <div>
-                    <p class="text-sm font-semibold">Auto-categorize by filename</p>
-                    <p class="text-xs text-muted">Automatically detect content type from file names</p>
-                  </div>
-                </div>
-                <div class="flex items-start gap-3 p-3 rounded-lg hover:bg-primary/5 transition-colors">
-                  <UCheckbox v-model="uploadOptions.enableDiarization" class="mt-1" />
-                  <div>
-                    <p class="text-sm font-semibold">Speaker identification</p>
-                    <p class="text-xs text-muted">Detect and identify different speakers</p>
-                  </div>
-                </div>
-              </UCheckboxGroup>
-
-              <UCheckboxGroup class="space-y-4">
-                <div class="flex items-start gap-3 p-3 rounded-lg hover:bg-primary/5 transition-colors">
-                  <UCheckbox v-model="uploadOptions.autoDetectTimestamps" class="mt-1" />
-                  <div>
-                    <p class="text-sm font-semibold">Auto-detect timestamps</p>
-                    <p class="text-xs text-muted">Identify time references in speech</p>
-                  </div>
-                </div>
-                <div class="flex items-start gap-3 p-3 rounded-lg hover:bg-primary/5 transition-colors">
-                  <UCheckbox v-model="uploadOptions.processSequentially" class="mt-1" />
-                  <div>
-                    <p class="text-sm font-semibold">Process sequentially</p>
-                    <p class="text-xs text-muted">Slower but more reliable for large batches</p>
-                  </div>
-                </div>
-              </UCheckboxGroup>
-            </div>
-          </UCard>
+          <!-- Transcription Options -->
+          <TranscriptionOptions v-model="transcriptionOptions" />
 
           <UAlert
             icon="i-lucide-lightbulb"
@@ -379,6 +382,17 @@ const stats = computed(() => ({
             title="Pro Tip"
             description="Name files with descriptive names like 'deposition_witness1.mp3' for automatic categorization and better organization."
             class="border-l-4 border-info"
+          />
+
+          <!-- Error Alert -->
+          <UAlert
+            v-if="uploadError"
+            icon="i-lucide-alert-circle"
+            color="error"
+            variant="soft"
+            :title="uploadError"
+            closable
+            @close="uploadError = null"
           />
 
           <!-- Start Button with Gradient -->
@@ -390,12 +404,13 @@ const stats = computed(() => ({
               color="primary"
               size="xl"
               block
-              :disabled="!selectedCase || selectedFiles.length === 0"
+              :disabled="!selectedCase || selectedFiles.length === 0 || isUploading"
+              :loading="isUploading"
               @click="startTranscription"
               class="relative"
             >
               <template #leading>
-                <UIcon name="i-lucide-sparkles" class="animate-pulse" />
+                <UIcon v-if="!isUploading" name="i-lucide-sparkles" class="animate-pulse" />
               </template>
             </UButton>
           </div>
@@ -422,7 +437,7 @@ const stats = computed(() => ({
             <NuxtLink
               v-for="trans in recentTranscriptions"
               :key="trans.id"
-              :to="`/transcriptions/${trans.id}`"
+              :to="`/transcripts/${trans.id}`"
               class="block group"
             >
               <UCard

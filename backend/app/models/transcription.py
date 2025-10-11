@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -13,6 +13,7 @@ class Transcription(Base):
 
     Transcriptions are generated for audio and video documents and include
     timing information, speaker identification, and segmented text.
+    Also includes AI-generated summaries and analysis.
     """
 
     __tablename__ = "transcriptions"
@@ -30,6 +31,16 @@ class Transcription(Base):
     speakers = Column(JSON, nullable=True)  # Speaker identification data
     segments = Column(JSON, nullable=False)  # Transcription segments with timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    # AI-generated summary fields
+    executive_summary = Column(Text, nullable=True)  # 200-300 word summary
+    key_moments = Column(JSON, nullable=True)  # Top 10-15 important moments with timestamps
+    timeline = Column(JSON, nullable=True)  # Chronological events mentioned
+    speaker_stats = Column(JSON, nullable=True)  # Detailed speaker statistics
+    action_items = Column(JSON, nullable=True)  # Decisions, agreements, follow-ups
+    topics = Column(JSON, nullable=True)  # Main topics discussed
+    entities = Column(JSON, nullable=True)  # Parties, dates, legal terms, citations
+    summary_generated_at = Column(DateTime, nullable=True)  # When summary was generated
 
     # Relationships
     document = relationship("Document", back_populates="transcription")
