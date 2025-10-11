@@ -390,7 +390,6 @@ watch(() => props.documentId, () => {
       <div class="mb-2 text-xs text-muted">
         <span>PDF: {{ Math.round(pageWidth) }}x{{ Math.round(pageHeight) }} | Boxes: {{ pageHighlights.length }}</span>
       </div>
-      </div>
     </div>
 
     <!-- PDF Viewer Container -->
