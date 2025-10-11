@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import VuePdfEmbed from 'vue-pdf-embed'
+import PDFViewerWithHighlights from './document/PDFViewerWithHighlights.vue'
 
 interface BBox {
   l?: number
@@ -50,30 +50,7 @@ const totalPages = ref(0)
 const zoom = ref(1.0)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
-const pdfContainer = useTemplateRef('pdfContainer')
-const canvasInfo = reactive({ intrinsicW: 0, intrinsicH: 0, cssW: 0, cssH: 0, scaleX: 1, scaleY: 1 })
-function syncCanvasMetrics() {
-  const el = (pdfEmbed.value as any)?.$el?.querySelector('canvas') as HTMLCanvasElement | null
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  canvasInfo.intrinsicW = el.width || 0
-  canvasInfo.intrinsicH = el.height || 0
-  canvasInfo.cssW = rect.width
-  canvasInfo.cssH = rect.height
-  canvasInfo.scaleX = canvasInfo.intrinsicW ? rect.width / canvasInfo.intrinsicW : 1
-  canvasInfo.scaleY = canvasInfo.intrinsicH ? rect.height / canvasInfo.intrinsicH : 1
-}
-
-const pageWidth = ref(0)
-const pageHeight = ref(0)
-const pageClientW = ref(0)
-const pageClientH = ref(0)
-
-const containerRef = useTemplateRef('containerRef')
-const pageClientW = ref(0)
-const pageClientH = ref(0)
-
-const pdfEmbed = useTemplateRef('pdfEmbed')
+const pdfViewerRef = useTemplateRef('pdfViewerRef')
 
 // Document content data
 const documentContent = ref<{
@@ -88,27 +65,93 @@ const currentPageData = computed(() => {
   return documentContent.value.pages.find(p => p.page_number === currentPage.value)
 })
 
+// Normalize bbox coordinates (handle both {l,t,r,b} and {x0,y0,x1,y1} formats)
+const normalizeBBox = (bbox: BBox) => {
+  if (bbox.l !== undefined) {
+    const l = bbox.l
+    const t = bbox.t ?? 0
+    const r = bbox.r ?? l
+    const b = bbox.b ?? t
+    return {
+      x: l,
+      y: Math.min(t, b),
+      width: Math.abs(r - l),
+      height: Math.abs(b - t)
+    }
+  } else if (bbox.x0 !== undefined) {
+    const x0 = bbox.x0
+    const y0 = bbox.y0 ?? 0
+    const x1 = bbox.x1 ?? x0
+    const y1 = bbox.y1 ?? y0
+    return {
+      x: x0,
+      y: Math.min(y0, y1),
+      width: Math.abs(x1 - x0),
+      height: Math.abs(y1 - y0)
+    }
+  }
+  return { x: 0, y: 0, width: 0, height: 0 }
+}
 
-// Simple, cohesive highlight list from item.bboxes only
-const pageHighlights = computed(() => {
-  const page = currentPageData.value
-  if (!page) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
-  const q = (props.searchQuery || '').toLowerCase().trim()
-  if (!q) return []
+// Collect boxes from page-level and item-level bboxes
+const collectBoxesForPage = (page: PageData) => {
   const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+
+  // Page-level bboxes
+  for (const pb of page.bboxes || []) {
+    const box = (pb as any).bbox ? (pb as any).bbox as BBox : (pb as any)
+    const norm = normalizeBBox(box)
+    out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (pb as any).text })
+  }
+
+  // Item-level bboxes
   for (const item of page.items) {
     for (const entry of item.bboxes || []) {
-      const t = (entry as any).text || item.text || ''
-      if (t.toLowerCase().includes(q)) {
-        const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
-        const nb = normalizeBBox(box)
-        out.push({ x: nb.x, y: nb.y, width: nb.width, height: nb.height, text: t })
+      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+      const norm = normalizeBBox(box)
+      out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
+    }
+  }
+
+  return out
+}
+
+// Get ALL highlights across ALL pages with page numbers
+const allHighlights = computed(() => {
+  if (!documentContent.value) return []
+  const q = (props.searchQuery || '').toLowerCase().trim()
+  if (!q) return []
+
+  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number }> = []
+
+  for (const page of documentContent.value.pages) {
+    for (const item of page.items) {
+      for (const entry of item.bboxes || []) {
+        const t = (entry as any).text || item.text || ''
+        if (t.toLowerCase().includes(q)) {
+          const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
+          const nb = normalizeBBox(box)
+          out.push({
+            x: nb.x,
+            y: nb.y,
+            width: nb.width,
+            height: nb.height,
+            text: t,
+            page: page.page_number
+          })
+        }
       }
     }
   }
+
+  console.log(`[DocumentViewer] Total highlights: ${out.length}`)
   return out
 })
 
+// Just the highlights for the current page
+const pageHighlights = computed(() => {
+  return allHighlights.value.filter(h => h.page === currentPage.value)
+})
 
 // Build highlight rectangles for current page from item.bboxes
 const currentPageHighlights = computed(() => {
@@ -144,84 +187,18 @@ const currentPageHighlights = computed(() => {
     }
   }
 
-// Collect boxes from page-level and item-level
-watch([pdfEmbed, zoom, currentPage], async () => { await nextTick(); syncCanvasMetrics() })
-
-const collectBoxesForPage = (page: PageData) => {
-  const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
-  // Page-level bboxes
-
-// Track PDF canvas size changes for overlay scaling
-watch([pdfEmbed, zoom], async () => {
-  await nextTick()
-  const el = (pdfEmbed.value as any)?.$el as HTMLElement | undefined
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  pageClientW.value = rect.width
-  pageClientH.value = rect.height
-})
-
-  for (const pb of page.bboxes || []) {
-    const box = (pb as any).bbox ? (pb as any).bbox as BBox : (pb as any)
-    const norm = normalizeBBox(box)
-    out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (pb as any).text })
-  }
-  // Item-level bboxes
-  for (const item of page.items) {
-    for (const entry of item.bboxes || []) {
-      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
-      const norm = normalizeBBox(box)
-      out.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
-    }
-  }
-
-// Ensure we reset currentPage to initialPage on load or when props change
-watch(() => props.initialPage, (p) => { currentPage.value = p || 1 })
-watch(() => props.documentId, () => { currentPage.value = props.initialPage || 1 })
-
-  return out
-}
-
   return results
 })
 
-  // Log sizing and first box for debug
-  if (documentContent.value?.pages?.length) {
-    const p = documentContent.value.pages[0]
-    const first = p.items.find(i => (i.bboxes||[]).length)?.bboxes?.[0] as any
-    if (first?.bbox) {
-      const nb = normalizeBBox(first.bbox)
-      console.debug('First bbox (normalized):', nb)
+function jumpToFirstMatch() {
+  const q = (props.searchQuery || '').toLowerCase().trim()
+  if (!q || !documentContent.value?.pages) return
+  for (const p of documentContent.value.pages) {
+    if (p.items?.some(it => (it.bboxes || []).some((e: any) => ((e.text || it.text || '').toLowerCase().includes(q))))) {
+      currentPage.value = p.page_number
+      break
     }
   }
-
-
-// Normalize bbox coordinates (handle both {l,t,r,b} and {x0,y0,x1,y1} formats)
-const normalizeBBox = (bbox: BBox) => {
-  if (bbox.l !== undefined) {
-    const l = bbox.l
-    const t = bbox.t ?? 0
-    const r = bbox.r ?? l
-    const b = bbox.b ?? t
-    return {
-      x: l,
-      y: Math.min(t, b),
-      width: Math.abs(r - l),
-      height: Math.abs(b - t)
-    }
-  } else if (bbox.x0 !== undefined) {
-    const x0 = bbox.x0
-    const y0 = bbox.y0 ?? 0
-    const x1 = bbox.x1 ?? x0
-    const y1 = bbox.y1 ?? y0
-    return {
-      x: x0,
-      y: Math.min(y0, y1),
-      width: Math.abs(x1 - x0),
-      height: Math.abs(y1 - y0)
-    }
-  }
-  return { x: 0, y: 0, width: 0, height: 0 }
 }
 
 // Fetch document content
@@ -244,35 +221,7 @@ const fetchDocumentContent = async () => {
 
     totalPages.value = content.total_pages || content.pages?.length || 0
 
-// Build highlight rectangles for current page from item.bboxes
-const currentPageHighlights = computed(() => {
-  if (!currentPageData.value) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
-  const results: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
-  const query = (props.searchQuery || '').toLowerCase()
-
-  for (const item of currentPageData.value.items) {
-    // Skip items that don't match search when a query is provided
-    if (query && !(item.text && item.text.toLowerCase().includes(query))) continue
-
-    const boxes = item.bboxes || []
-    for (const entry of boxes) {
-
-  // If chunkId provided, set page to the item's page when found
-  if (props.chunkId && currentPageData.value) {
-    const pageIdx = documentContent.value?.pages.findIndex(p => p.items.some(i => i.chunk_id === props.chunkId))
-    if (pageIdx !== undefined && pageIdx >= 0) {
-      currentPage.value = documentContent.value!.pages[pageIdx].page_number
-    }
-  }
-
-      const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
-      const norm = normalizeBBox(box)
-      results.push({ x: norm.x, y: norm.y, width: norm.width, height: norm.height, text: (entry as any).text || item.text })
-    }
-  }
-
-  return results
-})
+    jumpToFirstMatch()
 
   } catch (e: any) {
     console.error('Error fetching document content:', e)
@@ -280,19 +229,6 @@ const currentPageHighlights = computed(() => {
   } finally {
     isLoading.value = false
   }
-}
-
-// PDF events
-const onPdfLoaded = (pdf: any) => {
-  console.log('PDF loaded:', pdf)
-  if (pdf.numPages) {
-    totalPages.value = pdf.numPages
-  }
-}
-
-const onPdfError = (e: any) => {
-  console.error('PDF loading error:', e)
-  error.value = 'Failed to load PDF'
 }
 
 // Navigation
@@ -316,21 +252,16 @@ const zoomOut = () => {
 
 const resetZoom = () => {
   zoom.value = 1.0
+}
 
 // Watch for query or content changes to rehighlight and jump to first match
 watch([() => props.searchQuery, documentContent], () => {
-  // Jump to page that contains first item matching query
-  const q = (props.searchQuery || '').toLowerCase()
-  if (!q || !documentContent.value) return
-  for (const page of documentContent.value.pages) {
-    if (page.items.some(i => i.text?.toLowerCase().includes(q))) {
-      currentPage.value = page.page_number
-      break
-    }
-  }
+  jumpToFirstMatch()
 })
 
-}
+// Ensure we reset currentPage to initialPage on load or when props change
+watch(() => props.initialPage, (p) => { currentPage.value = p || 1 })
+watch(() => props.documentId, () => { currentPage.value = props.initialPage || 1 })
 
 // Initialize
 onMounted(() => {
@@ -346,7 +277,7 @@ watch(() => props.documentId, () => {
 <template>
   <div class="document-viewer relative">
     <!-- Toolbar -->
-    <div class="viewer-toolbar sticky top-0 z-10 bg-default border-b border-default p-3 flex items-center justify-between gap-3">
+    <div class="viewer-toolbar bg-default border-b border-default p-3 flex items-center justify-between gap-3">
       <div class="flex items-center gap-2">
         <UButton
           icon="i-lucide-chevron-left"
@@ -410,7 +341,7 @@ watch(() => props.documentId, () => {
             <template #leading>
               <UIcon name="i-lucide-search" class="size-3" />
             </template>
-            {{ pageHighlights.length }} highlights
+            {{ allHighlights.length }} total
           </UBadge>
         </UTooltip>
         <UButton
@@ -423,16 +354,11 @@ watch(() => props.documentId, () => {
         />
       </div>
 
-      <div class="mb-2 text-xs text-muted">
-        <span>PDF: {{ Math.round(pageWidth) }}x{{ Math.round(pageHeight) }} | Boxes: {{ pageHighlights.length }}</span>
-      </div>
     </div>
 
     <!-- PDF Viewer Container -->
     <div
-      ref="pdfContainer"
-      class="viewer-content relative overflow-auto bg-muted/5 p-6"
-      style="height: calc(100vh - 200px);"
+      class="viewer-content relative overflow-auto bg-muted/5 p-6 flex-1"
     >
       <!-- Loading State -->
       <div v-if="isLoading" class="flex items-center justify-center h-full">
@@ -460,39 +386,23 @@ watch(() => props.documentId, () => {
       </div>
 
       <!-- PDF with Overlay -->
-      <div v-else class="pdf-wrapper relative inline-block mx-auto shadow-lg">
-        <VuePdfEmbed
-          ref="pdfEmbed"
-          :source="pdfUrl"
-          :page="currentPage"
-          class="pdf-page"
-          :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
-          @loaded="onPdfLoaded"
-          @loading-failed="onPdfError"
+      <div v-else class="pdf-wrapper relative w-full mx-auto shadow-lg">
+        <PDFViewerWithHighlights
+          ref="pdfViewerRef"
+          :document-url="pdfUrl"
+          :bounding-boxes="allHighlights.map((b, i) => ({
+            id: String(i),
+            page: b.page,
+            x: b.x,
+            y: b.y,
+            width: b.width,
+            height: b.height,
+            text: b.text,
+            type: 'highlight'
+          }))"
+          @page-change="(p:number) => currentPage = p"
         />
 
-        <!-- SVG Overlay for Bounding Boxes -->
-        <svg
-          v-if="pageHighlights.length > 0"
-          class="bbox-overlay absolute top-0 left-0 pointer-events-none"
-          :style="{ width: canvasInfo.cssW + 'px', height: canvasInfo.cssH + 'px' }"
-        >
-          <rect
-            v-for="(box, idx) in pageHighlights"
-            :key="idx"
-            :x="box.x * canvasInfo.scaleX"
-            :y="box.y * canvasInfo.scaleY"
-            :width="box.width * canvasInfo.scaleX"
-            :height="box.height * canvasInfo.scaleY"
-            class="highlight-box"
-            fill="rgba(255, 235, 59, 0.3)"
-            stroke="rgba(255, 235, 59, 0.8)"
-            stroke-width="2"
-            rx="2"
-          >
-            <title>{{ (box.text || '').substring(0, 100) }}</title>
-          </rect>
-        </svg>
       </div>
     </div>
 
