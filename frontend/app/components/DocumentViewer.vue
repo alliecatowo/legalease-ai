@@ -51,6 +51,28 @@ const zoom = ref(1.0)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 const pdfContainer = useTemplateRef('pdfContainer')
+const canvasInfo = reactive({ intrinsicW: 0, intrinsicH: 0, cssW: 0, cssH: 0, scaleX: 1, scaleY: 1 })
+function syncCanvasMetrics() {
+  const el = (pdfEmbed.value as any)?.$el?.querySelector('canvas') as HTMLCanvasElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  canvasInfo.intrinsicW = el.width || 0
+  canvasInfo.intrinsicH = el.height || 0
+  canvasInfo.cssW = rect.width
+  canvasInfo.cssH = rect.height
+  canvasInfo.scaleX = canvasInfo.intrinsicW ? rect.width / canvasInfo.intrinsicW : 1
+  canvasInfo.scaleY = canvasInfo.intrinsicH ? rect.height / canvasInfo.intrinsicH : 1
+}
+
+const pageWidth = ref(0)
+const pageHeight = ref(0)
+const pageClientW = ref(0)
+const pageClientH = ref(0)
+
+const containerRef = useTemplateRef('containerRef')
+const pageClientW = ref(0)
+const pageClientH = ref(0)
+
 const pdfEmbed = useTemplateRef('pdfEmbed')
 
 // Document content data
@@ -72,11 +94,12 @@ const pageHighlights = computed(() => {
   const page = currentPageData.value
   if (!page) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
   const q = (props.searchQuery || '').toLowerCase().trim()
+  if (!q) return []
   const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
   for (const item of page.items) {
     for (const entry of item.bboxes || []) {
       const t = (entry as any).text || item.text || ''
-      if (!q || t.toLowerCase().includes(q)) {
+      if (t.toLowerCase().includes(q)) {
         const box = (entry as any).bbox ? (entry as any).bbox as BBox : (entry as BBox)
         const nb = normalizeBBox(box)
         out.push({ x: nb.x, y: nb.y, width: nb.width, height: nb.height, text: t })
@@ -122,9 +145,22 @@ const currentPageHighlights = computed(() => {
   }
 
 // Collect boxes from page-level and item-level
+watch([pdfEmbed, zoom, currentPage], async () => { await nextTick(); syncCanvasMetrics() })
+
 const collectBoxesForPage = (page: PageData) => {
   const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
   // Page-level bboxes
+
+// Track PDF canvas size changes for overlay scaling
+watch([pdfEmbed, zoom], async () => {
+  await nextTick()
+  const el = (pdfEmbed.value as any)?.$el as HTMLElement | undefined
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  pageClientW.value = rect.width
+  pageClientH.value = rect.height
+})
+
   for (const pb of page.bboxes || []) {
     const box = (pb as any).bbox ? (pb as any).bbox as BBox : (pb as any)
     const norm = normalizeBBox(box)
@@ -425,30 +461,6 @@ watch(() => props.documentId, () => {
 
       <!-- PDF with Overlay -->
       <div v-else class="pdf-wrapper relative inline-block mx-auto shadow-lg">
-          <g>
-            <rect
-              v-for="(box, idx) in pageHighlights"
-              :key="`bg-${idx}`"
-              :x="box.x"
-              :y="box.y"
-              :width="box.width"
-              :height="box.height"
-              fill="rgba(255, 235, 59, 0.20)"
-              stroke="none"
-            />
-            <rect
-              v-for="(box, idx) in pageHighlights"
-              :key="`fg-${idx}`"
-              :x="box.x"
-              :y="box.y"
-              :width="box.width"
-              :height="box.height"
-              fill="none"
-              stroke="rgba(255, 193, 7, 0.9)"
-              stroke-width="2"
-              rx="2"
-            />
-          </g>
         <VuePdfEmbed
           ref="pdfEmbed"
           :source="pdfUrl"
@@ -462,16 +474,16 @@ watch(() => props.documentId, () => {
         <!-- SVG Overlay for Bounding Boxes -->
         <svg
           v-if="pageHighlights.length > 0"
-          class="bbox-overlay absolute top-0 left-0 w-full h-full pointer-events-none"
-          :style="{ transform: `scale(${zoom})`, transformOrigin: 'top left' }"
+          class="bbox-overlay absolute top-0 left-0 pointer-events-none"
+          :style="{ width: canvasInfo.cssW + 'px', height: canvasInfo.cssH + 'px' }"
         >
           <rect
             v-for="(box, idx) in pageHighlights"
             :key="idx"
-            :x="box.x"
-            :y="box.y"
-            :width="box.width"
-            :height="box.height"
+            :x="box.x * canvasInfo.scaleX"
+            :y="box.y * canvasInfo.scaleY"
+            :width="box.width * canvasInfo.scaleX"
+            :height="box.height * canvasInfo.scaleY"
             class="highlight-box"
             fill="rgba(255, 235, 59, 0.3)"
             stroke="rgba(255, 235, 59, 0.8)"
@@ -506,8 +518,15 @@ watch(() => props.documentId, () => {
 <style scoped>
 .pdf-page {
   display: block;
-  max-width: 100%;
+  width: 100%;
+  height: auto;
   background: white;
+}
+
+.pdf-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
 }
 
 .bbox-overlay {
