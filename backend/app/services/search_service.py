@@ -444,10 +444,13 @@ class HybridSearchEngine:
                 # Extract highlights (simple implementation)
                 highlights = self._extract_highlights(text, request.query)
 
-                # Determine match type based on BM25 score
-                # High BM25 score (>5) = keyword match, otherwise semantic
-                bm25_score = result.get("bm25_score", 0.0)
-                match_type = "bm25" if bm25_score > 5.0 else "semantic"
+                # Determine match type based on BM25 score from debug info
+                # BM25 scores are normalized 0-1 fusion scores
+                # Strong keyword matches typically have bm25_score > 0.5
+                # Semantic-only matches typically have bm25_score < 0.35
+                score_debug = result.get("_score_debug", {})
+                bm25_score = score_debug.get("bm25_score", 0.0)
+                match_type = "bm25" if bm25_score >= 0.45 else "semantic"
 
                 formatted_results.append(
                     SearchResult(
