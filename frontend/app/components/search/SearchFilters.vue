@@ -1,9 +1,14 @@
 <script setup lang="ts">
+interface Case {
+  id: number
+  name: string
+  case_number: string
+}
 const props = defineProps<{
   selectedCases: number[]
   selectedDocumentTypes: string[]
   selectedChunkTypes?: string[]
-  availableCases: any[]
+  availableCases: Case[]
   isCompact?: boolean
   showChunkTypes?: boolean
 }>()
