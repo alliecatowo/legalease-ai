@@ -176,6 +176,10 @@ class IndexingService:
         # Add any additional metadata from chunk
         if chunk.meta_data:
             payload["additional_metadata"] = chunk.meta_data
+        if hasattr(chunk, "bboxes") and chunk.meta_data is not None:
+            # Ensure bboxes are nested into metadata for viewer
+            if "bboxes" in chunk.meta_data:
+                payload["bboxes"] = chunk.meta_data["bboxes"]
 
         # Create point with both dense and sparse vectors
         point = PointStruct(

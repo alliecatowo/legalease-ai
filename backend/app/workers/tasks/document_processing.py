@@ -184,6 +184,7 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
 
         # Step 7: Create chunk records in database
         logger.info("Creating chunk records in database")
+        logger.info(f"Processing result keys: {list(result.data.keys())}")
         chunks_data = result.data
         chunks_count = chunks_data.get("chunks_count", 0)
 
@@ -209,16 +210,20 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
             )
 
             points = scroll_result[0]
+            logger.info(f"Qdrant returned {len(points)} points for document {document.id}")
 
             for point in points:
-                payload = point.payload
+                payload = point.payload or {}
+                logger.info(f"Point payload keys: {list(payload.keys())}")
+                add_meta = payload.get("additional_metadata") or {}
+                logger.info(f"additional_metadata keys: {list(add_meta.keys())}")
                 chunk = Chunk(
                     document_id=document.id,
                     text=payload.get("text", ""),
                     chunk_type=payload.get("chunk_type", "section"),
                     position=payload.get("position", 0),
                     page_number=payload.get("page_number"),
-                    meta_data=(payload.get("additional_metadata") or {})
+                    meta_data=add_meta
                 )
                 db.add(chunk)
 
