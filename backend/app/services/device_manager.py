@@ -39,6 +39,14 @@ class DeviceManager:
 
     def _detect_device(self) -> None:
         """Detect available GPU hardware (CUDA or ROCm) or fallback to CPU."""
+        # Check for forced CPU mode via environment variable
+        if os.getenv('FORCE_CPU', '').lower() in ('1', 'true', 'yes'):
+            logger.info("FORCE_CPU enabled, using CPU mode")
+            self._device_type = DeviceType.CPU
+            self._device_name = "CPU"
+            self._device_count = 1
+            return
+
         # Try CUDA first
         if self._detect_cuda():
             self._device_type = DeviceType.CUDA

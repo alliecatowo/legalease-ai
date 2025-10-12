@@ -150,7 +150,7 @@ function highlightText(text: string): string {
   if (!searchQuery.value.trim()) return text
 
   const regex = new RegExp(`(${searchQuery.value.trim()})`, 'gi')
-  return text.replace(regex, '<mark class="bg-warning/30 text-warning-700 dark:text-warning-300 px-0.5 rounded">$1</mark>')
+  return text.replace(regex, '<mark class="bg-yellow-500/30 text-yellow-700 dark:text-yellow-300 px-0.5 rounded">$1</mark>')
 }
 
 // Actions
@@ -860,7 +860,7 @@ onMounted(() => {
               <div
                 v-for="moment in keyMoments"
                 :key="moment.id"
-                class="p-3 bg-warning/5 border border-warning/20 rounded-lg cursor-pointer hover:bg-warning/10 transition-colors"
+                class="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg cursor-pointer hover:bg-yellow-500/10 transition-colors"
                 @click="seekToSegment(moment)"
               >
                 <div class="flex items-center gap-2 mb-2">
@@ -944,9 +944,3 @@ onMounted(() => {
     </div>
   </UDashboardPanel>
 </template>
-
-<style scoped>
-:deep(mark) {
-  @apply bg-warning/30 text-warning-700 dark:text-warning-300 px-0.5 rounded;
-}
-</style>

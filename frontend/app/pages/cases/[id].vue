@@ -77,21 +77,27 @@ const case_ = computed(() => {
   }
 })
 
-// Transform documents
+// Transform documents (filter out audio/video files - they should be transcriptions)
 const documents = computed(() => {
   if (!documentsData.value?.documents) return []
 
-  return documentsData.value.documents.map((d: any) => ({
-    id: String(d.id),
-    filename: d.filename,
-    title: d.meta_data?.title || d.filename,
-    type: d.meta_data?.document_type || 'general',
-    size: d.size || 0,
-    uploadedAt: d.uploaded_at,
-    status: d.status || 'indexed',
-    summary: d.meta_data?.summary,
-    pageCount: d.meta_data?.page_count
-  }))
+  return documentsData.value.documents
+    .filter((d: any) => {
+      // Exclude audio/video files from documents list
+      const mimeType = d.mime_type || ''
+      return !mimeType.startsWith('audio/') && !mimeType.startsWith('video/')
+    })
+    .map((d: any) => ({
+      id: String(d.id),
+      filename: d.filename,
+      title: d.meta_data?.title || d.filename,
+      type: d.meta_data?.document_type || 'general',
+      size: d.size || 0,
+      uploadedAt: d.uploaded_at,
+      status: d.status || 'indexed',
+      summary: d.meta_data?.summary,
+      pageCount: d.meta_data?.page_count
+    }))
 })
 
 // Status configuration
