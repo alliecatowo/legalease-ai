@@ -56,7 +56,7 @@ const filteredSegments = computed(() => {
     const query = searchQuery.value.toLowerCase()
     segments = segments.filter(s =>
       s.text.toLowerCase().includes(query) ||
-      getSpeaker(s.speaker)?.name.toLowerCase().includes(query)
+      (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
     )
   }
 
