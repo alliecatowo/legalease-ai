@@ -636,7 +636,7 @@ def transcribe_audio(
 
                 # Initialize WhisperX WITHOUT diarization (we'll use Pyannote directly)
                 pipeline = WhisperXPipeline(
-                    model_name="large-v3",
+                    model_name="medium",  # Medium model (~5GB VRAM, good balance of speed/quality)
                     device=device,
                     compute_type=compute_type,
                     language=language if language and language != "auto" else None,
