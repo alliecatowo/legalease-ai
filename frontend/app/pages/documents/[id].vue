@@ -426,7 +426,7 @@ const tabItems = computed(() => [
       </UDashboardNavbar>
     </template>
 
-    <div class="overflow-y-auto h-[calc(100vh-64px)]">
+    <template #body>
       <!-- Error State -->
       <div v-if="documentError" class="flex items-center justify-center min-h-[60vh] p-6">
         <UCard class="max-w-md">
@@ -836,10 +836,12 @@ const tabItems = computed(() => [
           </div>
         </div>
       </div>
-    </div>
+    </template>
+  </UDashboardPanel>
 
-    <!-- Delete Confirmation Modal -->
-    <UModal v-model:open="showDeleteModal" title="Delete Document">
+  <!-- Delete Confirmation Modal -->
+    <ClientOnly>
+      <UModal v-model:open="showDeleteModal" title="Delete Document">
       <template #body>
         <div class="space-y-4">
           <div class="flex items-center gap-3">
@@ -879,9 +881,11 @@ const tabItems = computed(() => [
         </div>
       </template>
     </UModal>
+  </ClientOnly>
 
     <!-- Add to Case Modal (Placeholder) -->
-    <UModal v-model:open="showAddToCaseModal" title="Add to Case">
+    <ClientOnly>
+      <UModal v-model:open="showAddToCaseModal" title="Add to Case">
       <template #body>
         <div class="text-center py-8">
           <UIcon name="i-lucide-folder-plus" class="size-12 text-muted mx-auto mb-4 opacity-50" />
@@ -900,5 +904,5 @@ const tabItems = computed(() => [
         </div>
       </template>
     </UModal>
-  </UDashboardPanel>
+  </ClientOnly>
 </template>
