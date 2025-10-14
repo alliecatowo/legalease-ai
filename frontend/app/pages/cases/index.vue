@@ -110,8 +110,8 @@ async function onCaseCreated(caseData: any) {
       </UDashboardNavbar>
     </template>
 
-    <div class="overflow-y-auto h-[calc(100vh-64px)]">
-      <div class="max-w-7xl mx-auto p-6 space-y-6">
+    <template #body>
+      <div class="max-w-7xl mx-auto space-y-6">
         <!-- Stats Cards -->
         <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
           <UCard :ui="{ body: 'p-4' }">
@@ -360,6 +360,6 @@ async function onCaseCreated(caseData: any) {
         <!-- Create Case Modal -->
         <ModalsCreateCaseModal v-model:open="showCreateModal" @created="onCaseCreated" />
       </div>
-    </div>
+    </template>
   </UDashboardPanel>
 </template>

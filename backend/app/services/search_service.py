@@ -187,9 +187,10 @@ class HybridSearchEngine:
 
             # Add debug info
             result["_score_debug"] = {
-                "raw_score": raw_scores[i],
-                "normalized": normalized_score,
-                "bm25_score": bm25_score,
+                "raw_fusion_score": raw_scores[i],
+                "normalized_fusion": normalized_score,
+                "actual_bm25_score": bm25_score,
+                "actual_dense_score": result.get("dense_score", 0.0),
                 "keyword_boost": keyword_boost,
                 "final_score": boosted_score,
             }
@@ -224,6 +225,11 @@ class HybridSearchEngine:
                 document_ids=request.document_ids,
                 chunk_types=request.chunk_types,
             )
+
+            # Log filter details
+            logger.info(f"Keyword-only search filters: case_ids={request.case_ids}, document_ids={request.document_ids}, chunk_types={request.chunk_types}")
+            if filters:
+                logger.info(f"Filter conditions: {filters.model_dump() if hasattr(filters, 'model_dump') else filters}")
 
             # Create BM25 sparse vector
             sparse_vector = self._create_sparse_vector(request.query)
@@ -276,6 +282,7 @@ class HybridSearchEngine:
         Search using Qdrant Query API with hybrid approach.
 
         Uses prefetch for initial retrieval and Query API for fusion.
+        Performs separate BM25 and dense searches to track individual scores.
 
         Args:
             request: Search request
@@ -291,73 +298,158 @@ class HybridSearchEngine:
                 chunk_types=request.chunk_types,
             )
 
-            # Build prefetch queries
-            prefetch_queries = []
+            # Log filter details
+            logger.info(f"Query API search filters: case_ids={request.case_ids}, document_ids={request.document_ids}, chunk_types={request.chunk_types}")
+            if filters:
+                logger.info(f"Filter conditions: {filters.model_dump() if hasattr(filters, 'model_dump') else filters}")
 
-            # Add BM25 sparse prefetch if enabled
+            # Step 1: Perform separate searches to get individual scores
+            bm25_results_map = {}  # Map point_id -> BM25 score
+            dense_results_map = {}  # Map point_id -> dense score
+
+            # Perform BM25 search if enabled
             if request.use_bm25:
                 sparse_vector = self._create_sparse_vector(request.query)
-                prefetch_queries.append(
-                    Prefetch(
-                        query=sparse_vector,  # SparseVector directly
-                        using="bm25",  # Named vector name
-                        filter=filters,
-                        limit=request.top_k * 2,  # Get more for fusion
-                    )
+                logger.info(f"Performing BM25 search with {len(sparse_vector.indices)} tokens")
+
+                bm25_search = self.client.query_points(
+                    collection_name=self.collection_name,
+                    prefetch=[
+                        Prefetch(
+                            query=sparse_vector,
+                            using="bm25",
+                            filter=filters,
+                            limit=request.top_k * 2,
+                        )
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),  # Single prefetch, no actual fusion
+                    limit=request.top_k * 2,
+                    with_payload=True,
                 )
 
-            # Add dense vector prefetch if enabled
+                for point in bm25_search.points:
+                    bm25_results_map[str(point.id)] = point.score if point.score else 0.0
+
+                logger.info(f"BM25 search returned {len(bm25_results_map)} results")
+
+            # Perform dense vector search if enabled
             if request.use_dense:
                 dense_vector = self._create_dense_vector(request.query)
+                logger.info("Performing dense vector search across summary/section/microblock")
 
-                # Search multiple vector types
+                # Search all dense vector types
+                dense_prefetch = []
                 for vector_name in ["summary", "section", "microblock"]:
-                    prefetch_queries.append(
+                    dense_prefetch.append(
                         Prefetch(
-                            query=dense_vector,  # List of floats directly
-                            using=vector_name,  # Named vector name
+                            query=dense_vector,
+                            using=vector_name,
                             filter=filters,
                             limit=request.top_k,
                         )
                     )
 
-            # Determine fusion method
-            if request.fusion_method == "rrf":
-                fusion = Fusion.RRF
-            elif request.fusion_method == "dbsf":
-                fusion = Fusion.DBSF
+                dense_search = self.client.query_points(
+                    collection_name=self.collection_name,
+                    prefetch=dense_prefetch,
+                    query=FusionQuery(fusion=Fusion.RRF),  # Fuse dense vectors together
+                    limit=request.top_k * 2,
+                    with_payload=True,
+                )
+
+                for point in dense_search.points:
+                    dense_results_map[str(point.id)] = point.score if point.score else 0.0
+
+                logger.info(f"Dense search returned {len(dense_results_map)} results")
+
+            # Step 2: Perform hybrid fusion if both enabled
+            if request.use_bm25 and request.use_dense:
+                # Build prefetch queries for hybrid fusion
+                prefetch_queries = []
+
+                sparse_vector = self._create_sparse_vector(request.query)
+                prefetch_queries.append(
+                    Prefetch(
+                        query=sparse_vector,
+                        using="bm25",
+                        filter=filters,
+                        limit=request.top_k * 2,
+                    )
+                )
+
+                dense_vector = self._create_dense_vector(request.query)
+                for vector_name in ["summary", "section", "microblock"]:
+                    prefetch_queries.append(
+                        Prefetch(
+                            query=dense_vector,
+                            using=vector_name,
+                            filter=filters,
+                            limit=request.top_k,
+                        )
+                    )
+
+                # Determine fusion method
+                if request.fusion_method == "rrf":
+                    fusion = Fusion.RRF
+                elif request.fusion_method == "dbsf":
+                    fusion = Fusion.DBSF
+                else:
+                    fusion = Fusion.RRF  # Default
+
+                # Execute hybrid fusion
+                logger.info(f"Performing hybrid fusion with {request.fusion_method}")
+                results = self.client.query_points(
+                    collection_name=self.collection_name,
+                    prefetch=prefetch_queries,
+                    query=FusionQuery(fusion=fusion),
+                    limit=request.top_k * 3,
+                    with_payload=True,
+                )
+            elif request.use_bm25:
+                # BM25 only
+                results = bm25_search
+            elif request.use_dense:
+                # Dense only
+                results = dense_search
             else:
-                fusion = Fusion.RRF  # Default
+                # No search enabled
+                logger.warning("Neither BM25 nor dense search enabled")
+                return []
 
-            # Execute query with prefetch and fusion
-            # Use FusionQuery to combine prefetch results
-            results = self.client.query_points(
-                collection_name=self.collection_name,
-                prefetch=prefetch_queries,
-                query=FusionQuery(fusion=fusion),  # Fusion combines prefetch results
-                limit=request.top_k * 3,  # Get more for score normalization and filtering
-                with_payload=True,
-            )
-
-            # Convert to standard format - collect BM25 scores from results
+            # Step 3: Format results with actual BM25 and dense scores
             formatted_results = []
             raw_scores = []
-            bm25_scores = {}  # Track BM25 scores from fusion results
+            bm25_scores = {}  # Track actual BM25 scores by point ID
 
             for point in results.points:
                 score = point.score if point.score is not None else 0.0
                 raw_scores.append(score)
                 point_id = str(point.id)
 
+                # Get actual BM25 score from separate search (not fusion score!)
+                actual_bm25_score = bm25_results_map.get(point_id, 0.0)
+                actual_dense_score = dense_results_map.get(point_id, 0.0)
+
                 formatted_results.append({
                     "id": point_id,
-                    "score": score,
+                    "score": score,  # Fusion score
                     "payload": point.payload if point.payload else {},
-                    "bm25_score": 0.0,  # Will be updated by normalization
+                    "bm25_score": actual_bm25_score,  # Actual BM25 score
+                    "dense_score": actual_dense_score,  # Actual dense score
                 })
 
-                # Use fusion score as BM25 score proxy for boosting
-                bm25_scores[point_id] = score
+                # Use actual BM25 score for boosting (not fusion score!)
+                bm25_scores[point_id] = actual_bm25_score
+
+            # Log search statistics
+            bm25_only_count = sum(1 for r in formatted_results if r["bm25_score"] > 0 and r["dense_score"] == 0)
+            dense_only_count = sum(1 for r in formatted_results if r["dense_score"] > 0 and r["bm25_score"] == 0)
+            both_count = sum(1 for r in formatted_results if r["bm25_score"] > 0 and r["dense_score"] > 0)
+
+            logger.info(
+                f"Result breakdown: {bm25_only_count} BM25-only, "
+                f"{dense_only_count} dense-only, {both_count} in both"
+            )
 
             # Normalize and boost scores
             formatted_results = self._normalize_and_boost_scores(
@@ -444,13 +536,27 @@ class HybridSearchEngine:
                 # Extract highlights (simple implementation)
                 highlights = self._extract_highlights(text, request.query)
 
-                # Determine match type based on BM25 score from debug info
-                # BM25 scores are normalized 0-1 fusion scores
-                # Strong keyword matches typically have bm25_score > 0.5
-                # Semantic-only matches typically have bm25_score < 0.35
-                score_debug = result.get("_score_debug", {})
-                bm25_score = score_debug.get("bm25_score", 0.0)
-                match_type = "bm25" if bm25_score >= 0.45 else "semantic"
+                # Determine match type based on actual BM25 and dense scores
+                # Use the actual scores from separate searches, not fusion scores
+                actual_bm25_score = result.get("bm25_score", 0.0)
+                actual_dense_score = result.get("dense_score", 0.0)
+
+                # Determine match type based on which search found it
+                if actual_bm25_score > 0 and actual_dense_score > 0:
+                    # Found by both searches - determine which one ranked it higher
+                    if actual_bm25_score > actual_dense_score:
+                        match_type = "bm25"
+                    else:
+                        match_type = "semantic"
+                elif actual_bm25_score > 0:
+                    # Only BM25 found this
+                    match_type = "bm25"
+                elif actual_dense_score > 0:
+                    # Only dense vector found this
+                    match_type = "semantic"
+                else:
+                    # Neither found it (shouldn't happen, but default to hybrid)
+                    match_type = "hybrid"
 
                 formatted_results.append(
                     SearchResult(
@@ -465,7 +571,8 @@ class HybridSearchEngine:
                             "case_id": payload.get("case_id"),
                             "chunk_type": payload.get("chunk_type"),
                             "position": payload.get("position"),
-                            "bm25_score": bm25_score,
+                            "bm25_score": actual_bm25_score,
+                            "dense_score": actual_dense_score,
                             "score_debug": result.get("_score_debug"),
                         },
                         highlights=highlights,
@@ -475,6 +582,11 @@ class HybridSearchEngine:
 
             # Calculate execution time
             search_time_ms = int((time.time() - start_time) * 1000)
+
+            # Calculate result type statistics
+            bm25_matches = sum(1 for r in formatted_results if r.match_type == "bm25")
+            semantic_matches = sum(1 for r in formatted_results if r.match_type == "semantic")
+            hybrid_matches = sum(1 for r in formatted_results if r.match_type == "hybrid")
 
             # Build response
             response = HybridSearchResponse(
@@ -487,6 +599,13 @@ class HybridSearchEngine:
                     "reranking_enabled": self.enable_reranking,
                     "score_threshold": score_threshold,
                     "results_filtered": filtered_count,
+                    "use_bm25": request.use_bm25,
+                    "use_dense": request.use_dense,
+                    "match_breakdown": {
+                        "bm25_matches": bm25_matches,
+                        "semantic_matches": semantic_matches,
+                        "hybrid_matches": hybrid_matches,
+                    },
                     "filters_applied": {
                         "case_ids": request.case_ids,
                         "document_ids": request.document_ids,
@@ -497,7 +616,8 @@ class HybridSearchEngine:
 
             logger.info(
                 f"Hybrid search completed in {search_time_ms}ms: "
-                f"{len(formatted_results)} results (filtered {filtered_count})"
+                f"{len(formatted_results)} results (filtered {filtered_count}), "
+                f"Match breakdown: {bm25_matches} BM25, {semantic_matches} semantic, {hybrid_matches} hybrid"
             )
 
             return response

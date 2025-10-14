@@ -218,7 +218,6 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       ENVIRONMENT: development
       DEBUG: "true"
-      FORCE_CPU: "true"  # Temporary: disable CUDA due to missing cuDNN libraries
     volumes:
       - ./backend:/app
       - worker_cache:/root/.cache

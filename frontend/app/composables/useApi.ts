@@ -96,7 +96,16 @@ export const useApi = () => {
       quickSummary: (id: number) =>
         api(`/api/v1/transcriptions/${id}/summary/quick`, { method: 'POST' }),
       summaryStatus: (transcriptionId: number, taskId: string) =>
-        api(`/api/v1/transcriptions/${transcriptionId}/summary/status/${taskId}`)
+        api(`/api/v1/transcriptions/${transcriptionId}/summary/status/${taskId}`),
+
+      // Key Moments
+      toggleKeyMoment: (transcriptionId: number, segmentId: string, isKeyMoment: boolean) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/segments/${segmentId}/key-moment`, {
+          method: 'PATCH',
+          body: { is_key_moment: isKeyMoment }
+        }),
+      getKeyMoments: (transcriptionId: number) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/key-moments`)
     },
 
     // Stats & Analytics

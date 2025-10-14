@@ -2,9 +2,40 @@
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+import uuid
+
+
+class TranscriptSegment(Base):
+    """
+    TranscriptSegment model for individual transcript segments.
+
+    Stores metadata about transcript segments including key moment status.
+    The actual segment data (text, timing, etc.) is still stored in the
+    Transcription.segments JSON field, with segment_id as the linkage.
+    """
+
+    __tablename__ = "transcript_segments"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    transcription_id = Column(
+        Integer,
+        ForeignKey("transcriptions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    segment_id = Column(String(36), nullable=False, unique=True, index=True)  # UUID from JSON
+    is_key_moment = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    transcription = relationship("Transcription", back_populates="segment_metadata")
+
+    def __repr__(self) -> str:
+        return f"<TranscriptSegment(id={self.id}, transcription_id={self.transcription_id}, segment_id='{self.segment_id}', is_key_moment={self.is_key_moment})>"
 
 
 class Transcription(Base):
@@ -44,6 +75,11 @@ class Transcription(Base):
 
     # Relationships
     document = relationship("Document", back_populates="transcription")
+    segment_metadata = relationship(
+        "TranscriptSegment",
+        back_populates="transcription",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Transcription(id={self.id}, document_id={self.document_id}, format='{self.format}', duration={self.duration})>"

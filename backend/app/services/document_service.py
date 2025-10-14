@@ -104,9 +104,16 @@ class DocumentService:
 
                 logger.info(f"Created document record {document.id} for {file.filename}")
 
-                # Enqueue processing task
-                process_uploaded_document.delay(document.id)
-                logger.info(f"Enqueued processing task for document {document.id}")
+                # Enqueue processing task only for document files (not audio/video)
+                # Audio/video files should be processed by transcription tasks instead
+                if file.content_type and not (
+                    file.content_type.startswith("audio/") or
+                    file.content_type.startswith("video/")
+                ):
+                    process_uploaded_document.delay(document.id)
+                    logger.info(f"Enqueued document processing task for {document.id}")
+                else:
+                    logger.info(f"Skipping document processing for audio/video file {document.id}")
 
                 uploaded_documents.append(document)
 

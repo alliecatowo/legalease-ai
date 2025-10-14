@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Path, Form, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import io
 
 from app.core.database import get_db
@@ -27,6 +27,7 @@ from app.workers.tasks.summarization import (
     quick_summary,
 )
 from app.workers.celery_app import celery_app
+from app.models.transcription import Transcription
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,35 @@ class TaskStatusResponse(BaseModel):
     progress: Optional[int] = None
     message: Optional[str] = None
     result: Optional[dict] = None
+
+
+class KeyMomentToggleRequest(BaseModel):
+    """Request model for toggling key moment status."""
+    is_key_moment: bool = Field(..., description="Whether to mark as key moment")
+
+
+class KeyMomentToggleResponse(BaseModel):
+    """Response model for key moment toggle."""
+    segment_id: str = Field(..., description="Segment UUID")
+    is_key_moment: bool = Field(..., description="Current key moment status")
+    updated_at: str = Field(..., description="Last update timestamp")
+
+
+class KeyMomentSegment(BaseModel):
+    """Schema for a key moment segment."""
+    segment_id: str = Field(..., description="Segment UUID")
+    text: str = Field(..., description="Segment text")
+    speaker: Optional[str] = Field(None, description="Speaker identifier")
+    start_time: float = Field(..., description="Start time in seconds")
+    end_time: float = Field(..., description="End time in seconds")
+    confidence: Optional[float] = Field(None, description="Transcription confidence")
+
+
+class KeyMomentsResponse(BaseModel):
+    """Response model for key moments list."""
+    transcription_id: int = Field(..., description="Transcription ID")
+    key_moments: List[KeyMomentSegment] = Field(..., description="List of key moments")
+    total: int = Field(..., description="Total number of key moments")
 
 
 @router.post(
@@ -117,11 +147,25 @@ async def upload_audio_for_transcription(
         options=transcription_options,
     )
 
-    return TranscriptionUploadResponse(
-        message=f"Audio/video file '{file.filename}' uploaded successfully. Transcription processing has been queued.",
+    # Create transcription record immediately with empty data
+    transcription = Transcription(
         document_id=document.id,
-        transcription_id=None,  # Will be created by background processing
-        status="processing",
+        format=file.content_type.split('/')[-1] if file.content_type else None,
+        duration=None,  # Will be filled by worker
+        speakers=[],
+        segments=[]
+    )
+    db.add(transcription)
+    db.commit()
+    db.refresh(transcription)
+
+    logger.info(f"Created transcription record {transcription.id} for document {document.id}")
+
+    return TranscriptionUploadResponse(
+        message=f"Audio/video file '{file.filename}' uploaded successfully. Transcription queued.",
+        document_id=document.id,
+        transcription_id=transcription.id,
+        status="queued",
     )
 
 
@@ -570,3 +614,75 @@ def start_batch_summarization(
         "task_id": task.id,
         "status": "processing",
     }
+
+
+# ===== Key Moments Endpoints =====
+
+
+@router.patch(
+    "/transcriptions/{transcription_id}/segments/{segment_id}/key-moment",
+    response_model=KeyMomentToggleResponse,
+    summary="Toggle key moment status",
+    description="Mark or unmark a transcript segment as a key moment. "
+    "Key moments are important segments that users want to highlight for quick reference.",
+)
+def toggle_key_moment(
+    transcription_id: int = Path(..., description="ID of the transcription"),
+    segment_id: str = Path(..., description="UUID of the segment"),
+    request: KeyMomentToggleRequest = Body(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Toggle key moment status for a transcript segment.
+
+    Args:
+        transcription_id: ID of the transcription
+        segment_id: UUID of the segment
+        request: Toggle request with is_key_moment status
+        db: Database session
+
+    Returns:
+        KeyMomentToggleResponse: Updated segment metadata
+    """
+    logger.info(
+        f"Toggling key moment for segment {segment_id} in transcription {transcription_id}: {request.is_key_moment}"
+    )
+
+    result = TranscriptionService.toggle_key_moment(
+        transcription_id=transcription_id,
+        segment_id=segment_id,
+        is_key_moment=request.is_key_moment,
+        db=db,
+    )
+
+    return KeyMomentToggleResponse(**result)
+
+
+@router.get(
+    "/transcriptions/{transcription_id}/key-moments",
+    response_model=KeyMomentsResponse,
+    summary="Get all key moments",
+    description="Retrieve all segments marked as key moments for a transcription, "
+    "including full segment data (text, speaker, timing, confidence).",
+)
+def get_key_moments(
+    transcription_id: int = Path(..., description="ID of the transcription"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all key moments for a transcription.
+
+    Args:
+        transcription_id: ID of the transcription
+        db: Database session
+
+    Returns:
+        KeyMomentsResponse: List of key moments with full segment data
+    """
+    logger.info(f"Getting key moments for transcription {transcription_id}")
+
+    result = TranscriptionService.get_key_moments(
+        transcription_id=transcription_id, db=db
+    )
+
+    return KeyMomentsResponse(**result)
