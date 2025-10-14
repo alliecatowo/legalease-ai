@@ -15,11 +15,16 @@ interface BoundingBox {
   entityType?: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   documentUrl: string
   boundingBoxes?: BoundingBox[]
   selectedBoxId?: string | null
-}>()
+  page?: number
+  zoom?: number
+}>(), {
+  page: 1,
+  zoom: 1.0
+})
 
 const emit = defineEmits<{
   'box-click': [box: BoundingBox]
@@ -29,10 +34,23 @@ const emit = defineEmits<{
 
 // PDF state
 const { pdf, pages, info } = usePDF(props.documentUrl)
-const currentPage = ref(1)
-const scale = ref(1.0)
+const currentPage = ref(props.page)
+const scale = ref(props.zoom)
 const isLoading = computed(() => !pdf.value)
 const error = ref<string | null>(null)
+
+// Sync with parent props
+watch(() => props.page, (newPage) => {
+  if (newPage && newPage !== currentPage.value) {
+    currentPage.value = newPage
+  }
+})
+
+watch(() => props.zoom, (newZoom) => {
+  if (newZoom && newZoom !== scale.value) {
+    scale.value = newZoom
+  }
+})
 
 // Page dimensions tracking
 const pageElements = ref<HTMLElement[]>([])
@@ -247,88 +265,6 @@ defineExpose({
 <template>
   <ClientOnly>
     <div class="relative w-full h-full flex flex-col bg-muted/20">
-      <!-- Toolbar -->
-      <div class="flex items-center justify-between p-3 border-b border-default bg-default">
-        <!-- Page Navigation -->
-        <div class="flex items-center gap-2">
-          <div class="inline-flex items-center gap-1">
-            <UButton
-              icon="i-lucide-chevron-left"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              :disabled="currentPage <= 1"
-              @click="prevPage"
-            />
-            <UInput
-              :model-value="currentPage"
-              type="number"
-              :min="1"
-              :max="totalPages"
-              class="w-16 text-center"
-              size="sm"
-              @update:model-value="(val: any) => goToPage(Number(val))"
-            />
-            <UButton
-              icon="i-lucide-chevron-right"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              :disabled="currentPage >= totalPages"
-              @click="nextPage"
-            />
-          </div>
-          <span class="text-sm text-muted">/ {{ totalPages }}</span>
-        </div>
-
-        <!-- Zoom Controls -->
-        <div class="flex items-center gap-2">
-          <div class="inline-flex items-center gap-1">
-            <UButton
-              icon="i-lucide-zoom-out"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="zoomOut"
-            />
-            <UButton
-              :label="`${Math.round(scale * 100)}%`"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="resetZoom"
-            />
-            <UButton
-              icon="i-lucide-zoom-in"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="zoomIn"
-            />
-          </div>
-        </div>
-
-        <!-- Additional Tools -->
-        <div class="flex items-center gap-2">
-          <UTooltip text="Download">
-            <UButton
-              icon="i-lucide-download"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-            />
-          </UTooltip>
-          <UTooltip text="Print">
-            <UButton
-              icon="i-lucide-printer"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-            />
-          </UTooltip>
-        </div>
-      </div>
-
       <!-- PDF Canvas Container -->
       <div class="flex-1 overflow-auto pdf-container">
         <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
