@@ -40,7 +40,7 @@ const quickActions = [[{
 }, {
   label: 'New Transcription',
   icon: 'i-lucide-mic',
-  to: '/transcription'
+  to: '/transcripts'
 }, {
   label: 'Create Case',
   icon: 'i-lucide-folder-plus',
@@ -81,8 +81,8 @@ function formatDate(dateStr: string) {
       </UDashboardNavbar>
     </template>
 
-    <div class="overflow-y-auto h-[calc(100vh-64px)]">
-      <div class="max-w-7xl mx-auto p-6 space-y-6">
+    <template #body>
+      <div class="max-w-7xl mx-auto space-y-6">
         <!-- Welcome Section -->
         <div>
           <h1 class="text-2xl font-bold">Welcome to LegalEase</h1>
@@ -162,7 +162,7 @@ function formatDate(dateStr: string) {
             </div>
           </UCard>
 
-          <UCard :to="'/transcription'">
+          <UCard :to="'/transcripts'">
             <div class="flex items-center gap-4">
               <div class="p-3 bg-amber-500/10 rounded-lg">
                 <UIcon name="i-lucide-mic" class="size-6 text-amber-500" />
@@ -257,6 +257,6 @@ function formatDate(dateStr: string) {
           </UCard>
         </div>
       </div>
-    </div>
+    </template>
   </UDashboardPanel>
 </template>
