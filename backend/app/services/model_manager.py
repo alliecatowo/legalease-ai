@@ -2,7 +2,7 @@
 Model Manager Service
 
 Handles downloading and caching ML models for self-hosted inference.
-No HuggingFace token required - uses direct download URLs.
+HuggingFace token optional - uses direct download URLs with auth if token provided.
 """
 import os
 import logging
@@ -124,8 +124,17 @@ class ModelManager:
         logger.info(f"Downloading model '{model_name}' from {model_info['url']}")
         logger.info(f"Expected size: {model_info['size_mb']} MB")
 
+        # Prepare headers with HF token if available
+        headers = {}
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            headers["Authorization"] = f"Bearer {hf_token}"
+            logger.info("Using HuggingFace authentication token")
+        else:
+            logger.info("No HF_TOKEN found - attempting unauthenticated download")
+
         try:
-            with httpx.stream("GET", model_info["url"], timeout=600, follow_redirects=True) as response:
+            with httpx.stream("GET", model_info["url"], headers=headers, timeout=600, follow_redirects=True) as response:
                 response.raise_for_status()
 
                 total_size = int(response.headers.get("content-length", 0))

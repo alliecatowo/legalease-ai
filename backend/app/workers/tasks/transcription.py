@@ -617,16 +617,14 @@ def transcribe_audio(
 
             logger.info(f"Using device: {device} with compute type: {compute_type}")
 
-            # Ensure Pyannote models are downloaded (first run only)
-            pyannote_models = None
-            if enable_diarization:
-                logger.info("Ensuring Pyannote models are available...")
-                try:
-                    pyannote_models = get_pyannote_model_paths()
-                    logger.info(f"Pyannote models ready: {list(pyannote_models.keys())}")
-                except Exception as e:
-                    logger.warning(f"Failed to download Pyannote models: {e}")
-                    logger.warning("Will fall back to simple heuristic diarization")
+            # Check if HF token is available for Pyannote diarization
+            hf_token = os.getenv("HF_TOKEN")
+            pyannote_available = hf_token is not None and enable_diarization
+
+            if pyannote_available:
+                logger.info("HuggingFace token available - will use Pyannote for speaker diarization")
+            elif enable_diarization:
+                logger.warning("No HF_TOKEN found - will use simple heuristic diarization")
 
             # Try WhisperX for transcription + alignment (faster, more accurate)
             try:
@@ -694,23 +692,24 @@ def transcribe_audio(
                     meta={'status': 'Identifying speakers', 'progress': 60}
                 )
 
-                # Try Pyannote if models are available, otherwise use simple diarization
-                if pyannote_models:
+                # Try Pyannote if HF token available, otherwise use simple diarization
+                if pyannote_available:
                     try:
-                        # Use Pyannote.audio directly with our local models
+                        # Use Pyannote.audio directly with HuggingFace models
                         from pyannote.audio import Pipeline
-                        from pyannote.audio.pipelines.speaker_diarization import SpeakerDiarization
 
                         logger.info("Running Pyannote speaker diarization...")
 
                         min_speakers = options.get("min_speakers", 2)
                         max_speakers = options.get("max_speakers", 10)
 
-                        # Load diarization pipeline with local models
+                        # Load diarization pipeline from HuggingFace
+                        logger.info("Loading speaker-diarization-3.1 from HuggingFace...")
                         diarization_pipeline = Pipeline.from_pretrained(
-                        pyannote_models["segmentation"],
-                            use_auth_token=None  # No token needed!
+                            "pyannote/speaker-diarization-3.1",
+                            use_auth_token=hf_token
                         )
+                        logger.info("Pyannote pipeline loaded successfully")
 
                         # Move to GPU if available
                         if device == "cuda":
@@ -744,7 +743,8 @@ def transcribe_audio(
                             # Assign speaker with most overlap
                             if speaker_times:
                                 assigned_speaker = max(speaker_times, key=speaker_times.get)
-                                segment['speaker'] = f"SPEAKER_{assigned_speaker}"
+                                # Pyannote returns speaker labels like "SPEAKER_00", use directly
+                                segment['speaker'] = assigned_speaker if assigned_speaker.startswith("SPEAKER_") else f"SPEAKER_{assigned_speaker}"
                             else:
                                 segment['speaker'] = "SPEAKER_00"
 
@@ -759,8 +759,8 @@ def transcribe_audio(
                         diarizer = SpeakerDiarizer()
                         diarized_segments = diarizer.diarize_segments(segments)
                 else:
-                    # Pyannote models not available, use simple heuristic diarization
-                    logger.info("Using simple heuristic diarization (Pyannote models not available)")
+                    # Pyannote not available, use simple heuristic diarization
+                    logger.info("Using simple heuristic diarization (no HF token or diarization disabled)")
                     diarizer = SpeakerDiarizer()
                     diarized_segments = diarizer.diarize_segments(segments)
             else:
@@ -771,16 +771,40 @@ def transcribe_audio(
             logger.error(f"Self-hosted transcription failed: {e}", exc_info=True)
             raise TranscriptionError(f"Transcription failed: {str(e)}")
 
-        # Extract speaker information
+        # Extract speaker information and generate speaker colors
+        def generate_speaker_color(index: int) -> str:
+            """Generate a distinct color for each speaker."""
+            colors = [
+                "#3B82F6",  # Blue
+                "#EF4444",  # Red
+                "#10B981",  # Green
+                "#F59E0B",  # Amber
+                "#8B5CF6",  # Purple
+                "#EC4899",  # Pink
+                "#14B8A6",  # Teal
+                "#F97316",  # Orange
+                "#6366F1",  # Indigo
+                "#84CC16",  # Lime
+            ]
+            return colors[index % len(colors)]
+
         speakers = {}
+        speaker_index = 0
         for segment in diarized_segments:
-            speaker = segment.get('speaker', 'SPEAKER_01')
-            if speaker not in speakers:
-                speakers[speaker] = {
-                    'id': speaker,
+            speaker_id = segment.get('speaker', 'SPEAKER_01')
+            if speaker_id not in speakers:
+                # Generate human-readable name from speaker ID
+                # Use the current speaker_index + 1 for consistent numbering
+                speaker_name = f"Speaker {speaker_index + 1}"
+
+                speakers[speaker_id] = {
+                    'id': speaker_id,
+                    'name': speaker_name,
+                    'color': generate_speaker_color(speaker_index),
                     'segments_count': 0
                 }
-            speakers[speaker]['segments_count'] += 1
+                speaker_index += 1
+            speakers[speaker_id]['segments_count'] += 1
 
         # Step 6: Export to multiple formats
         self.update_state(
