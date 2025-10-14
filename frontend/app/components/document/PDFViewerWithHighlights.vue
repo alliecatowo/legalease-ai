@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { VuePDF, usePDF } from '@tato30/vue-pdf'
 import '@tato30/vue-pdf/style.css'
 
@@ -249,6 +249,59 @@ onMounted(() => {
   setTimeout(updatePageDimensions, 1000)
 })
 
+// Mouse panning
+const containerRef = useTemplateRef('containerRef')
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0 })
+const scrollStart = ref({ left: 0, top: 0 })
+
+const handleMouseDown = (e: MouseEvent) => {
+  if (e.button !== 0) return // Only left mouse button
+
+  const container = containerRef.value
+  if (!container) return
+
+  isPanning.value = true
+  panStart.value = { x: e.clientX, y: e.clientY }
+  scrollStart.value = {
+    left: container.scrollLeft,
+    top: container.scrollTop
+  }
+
+  e.preventDefault()
+}
+
+const handleMouseMove = (e: MouseEvent) => {
+  if (!isPanning.value || !containerRef.value) return
+
+  const dx = e.clientX - panStart.value.x
+  const dy = e.clientY - panStart.value.y
+
+  containerRef.value.scrollLeft = scrollStart.value.left - dx
+  containerRef.value.scrollTop = scrollStart.value.top - dy
+
+  e.preventDefault()
+}
+
+const handleMouseUp = () => {
+  isPanning.value = false
+}
+
+const handleMouseLeave = () => {
+  isPanning.value = false
+}
+
+// Add global listeners for smooth panning
+onMounted(() => {
+  document.addEventListener('mousemove', handleMouseMove)
+  document.addEventListener('mouseup', handleMouseUp)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', handleMouseMove)
+  document.removeEventListener('mouseup', handleMouseUp)
+})
+
 defineExpose({
   goToPage,
   nextPage,
@@ -264,9 +317,15 @@ defineExpose({
 
 <template>
   <ClientOnly>
-    <div class="relative w-full h-full flex flex-col bg-muted/20">
+    <div class="relative w-full h-full">
       <!-- PDF Canvas Container -->
-      <div class="flex-1 overflow-auto pdf-container">
+      <div
+        ref="containerRef"
+        class="w-full h-full overflow-auto pdf-container"
+        :class="{ 'cursor-grab': !isPanning, 'cursor-grabbing': isPanning }"
+        @mousedown="handleMouseDown"
+        @mouseleave="handleMouseLeave"
+      >
         <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
           <UIcon name="i-lucide-loader" class="size-12 text-primary animate-spin mb-4" />
           <p class="text-muted">Loading document...</p>
@@ -277,9 +336,9 @@ defineExpose({
           <p class="text-error font-medium mb-2">{{ error }}</p>
         </div>
 
-        <div v-else class="relative flex items-start justify-center p-6">
+        <div v-else class="relative p-20">
           <!-- PDF Renderer -->
-          <div class="relative shadow-2xl">
+          <div class="relative shadow-2xl mx-auto" style="width: fit-content;">
             <div class="relative">
               <VuePDF
                 :pdf="pdf"
@@ -353,6 +412,15 @@ defineExpose({
 <style scoped>
 .pdf-container {
   background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.03));
+  user-select: none;
+}
+
+.pdf-container.cursor-grab {
+  cursor: grab;
+}
+
+.pdf-container.cursor-grabbing {
+  cursor: grabbing;
 }
 
 /* Bounding box overlay positioning */
