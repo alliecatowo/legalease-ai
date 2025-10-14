@@ -126,14 +126,15 @@ onMounted(async () => {
 
 <template>
   <UDashboardGroup unit="rem">
-    <UDashboardSidebar
-      id="default"
-      v-model:open="open"
-      collapsible
-      resizable
-      class="bg-elevated/25"
-      :ui="{ footer: 'lg:border-t lg:border-default' }"
-    >
+    <ClientOnly>
+      <UDashboardSidebar
+        id="default"
+        v-model:open="open"
+        collapsible
+        resizable
+        class="bg-elevated/25"
+        :ui="{ footer: 'lg:border-t lg:border-default' }"
+      >
       <template #header="{ collapsed }">
         <ClientOnly>
           <TeamsMenu :collapsed="collapsed" />
@@ -141,23 +142,25 @@ onMounted(async () => {
       </template>
 
       <template #default="{ collapsed }">
-        <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
+        <ClientOnly>
+          <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
 
-        <UNavigationMenu
-          :collapsed="collapsed"
-          :items="links[0]"
-          orientation="vertical"
-          tooltip
-          popover
-        />
+          <UNavigationMenu
+            :collapsed="collapsed"
+            :items="links[0]"
+            orientation="vertical"
+            tooltip
+            popover
+          />
 
-        <UNavigationMenu
-          :collapsed="collapsed"
-          :items="links[1]"
-          orientation="vertical"
-          tooltip
-          class="mt-auto"
-        />
+          <UNavigationMenu
+            :collapsed="collapsed"
+            :items="links[1]"
+            orientation="vertical"
+            tooltip
+            class="mt-auto"
+          />
+        </ClientOnly>
       </template>
 
       <template #footer="{ collapsed }">
@@ -166,8 +169,11 @@ onMounted(async () => {
         </ClientOnly>
       </template>
     </UDashboardSidebar>
+    </ClientOnly>
 
-    <UDashboardSearch :groups="groups" />
+    <ClientOnly>
+      <UDashboardSearch :groups="groups" />
+    </ClientOnly>
 
     <!-- Error Boundary Content -->
     <UDashboardPanel v-if="error">
@@ -229,7 +235,9 @@ onMounted(async () => {
 
     <!-- Normal Content -->
     <slot v-else />
-
-    <NotificationsSlideover />
   </UDashboardGroup>
+
+  <ClientOnly>
+    <NotificationsSlideover />
+  </ClientOnly>
 </template>
