@@ -353,10 +353,10 @@ const breadcrumbItems = computed(() => {
 
 // Tab items - make it computed to reactively update badge
 const tabItems = computed(() => [
-  { key: 'content', label: 'Content', icon: 'i-lucide-file-text' },
-  { key: 'metadata', label: 'Metadata', icon: 'i-lucide-info' },
-  { key: 'activity', label: 'Activity', icon: 'i-lucide-activity' },
-  { key: 'related', label: 'Related', icon: 'i-lucide-link', badge: relatedDocs.value?.length || 0 }
+  { value: 'content', label: 'Content', icon: 'i-lucide-file-text' },
+  { value: 'metadata', label: 'Metadata', icon: 'i-lucide-info' },
+  { value: 'activity', label: 'Activity', icon: 'i-lucide-activity' },
+  { value: 'related', label: 'Related', icon: 'i-lucide-link', badge: relatedDocs.value?.length || 0 }
 ])
 </script>
 
@@ -573,7 +573,7 @@ const tabItems = computed(() => [
             <!-- Tabs -->
             <UCard>
               <template #header>
-                <UTabs v-model="selectedTab" :items="tabItems" />
+                <UTabs v-model="selectedTab" :items="tabItems" :content="false" />
               </template>
 
               <!-- Content Tab -->
