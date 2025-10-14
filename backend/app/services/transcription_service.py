@@ -11,7 +11,7 @@ from minio.error import S3Error
 from docx import Document as DocxDocument
 from docx.shared import Pt, Inches
 
-from app.models.transcription import Transcription
+from app.models.transcription import Transcription, TranscriptSegment
 from app.models.document import Document, DocumentStatus
 from app.models.case import Case
 from app.services.document_service import DocumentService
@@ -169,6 +169,7 @@ class TranscriptionService:
                     "duration": trans.duration,
                     "segment_count": len(trans.segments) if trans.segments else 0,
                     "speaker_count": len(trans.speakers) if trans.speakers else 0,
+                    "status": doc.status.value if doc and doc.status else "unknown",
                     "created_at": trans.created_at,
                 }
             )
@@ -212,6 +213,7 @@ class TranscriptionService:
             "duration": transcription.duration,
             "speakers": transcription.speakers,
             "segments": transcription.segments,
+            "status": document.status.value if document.status else "unknown",
             "created_at": transcription.created_at,
         }
 
@@ -418,3 +420,139 @@ class TranscriptionService:
         secs = int(seconds % 60)
         millis = int((seconds % 1) * 1000)
         return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+
+    @staticmethod
+    def toggle_key_moment(
+        transcription_id: int, segment_id: str, is_key_moment: bool, db: Session
+    ) -> Dict[str, Any]:
+        """
+        Toggle key moment status for a transcript segment.
+
+        Args:
+            transcription_id: ID of the transcription
+            segment_id: UUID of the segment (from JSON segments)
+            is_key_moment: New key moment status
+            db: Database session
+
+        Returns:
+            Dict: Updated segment metadata
+
+        Raises:
+            HTTPException: If transcription or segment not found
+        """
+        # Verify transcription exists
+        transcription = TranscriptionService.get_transcription(transcription_id, db)
+
+        # Verify segment exists in the transcription's JSON segments
+        segment_exists = False
+        if transcription.segments:
+            for seg in transcription.segments:
+                if seg.get("id") == segment_id:
+                    segment_exists = True
+                    break
+
+        if not segment_exists:
+            logger.error(
+                f"Segment {segment_id} not found in transcription {transcription_id}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"Segment {segment_id} not found in transcription {transcription_id}",
+            )
+
+        # Check if segment metadata already exists
+        segment_metadata = (
+            db.query(TranscriptSegment)
+            .filter(
+                TranscriptSegment.transcription_id == transcription_id,
+                TranscriptSegment.segment_id == segment_id,
+            )
+            .first()
+        )
+
+        if segment_metadata:
+            # Update existing metadata
+            segment_metadata.is_key_moment = is_key_moment
+            segment_metadata.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(segment_metadata)
+        else:
+            # Create new metadata
+            segment_metadata = TranscriptSegment(
+                transcription_id=transcription_id,
+                segment_id=segment_id,
+                is_key_moment=is_key_moment,
+            )
+            db.add(segment_metadata)
+            db.commit()
+            db.refresh(segment_metadata)
+
+        logger.info(
+            f"Toggled key moment for segment {segment_id} in transcription {transcription_id}: {is_key_moment}"
+        )
+
+        return {
+            "segment_id": segment_metadata.segment_id,
+            "is_key_moment": segment_metadata.is_key_moment,
+            "updated_at": segment_metadata.updated_at.isoformat(),
+        }
+
+    @staticmethod
+    def get_key_moments(transcription_id: int, db: Session) -> Dict[str, Any]:
+        """
+        Get all key moments for a transcription.
+
+        Args:
+            transcription_id: ID of the transcription
+            db: Database session
+
+        Returns:
+            Dict: Key moments data with full segment information
+
+        Raises:
+            HTTPException: If transcription not found
+        """
+        # Verify transcription exists
+        transcription = TranscriptionService.get_transcription(transcription_id, db)
+
+        # Get all key moment segment metadata
+        key_moment_metadata = (
+            db.query(TranscriptSegment)
+            .filter(
+                TranscriptSegment.transcription_id == transcription_id,
+                TranscriptSegment.is_key_moment == True,
+            )
+            .all()
+        )
+
+        # Build a set of key moment segment IDs for efficient lookup
+        key_moment_ids = {meta.segment_id for meta in key_moment_metadata}
+
+        # Filter segments from JSON to get full segment data
+        key_moments = []
+        if transcription.segments:
+            for seg in transcription.segments:
+                if seg.get("id") in key_moment_ids:
+                    key_moments.append(
+                        {
+                            "segment_id": seg.get("id"),
+                            "text": seg.get("text", ""),
+                            "speaker": seg.get("speaker"),
+                            "start_time": seg.get("start"),
+                            "end_time": seg.get("end"),
+                            "confidence": seg.get("confidence"),
+                        }
+                    )
+
+        # Sort by start time
+        key_moments.sort(key=lambda x: x.get("start_time", 0))
+
+        logger.info(
+            f"Retrieved {len(key_moments)} key moments for transcription {transcription_id}"
+        )
+
+        return {
+            "transcription_id": transcription_id,
+            "key_moments": key_moments,
+            "total": len(key_moments),
+        }

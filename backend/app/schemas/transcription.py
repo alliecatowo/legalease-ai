@@ -100,6 +100,7 @@ class TranscriptionResponse(BaseModel):
     duration: Optional[float] = Field(None, description="Duration in seconds")
     speakers: Optional[List[Dict[str, Any]]] = Field(None, description="Speaker identification data")
     segments: List[Dict[str, Any]] = Field(..., description="Transcription segments with timestamps")
+    status: str = Field(..., description="Processing status (queued, processing, completed, failed)")
     created_at: datetime = Field(..., description="Creation timestamp")
 
     model_config = ConfigDict(from_attributes=True)
@@ -116,6 +117,7 @@ class TranscriptionListItem(BaseModel):
     duration: Optional[float] = Field(None, description="Duration in seconds")
     segment_count: int = Field(0, description="Number of transcription segments")
     speaker_count: int = Field(0, description="Number of identified speakers")
+    status: str = Field(..., description="Processing status (queued, processing, completed, failed)")
     created_at: datetime = Field(..., description="Creation timestamp")
 
     model_config = ConfigDict(from_attributes=True)

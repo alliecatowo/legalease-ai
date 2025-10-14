@@ -27,6 +27,9 @@ const selectedSegment = ref<TranscriptSegment | null>(null)
 const searchQuery = ref('')
 const selectedSpeaker = ref<string | null>(null)
 const showOnlyKeyMoments = ref(false)
+const searchMode = ref<'smart' | 'keyword'>('smart')
+const isSearching = ref(false)
+const searchResults = ref<Set<number>>(new Set())
 
 // UI state
 const showMetadataSidebar = ref(true)
@@ -35,11 +38,115 @@ const isExporting = ref(false)
 const editingSegmentId = ref<string | null>(null)
 const editText = ref('')
 
+// Perform smart search using backend API
+async function performSmartSearch() {
+  if (!transcript.value || !searchQuery.value.trim()) {
+    searchResults.value = new Set()
+    return
+  }
+
+  isSearching.value = true
+  try {
+    // Build search request - only include document_ids if we have one
+    const searchRequest: any = {
+      query: searchQuery.value,
+      use_bm25: true,
+      use_dense: true,
+      fusion_method: 'rrf',
+      top_k: 50,
+      chunk_types: ['transcript_segment']  // Only search transcript segments
+    }
+
+    // Add document filter if available
+    // Backend returns document_id in snake_case
+    const docId = (transcript.value as any).document_id
+    if (docId) {
+      searchRequest.document_ids = [docId]
+    }
+
+    const response = await api.search.hybrid(searchRequest)
+
+    console.log('[DEBUG] Search response:', {
+      totalResults: response.results?.length,
+      query: searchQuery.value,
+      firstResult: response.results?.[0]
+    })
+
+    // Extract segment indices from search results
+    // NOTE: Backend stores segment_index in metadata (the array index from segments)
+    // Frontend segments have UUID ids, but we need to match by array index
+    const segmentIndices = new Set<number>()
+    response.results?.forEach((result: any, idx: number) => {
+      // The segment_index is stored in metadata.segment_index by the backend
+      const segmentIndex = result.metadata?.segment_index
+
+      if (idx < 3) {
+        console.log(`[DEBUG] Result ${idx}:`, {
+          id: result.id,
+          metadata: result.metadata,
+          extractedSegmentIndex: segmentIndex
+        })
+      }
+
+      if (segmentIndex !== undefined && segmentIndex !== null) {
+        segmentIndices.add(segmentIndex)
+      }
+    })
+
+    console.log('[DEBUG] Extracted segment indices:', Array.from(segmentIndices))
+    console.log('[DEBUG] Sample transcript segments (first 3):', transcript.value.segments.slice(0, 3).map((s, i) => ({ index: i, id: s.id })))
+
+    searchResults.value = segmentIndices
+  } catch (err: any) {
+    console.error('Smart search failed:', err)
+    // Only log detailed error in development
+    if (process.dev) {
+      console.error('Error details:', err.response?._data || err.message)
+    }
+    searchResults.value = new Set()
+  } finally {
+    isSearching.value = false
+  }
+}
+
+// Debounced smart search
+const debouncedSmartSearch = useDebounceFn(performSmartSearch, 500)
+
+// Watch for search changes
+watch([searchQuery, searchMode], () => {
+  if (searchMode.value === 'smart' && searchQuery.value.trim()) {
+    debouncedSmartSearch()
+  } else {
+    searchResults.value = new Set()
+  }
+})
+
 // Computed
 const filteredSegments = computed(() => {
   if (!transcript.value) return []
 
   let segments = transcript.value.segments
+
+  // Filter by search query FIRST (so indices match backend)
+  if (searchQuery.value.trim()) {
+    if (searchMode.value === 'smart') {
+      // Use backend search results
+      if (isSearching.value) {
+        // Don't filter while searching to avoid flickering
+        // Will apply other filters below
+      } else {
+        // Filter by segment index (array position in original segments array)
+        segments = segments.filter((s, index) => searchResults.value.has(index))
+      }
+    } else {
+      // Keyword mode - local filtering
+      const query = searchQuery.value.toLowerCase()
+      segments = segments.filter(s =>
+        s.text.toLowerCase().includes(query) ||
+        (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
+      )
+    }
+  }
 
   // Filter by speaker
   if (selectedSpeaker.value) {
@@ -49,15 +156,6 @@ const filteredSegments = computed(() => {
   // Filter by key moments
   if (showOnlyKeyMoments.value) {
     segments = segments.filter(s => s.isKeyMoment)
-  }
-
-  // Filter by search query
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase()
-    segments = segments.filter(s =>
-      s.text.toLowerCase().includes(query) ||
-      (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
-    )
   }
 
   return segments
@@ -150,7 +248,15 @@ function highlightText(text: string): string {
   if (!searchQuery.value.trim()) return text
 
   const regex = new RegExp(`(${searchQuery.value.trim()})`, 'gi')
-  return text.replace(regex, '<mark class="bg-yellow-500/30 text-yellow-700 dark:text-yellow-300 px-0.5 rounded">$1</mark>')
+
+  // Use different colors based on search mode
+  if (searchMode.value === 'keyword') {
+    // Keyword/BM25 search - yellow highlighting
+    return text.replace(regex, '<mark class="bg-warning/30 text-warning-700 dark:text-warning-300 px-0.5 rounded font-medium">$1</mark>')
+  } else {
+    // Smart/hybrid search - blue/primary highlighting
+    return text.replace(regex, '<mark class="bg-primary/20 text-primary-700 dark:text-primary-300 px-0.5 rounded font-medium">$1</mark>')
+  }
 }
 
 // Actions
@@ -159,16 +265,33 @@ function seekToSegment(segment: TranscriptSegment) {
   currentTime.value = segment.start
 }
 
-function toggleKeyMoment(segmentId: string) {
+async function toggleKeyMoment(segmentId: string) {
   if (!transcript.value) return
 
   const segment = transcript.value.segments.find(s => s.id === segmentId)
-  if (segment) {
-    segment.isKeyMoment = !segment.isKeyMoment
-    // TODO: Save to backend
+  if (!segment) return
+
+  const newStatus = !segment.isKeyMoment
+
+  try {
+    // Optimistically update UI
+    segment.isKeyMoment = newStatus
+
+    // Save to backend
+    await api.transcriptions.toggleKeyMoment(transcript.value.id, segmentId, newStatus)
+
     toast.add({
-      title: segment.isKeyMoment ? 'Marked as key moment' : 'Removed key moment',
+      title: newStatus ? 'Marked as key moment' : 'Removed key moment',
       color: 'success'
+    })
+  } catch (err: any) {
+    // Revert on error
+    segment.isKeyMoment = !newStatus
+
+    toast.add({
+      title: 'Failed to update key moment',
+      description: err.message || 'An error occurred',
+      color: 'error'
     })
   }
 }
@@ -281,6 +404,31 @@ function cancelEdit() {
   editText.value = ''
 }
 
+// Delete transcription
+async function deleteTranscription() {
+  if (!transcript.value) return
+
+  const confirmed = confirm(`Are you sure you want to delete "${transcript.value.title}"? This action cannot be undone.`)
+  if (!confirmed) return
+
+  try {
+    await api.transcriptions.delete(transcript.value.id)
+    toast.add({
+      title: 'Transcription deleted',
+      description: 'The transcription has been permanently deleted',
+      color: 'success'
+    })
+    // Navigate back to transcripts list
+    router.push('/transcripts')
+  } catch (err: any) {
+    toast.add({
+      title: 'Failed to delete transcription',
+      description: err.message || 'An error occurred',
+      color: 'error'
+    })
+  }
+}
+
 // Load transcript
 async function loadTranscript() {
   isLoading.value = true
@@ -319,6 +467,7 @@ defineShortcuts({
         searchQuery.value = ''
         selectedSpeaker.value = null
         showOnlyKeyMoments.value = false
+        searchMode.value = 'smart'
       }
     }
   }
@@ -338,7 +487,7 @@ onMounted(() => {
             icon="i-lucide-arrow-left"
             color="neutral"
             variant="ghost"
-            @click="router.push('/transcription')"
+            @click="router.push('/transcripts')"
           />
         </template>
         <template #trailing>
@@ -357,6 +506,9 @@ onMounted(() => {
                   { label: 'Export as DOCX', icon: 'i-lucide-file-text', click: () => exportTranscript('docx') },
                   { label: 'Export as SRT', icon: 'i-lucide-captions', click: () => exportTranscript('srt') },
                   { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
+                ],
+                [
+                  { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
                 ]
               ]"
             >
@@ -379,9 +531,9 @@ onMounted(() => {
       </UDashboardNavbar>
     </template>
 
-    <div class="flex h-[calc(100vh-64px)]">
+    <div class="flex flex-1 min-h-0">
       <!-- Main Content -->
-      <div class="flex-1 flex flex-col overflow-hidden">
+      <div class="flex-1 flex flex-col min-h-0">
         <!-- Loading State -->
         <div v-if="isLoading" class="flex items-center justify-center h-full">
           <div class="text-center space-y-4">
@@ -449,6 +601,30 @@ onMounted(() => {
                 </template>
               </UInput>
 
+              <!-- Search Mode Toggle -->
+              <UFieldGroup v-if="searchQuery">
+                <UTooltip text="Smart Search (AI-powered semantic + keyword matching)">
+                  <UButton
+                    :icon="searchMode === 'smart' ? 'i-lucide-sparkles' : 'i-lucide-sparkles'"
+                    :color="searchMode === 'smart' ? 'primary' : 'neutral'"
+                    :variant="searchMode === 'smart' ? 'soft' : 'ghost'"
+                    label="Smart"
+                    size="sm"
+                    @click="searchMode = 'smart'"
+                  />
+                </UTooltip>
+                <UTooltip text="Keyword Search (Exact BM25 text matching)">
+                  <UButton
+                    :icon="searchMode === 'keyword' ? 'i-lucide-search' : 'i-lucide-search'"
+                    :color="searchMode === 'keyword' ? 'warning' : 'neutral'"
+                    :variant="searchMode === 'keyword' ? 'soft' : 'ghost'"
+                    label="Keyword"
+                    size="sm"
+                    @click="searchMode = 'keyword'"
+                  />
+                </UTooltip>
+              </UFieldGroup>
+
               <USelectMenu
                 v-model="selectedSpeaker"
                 :items="[
@@ -486,10 +662,13 @@ onMounted(() => {
                 <UBadge
                   v-if="searchQuery"
                   :label="`Search: ${searchQuery}`"
-                  color="primary"
+                  :color="searchMode === 'keyword' ? 'warning' : 'primary'"
                   variant="soft"
                   size="sm"
                 >
+                  <template #leading>
+                    <UIcon :name="searchMode === 'smart' ? 'i-lucide-sparkles' : 'i-lucide-search'" class="size-3" />
+                  </template>
                   <template #trailing>
                     <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="searchQuery = ''" />
                   </template>
@@ -522,7 +701,7 @@ onMounted(() => {
                 color="neutral"
                 variant="ghost"
                 size="xs"
-                @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false"
+                @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false; searchMode = 'smart'"
               />
             </div>
 
@@ -683,7 +862,7 @@ onMounted(() => {
                   label="Clear Filters"
                   icon="i-lucide-x"
                   color="neutral"
-                  @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false"
+                  @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false; searchMode = 'smart'"
                 />
               </div>
             </div>

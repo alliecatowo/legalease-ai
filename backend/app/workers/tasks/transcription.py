@@ -9,6 +9,7 @@ import json
 import logging
 import tempfile
 import subprocess
+import uuid
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -174,7 +175,7 @@ class WhisperTranscriber:
             if hasattr(response, 'segments') and response.segments:
                 for idx, segment in enumerate(response.segments):
                     seg_data = {
-                        'id': idx,
+                        'id': str(uuid.uuid4()),  # Generate UUID for segment
                         'start': segment.get('start', 0.0),
                         'end': segment.get('end', 0.0),
                         'text': segment.get('text', '').strip(),
@@ -194,7 +195,7 @@ class WhisperTranscriber:
             else:
                 # Fallback: create single segment from text
                 segments = [{
-                    'id': 0,
+                    'id': str(uuid.uuid4()),  # Generate UUID for segment
                     'start': 0.0,
                     'end': 0.0,
                     'text': response.text,
@@ -617,6 +618,7 @@ def transcribe_audio(
             logger.info(f"Using device: {device} with compute type: {compute_type}")
 
             # Ensure Pyannote models are downloaded (first run only)
+            pyannote_models = None
             if enable_diarization:
                 logger.info("Ensuring Pyannote models are available...")
                 try:
@@ -624,8 +626,7 @@ def transcribe_audio(
                     logger.info(f"Pyannote models ready: {list(pyannote_models.keys())}")
                 except Exception as e:
                     logger.warning(f"Failed to download Pyannote models: {e}")
-                    logger.warning("Falling back to simple diarization")
-                    enable_diarization = False
+                    logger.warning("Will fall back to simple heuristic diarization")
 
             # Try WhisperX for transcription + alignment (faster, more accurate)
             try:
@@ -651,8 +652,13 @@ def transcribe_audio(
                     batch_size=16
                 )
 
-                # Convert WhisperX result to our format
-                segments = [seg.to_dict() for seg in result.segments]
+                # Convert WhisperX result to our format and add UUIDs
+                segments = []
+                for seg in result.segments:
+                    seg_dict = seg.to_dict()
+                    seg_dict['id'] = str(uuid.uuid4())  # Add unique ID for each segment
+                    segments.append(seg_dict)
+
                 full_text = result.get_full_text()
                 detected_language = result.language
 
@@ -685,69 +691,76 @@ def transcribe_audio(
             if enable_diarization:
                 self.update_state(
                     state='PROCESSING',
-                    meta={'status': 'Identifying speakers with Pyannote (self-hosted)', 'progress': 60}
+                    meta={'status': 'Identifying speakers', 'progress': 60}
                 )
 
-                try:
-                    # Use Pyannote.audio directly with our local models
-                    from pyannote.audio import Pipeline
-                    from pyannote.audio.pipelines.speaker_diarization import SpeakerDiarization
+                # Try Pyannote if models are available, otherwise use simple diarization
+                if pyannote_models:
+                    try:
+                        # Use Pyannote.audio directly with our local models
+                        from pyannote.audio import Pipeline
+                        from pyannote.audio.pipelines.speaker_diarization import SpeakerDiarization
 
-                    logger.info("Running Pyannote speaker diarization...")
+                        logger.info("Running Pyannote speaker diarization...")
 
-                    min_speakers = options.get("min_speakers", 2)
-                    max_speakers = options.get("max_speakers", 10)
+                        min_speakers = options.get("min_speakers", 2)
+                        max_speakers = options.get("max_speakers", 10)
 
-                    # Load diarization pipeline with local models
-                    diarization_pipeline = Pipeline.from_pretrained(
+                        # Load diarization pipeline with local models
+                        diarization_pipeline = Pipeline.from_pretrained(
                         pyannote_models["segmentation"],
-                        use_auth_token=None  # No token needed!
-                    )
+                            use_auth_token=None  # No token needed!
+                        )
 
-                    # Move to GPU if available
-                    if device == "cuda":
-                        diarization_pipeline.to(torch.device("cuda"))
+                        # Move to GPU if available
+                        if device == "cuda":
+                            diarization_pipeline.to(torch.device("cuda"))
 
-                    # Run diarization on audio file
-                    diarization = diarization_pipeline(
-                        processed_wav,
-                        min_speakers=min_speakers,
-                        max_speakers=max_speakers
-                    )
+                        # Run diarization on audio file
+                        diarization = diarization_pipeline(
+                            processed_wav,
+                            min_speakers=min_speakers,
+                            max_speakers=max_speakers
+                        )
 
-                    # Assign speakers to segments
-                    diarized_segments = []
-                    for segment in segments:
-                        # Find overlapping speaker from diarization
-                        segment_start = segment['start']
-                        segment_end = segment['end']
+                        # Assign speakers to segments
+                        diarized_segments = []
+                        for segment in segments:
+                            # Find overlapping speaker from diarization
+                            segment_start = segment['start']
+                            segment_end = segment['end']
 
-                        # Find most common speaker in this segment
-                        speaker_times = {}
-                        for turn, _, speaker in diarization.itertracks(yield_label=True):
-                            # Calculate overlap with this segment
-                            overlap_start = max(segment_start, turn.start)
-                            overlap_end = min(segment_end, turn.end)
-                            overlap_duration = max(0, overlap_end - overlap_start)
+                            # Find most common speaker in this segment
+                            speaker_times = {}
+                            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                                # Calculate overlap with this segment
+                                overlap_start = max(segment_start, turn.start)
+                                overlap_end = min(segment_end, turn.end)
+                                overlap_duration = max(0, overlap_end - overlap_start)
 
-                            if overlap_duration > 0:
-                                speaker_times[speaker] = speaker_times.get(speaker, 0) + overlap_duration
+                                if overlap_duration > 0:
+                                    speaker_times[speaker] = speaker_times.get(speaker, 0) + overlap_duration
 
-                        # Assign speaker with most overlap
-                        if speaker_times:
-                            assigned_speaker = max(speaker_times, key=speaker_times.get)
-                            segment['speaker'] = f"SPEAKER_{assigned_speaker}"
-                        else:
-                            segment['speaker'] = "SPEAKER_00"
+                            # Assign speaker with most overlap
+                            if speaker_times:
+                                assigned_speaker = max(speaker_times, key=speaker_times.get)
+                                segment['speaker'] = f"SPEAKER_{assigned_speaker}"
+                            else:
+                                segment['speaker'] = "SPEAKER_00"
 
-                        diarized_segments.append(segment)
+                            diarized_segments.append(segment)
 
-                    logger.info(f"Diarization completed: {len(set(s['speaker'] for s in diarized_segments))} speakers detected")
+                        logger.info(f"Diarization completed: {len(set(s['speaker'] for s in diarized_segments))} speakers detected")
 
-                except Exception as e:
-                    logger.error(f"Pyannote diarization failed: {e}", exc_info=True)
-                    logger.warning("Falling back to simple heuristic diarization")
+                    except Exception as e:
+                        logger.error(f"Pyannote diarization failed: {e}", exc_info=True)
+                        logger.warning("Falling back to simple heuristic diarization")
 
+                        diarizer = SpeakerDiarizer()
+                        diarized_segments = diarizer.diarize_segments(segments)
+                else:
+                    # Pyannote models not available, use simple heuristic diarization
+                    logger.info("Using simple heuristic diarization (Pyannote models not available)")
                     diarizer = SpeakerDiarizer()
                     diarized_segments = diarizer.diarize_segments(segments)
             else:
@@ -848,27 +861,22 @@ def transcribe_audio(
 
         logger.info("Updating database with transcription results")
 
-        # Check if transcription record exists
+        # Find existing transcription (should always exist now)
         transcription = db.query(Transcription).filter(
             Transcription.document_id == document_id
         ).first()
 
         if not transcription:
-            # Create new transcription record
-            transcription = Transcription(
-                document_id=document_id,
-                format=ext.lstrip('.') if ext else None,
-                duration=duration,
-                speakers=list(speakers.values()),
-                segments=diarized_segments
-            )
+            # This should not happen with new flow, but handle gracefully
+            logger.warning(f"Transcription not found for document {document_id}, creating new one")
+            transcription = Transcription(document_id=document_id)
             db.add(transcription)
-        else:
-            # Update existing record
-            transcription.format = ext.lstrip('.') if ext else None
-            transcription.duration = duration
-            transcription.speakers = list(speakers.values())
-            transcription.segments = diarized_segments
+
+        # Update transcription fields
+        transcription.format = ext.lstrip('.') if ext else None
+        transcription.duration = duration
+        transcription.speakers = list(speakers.values())
+        transcription.segments = diarized_segments
 
         # Update document status and metadata
         document.status = DocumentStatus.COMPLETED
