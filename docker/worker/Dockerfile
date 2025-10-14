@@ -43,6 +43,14 @@ ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/curand/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cusolver/lib
 
+# Create CuDNN library symlinks for version compatibility
+RUN for lib_dir in cudnn cublas cuda_runtime cusparse cufft curand cusolver; do \
+        cd /app/.venv/lib/python3.11/site-packages/nvidia/$lib_dir/lib 2>/dev/null && \
+        for f in *.so.9 2>/dev/null; do \
+            [ -f "$f" ] && ln -sf "$f" "${f}.1.0" && ln -sf "$f" "${f}.1"; \
+        done || true; \
+    done
+
 # Start Celery worker
 CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
 
@@ -93,6 +101,14 @@ ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cufft/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/curand/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cusolver/lib
+
+# Create CuDNN library symlinks for version compatibility
+RUN for lib_dir in cudnn cublas cuda_runtime cusparse cufft curand cusolver; do \
+        cd /app/.venv/lib/python3.11/site-packages/nvidia/$lib_dir/lib 2>/dev/null && \
+        for f in *.so.9 2>/dev/null; do \
+            [ -f "$f" ] && ln -sf "$f" "${f}.1.0" && ln -sf "$f" "${f}.1"; \
+        done || true; \
+    done
 
 # Start Celery worker with optimized settings
 CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=4", "--max-tasks-per-child=100"]
