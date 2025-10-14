@@ -301,6 +301,13 @@ const fetchDocumentContent = async () => {
 
     jumpToFirstMatch()
 
+    // Get accurate page count from PDF viewer after it loads
+    setTimeout(() => {
+      if (pdfViewerRef.value?.totalPages) {
+        totalPages.value = pdfViewerRef.value.totalPages
+      }
+    }, 1000)
+
   } catch (e: any) {
     console.error('Error fetching document content:', e)
     error.value = e.message || 'Failed to load document'
@@ -468,6 +475,8 @@ watch(() => props.documentId, () => {
         <PDFViewerWithHighlights
           ref="pdfViewerRef"
           :document-url="pdfUrl"
+          :page="currentPage"
+          :zoom="zoom"
           :bounding-boxes="allHighlights.map((b, i) => ({
             id: String(i),
             page: b.page,
