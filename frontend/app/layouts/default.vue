@@ -138,6 +138,8 @@ onMounted(async () => {
       <template #header="{ collapsed }">
         <ClientOnly>
           <TeamsMenu :collapsed="collapsed" />
+
+          <UDashboardSidebarCollapse variant="subtle" />
         </ClientOnly>
       </template>
 
