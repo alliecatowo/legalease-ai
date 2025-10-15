@@ -50,6 +50,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   >
     <UButton
       :label="collapsed ? undefined : selectedTeam?.label"
+      :avatar="selectedTeam?.avatar"
       :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
       color="neutral"
       variant="ghost"

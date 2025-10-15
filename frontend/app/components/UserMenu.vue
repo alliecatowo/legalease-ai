@@ -159,6 +159,7 @@ const items = computed<DropdownMenuItem[][]>(() => ([[{
   >
     <UButton
       :label="collapsed ? undefined : user?.name"
+      :avatar="user?.avatar"
       :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
       color="neutral"
       variant="ghost"
