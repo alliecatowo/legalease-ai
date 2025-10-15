@@ -1,0 +1,85 @@
+title: Search Legal Documents with [AI]{class="text-primary"}
+description: AI-powered legal document search and analysis platform. Self-hosted, privacy-first, and fully local. Hybrid search, transcription, entity extraction, and knowledge graphs.
+seo:
+  title: LegalEase AI - AI-Powered Legal Document Search
+  description: World-class AI-powered legal document search and analysis platform. Self-hosted, privacy-first, fully local AI with hybrid search, case management, AI transcription, and more.
+navigation: false
+hero:
+  links:
+    - label: Get Started
+      icon: i-lucide-arrow-right
+      trailing: true
+      to: https://github.com/AlliecatOwO/legalease-ai#-quick-start
+      target: _blank
+      size: xl
+    - label: View on GitHub
+      icon: i-simple-icons-github
+      size: xl
+      color: neutral
+      variant: subtle
+      to: https://github.com/AlliecatOwO/legalease-ai
+      target: _blank
+sections:
+  - title: AI-Powered Legal Intelligence
+    description: World-class AI-powered legal document search and analysis platform. Self-hosted, privacy-first, with no external APIs. All data processing happens locally on your infrastructure.
+    id: features
+    orientation: horizontal
+    features:
+      - name: Hybrid Search Engine
+        description: Lightning-fast hybrid search combining BM25 keyword matching with semantic vector search. Sub-100ms latency for instant results with PDF highlighting.
+        icon: i-lucide-search
+      - name: Smart Case Management
+        description: Organize documents into cases with load/unload capabilities. Bulk upload with drag-and-drop and real-time status tracking.
+        icon: i-lucide-folder
+      - name: AI Transcription
+        description: 70x real-time transcription with speaker diarization and word-level timestamps. Process 1 hour of audio in approximately 50 seconds.
+        icon: i-lucide-mic
+  - title: Enterprise-Grade Features
+    description: Built with modern technologies and best practices for performance, security, and scalability. Everything you need for legal document analysis.
+    orientation: horizontal
+    reverse: true
+    features:
+      - name: Entity Extraction
+        description: Identify parties, dates, amounts, and citations using GLiNER and LexNLP. Auto-tag documents with intelligent categorization.
+        icon: i-lucide-tag
+      - name: Knowledge Graphs
+        description: Visualize entity relationships and citation networks with Neo4j. Discover connections across your case documents.
+        icon: i-lucide-network
+      - name: Privacy First
+        description: 100% local processing with no external APIs. All data stays on your infrastructure using local Ollama models.
+        icon: i-lucide-shield
+features:
+  title: Everything You Need for Legal Analysis
+  description: Stop building from scratch. LegalEase AI provides all the tools you need for modern legal document search and analysis, fully self-hosted and privacy-first.
+  items:
+    - title: Modern UI
+      description: Built with Nuxt 4 and Nuxt UI 4. Native PDF viewer with search highlighting, responsive design, and dark/light modes.
+      icon: i-lucide-palette
+    - title: Fast Performance
+      description: Sub-100ms search latency, 70x real-time transcription speed, and smooth 60fps UI for a seamless user experience.
+      icon: i-lucide-zap
+    - title: Self-Hosted
+      description: Complete control over your data with PostgreSQL, MinIO, Qdrant, and Neo4j. No cloud dependencies or external API calls.
+      icon: i-lucide-server
+    - title: Open Source
+      description: MIT licensed and fully open source. Contribute, customize, and deploy freely on your own infrastructure.
+      icon: i-lucide-code-2
+    - title: Scalable Architecture
+      description: Built with FastAPI, Celery, and modern cloud-native technologies. Scale from single documents to massive case repositories.
+      icon: i-lucide-trending-up
+    - title: Developer Friendly
+      description: Comprehensive API documentation, mise-based development workflow, and extensive tooling for easy deployment and customization.
+      icon: i-lucide-terminal
+cta:
+  title: Ready to Transform Your Legal Workflow?
+  description: Get started with LegalEase AI today. Self-hosted, privacy-first, and fully open source. Join the future of legal document analysis.
+  links:
+    - label: Quick Start Guide
+      to: 'https://github.com/AlliecatOwO/legalease-ai#-quick-start'
+      target: _blank
+      trailingIcon: i-lucide-arrow-right
+    - label: View on GitHub
+      to: 'https://github.com/AlliecatOwO/legalease-ai'
+      target: _blank
+      variant: subtle
+      icon: i-simple-icons-github
