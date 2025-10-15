@@ -37,6 +37,9 @@ const showExportMenu = ref(false)
 const isExporting = ref(false)
 const editingSegmentId = ref<string | null>(null)
 const editText = ref('')
+const editingSpeakerId = ref<string | null>(null)
+const editSpeakerName = ref('')
+const editSpeakerRole = ref('')
 
 // Perform smart search using backend API
 async function performSmartSearch() {
@@ -402,6 +405,64 @@ function saveEdit(segmentId: string) {
 function cancelEdit() {
   editingSegmentId.value = null
   editText.value = ''
+}
+
+// Speaker editing functions
+function startEditSpeaker(speaker: Speaker) {
+  editingSpeakerId.value = speaker.id
+  editSpeakerName.value = speaker.name
+  editSpeakerRole.value = speaker.role || ''
+}
+
+async function saveSpeakerEdit() {
+  if (!transcript.value || !editingSpeakerId.value) return
+
+  const speakerId = editingSpeakerId.value
+  const speaker = transcript.value.speakers.find(s => s.id === speakerId)
+  if (!speaker) return
+
+  // Store original values for rollback
+  const originalName = speaker.name
+  const originalRole = speaker.role
+
+  try {
+    // Optimistically update UI
+    speaker.name = editSpeakerName.value
+    speaker.role = editSpeakerRole.value || undefined
+
+    // Clear editing state
+    editingSpeakerId.value = null
+    editSpeakerName.value = ''
+    editSpeakerRole.value = ''
+
+    // Save to backend
+    await api.transcriptions.updateSpeaker(transcript.value.id, speakerId, {
+      name: speaker.name,
+      role: speaker.role
+    })
+
+    toast.add({
+      title: 'Speaker updated',
+      description: `Updated ${speaker.name}`,
+      color: 'success'
+    })
+  } catch (err: any) {
+    // Revert on error
+    speaker.name = originalName
+    speaker.role = originalRole
+
+    toast.add({
+      title: 'Failed to update speaker',
+      description: err.message || 'An error occurred',
+      color: 'error'
+    })
+  }
+}
+
+function cancelSpeakerEdit() {
+  editingSpeakerId.value = null
+  editSpeakerName.value = ''
+  editSpeakerRole.value = ''
 }
 
 // Delete transcription
@@ -970,28 +1031,77 @@ onMounted(() => {
                 :key="speakerStat.speaker.id"
                 class="p-3 bg-muted/10 rounded-lg"
               >
-                <div class="flex items-start justify-between mb-2">
-                  <div>
-                    <div
-                      class="px-2 py-1 rounded text-xs font-medium inline-block mb-1"
-                      :style="{
-                        backgroundColor: speakerStat.speaker.color + '20',
-                        color: speakerStat.speaker.color
-                      }"
-                    >
-                      {{ speakerStat.speaker.name }}
-                    </div>
-                    <p v-if="speakerStat.speaker.role" class="text-xs text-muted">
-                      {{ speakerStat.speaker.role }}
-                    </p>
-                  </div>
-                  <UButton
-                    icon="i-lucide-filter"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    @click="selectedSpeaker = speakerStat.speaker.id"
+                <!-- Editing Mode -->
+                <div v-if="editingSpeakerId === speakerStat.speaker.id" class="space-y-2" @click.stop>
+                  <UInput
+                    v-model="editSpeakerName"
+                    placeholder="Speaker name"
+                    size="sm"
+                    autofocus
                   />
+                  <UInput
+                    v-model="editSpeakerRole"
+                    placeholder="Role (optional)"
+                    size="sm"
+                    @keydown.enter="saveSpeakerEdit"
+                  />
+                  <div class="flex gap-2">
+                    <UButton
+                      label="Save"
+                      icon="i-lucide-check"
+                      color="primary"
+                      size="xs"
+                      @click="saveSpeakerEdit"
+                    />
+                    <UButton
+                      label="Cancel"
+                      icon="i-lucide-x"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="cancelSpeakerEdit"
+                    />
+                  </div>
+                </div>
+
+                <!-- Display Mode -->
+                <div v-else>
+                  <div class="flex items-start justify-between mb-2">
+                    <div class="flex-1 min-w-0">
+                      <div
+                        class="px-2 py-1 rounded text-xs font-medium inline-block mb-1"
+                        :style="{
+                          backgroundColor: speakerStat.speaker.color + '20',
+                          color: speakerStat.speaker.color
+                        }"
+                      >
+                        {{ speakerStat.speaker.name }}
+                      </div>
+                      <p v-if="speakerStat.speaker.role" class="text-xs text-muted">
+                        {{ speakerStat.speaker.role }}
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <UTooltip text="Edit Speaker">
+                        <UButton
+                          icon="i-lucide-edit"
+                          color="neutral"
+                          variant="ghost"
+                          size="xs"
+                          @click.stop="startEditSpeaker(speakerStat.speaker)"
+                        />
+                      </UTooltip>
+                      <UTooltip text="Filter by Speaker">
+                        <UButton
+                          icon="i-lucide-filter"
+                          color="neutral"
+                          variant="ghost"
+                          size="xs"
+                          @click="selectedSpeaker = speakerStat.speaker.id"
+                        />
+                      </UTooltip>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="space-y-1 text-xs">
