@@ -556,3 +556,81 @@ class TranscriptionService:
             "key_moments": key_moments,
             "total": len(key_moments),
         }
+
+    @staticmethod
+    def update_speaker(
+        transcription_id: int,
+        speaker_id: str,
+        name: str,
+        role: Optional[str],
+        db: Session,
+    ) -> Dict[str, Any]:
+        """
+        Update speaker information in a transcription.
+
+        Args:
+            transcription_id: ID of the transcription
+            speaker_id: ID of the speaker to update
+            name: New speaker name
+            role: Optional speaker role
+            db: Database session
+
+        Returns:
+            Dict: Updated speaker information
+
+        Raises:
+            HTTPException: If transcription or speaker not found
+        """
+        # Verify transcription exists
+        transcription = TranscriptionService.get_transcription(transcription_id, db)
+
+        # Verify speakers array exists
+        if not transcription.speakers or not isinstance(transcription.speakers, list):
+            logger.error(
+                f"No speakers found in transcription {transcription_id}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"No speakers found in transcription {transcription_id}",
+            )
+
+        # Find the speaker by ID
+        speaker_found = False
+        updated_speaker = None
+        for speaker in transcription.speakers:
+            if speaker.get("speaker_id") == speaker_id:
+                # Update speaker information
+                speaker["name"] = name
+                if role is not None:
+                    speaker["role"] = role
+                speaker_found = True
+                updated_speaker = speaker.copy()
+                break
+
+        if not speaker_found:
+            logger.error(
+                f"Speaker {speaker_id} not found in transcription {transcription_id}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"Speaker {speaker_id} not found in transcription {transcription_id}",
+            )
+
+        # Mark the speakers column as modified for SQLAlchemy to detect the change
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(transcription, "speakers")
+
+        # Commit the changes
+        db.commit()
+        db.refresh(transcription)
+
+        logger.info(
+            f"Updated speaker {speaker_id} in transcription {transcription_id}: name='{name}', role='{role}'"
+        )
+
+        return {
+            "speaker_id": updated_speaker.get("speaker_id"),
+            "name": updated_speaker.get("name"),
+            "role": updated_speaker.get("role"),
+            "color": updated_speaker.get("color"),
+        }

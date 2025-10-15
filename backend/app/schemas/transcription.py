@@ -153,3 +153,23 @@ class TranscriptionUploadResponse(BaseModel):
     document_id: int = Field(..., description="Created document ID")
     transcription_id: Optional[int] = Field(None, description="Transcription ID (if processing completed)")
     status: str = Field(..., description="Processing status")
+
+
+class UpdateSpeakerRequest(BaseModel):
+    """Schema for updating speaker information."""
+
+    name: str = Field(..., description="Speaker name", min_length=1)
+    role: Optional[str] = Field(None, description="Speaker role (e.g., 'Attorney', 'Witness', 'Judge')")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SpeakerResponse(BaseModel):
+    """Schema for speaker response."""
+
+    speaker_id: str = Field(..., description="Speaker identifier")
+    name: Optional[str] = Field(None, description="Speaker name")
+    role: Optional[str] = Field(None, description="Speaker role")
+    color: Optional[str] = Field(None, description="Speaker color for UI")
+
+    model_config = ConfigDict(from_attributes=True)
