@@ -34,6 +34,7 @@ export default defineNuxtConfig({
   ssr: true,
 
   nitro: {
+    preset: 'static',
     baseURL: process.env.NUXT_APP_BASE_URL || '/',
     prerender: {
       routes: [
