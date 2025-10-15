@@ -49,18 +49,25 @@ const items = computed<DropdownMenuItem[][]>(() => {
     :ui="{ content: collapsed ? 'w-40' : 'w-(--reka-dropdown-menu-trigger-width)' }"
   >
     <UButton
-      :label="collapsed ? undefined : selectedTeam?.label"
+      v-if="!collapsed"
+      :label="selectedTeam?.label"
       :avatar="selectedTeam?.avatar"
-      :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
+      :trailing-icon="'i-lucide-chevrons-up-down'"
       color="neutral"
       variant="ghost"
       block
-      :square="collapsed"
-      class="data-[state=open]:bg-elevated"
-      :class="[!collapsed && 'py-2']"
+      class="data-[state=open]:bg-elevated py-2"
       :ui="{
         trailingIcon: 'text-dimmed'
       }"
+    />
+    <UButton
+      v-else
+      icon="i-lucide-building"
+      color="neutral"
+      variant="ghost"
+      square
+      class="data-[state=open]:bg-elevated"
     />
   </UDropdownMenu>
 </template>

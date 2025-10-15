@@ -138,8 +138,6 @@ onMounted(async () => {
       <template #header="{ collapsed }">
         <ClientOnly>
           <TeamsMenu :collapsed="collapsed" />
-
-          <UDashboardSidebarCollapse variant="subtle" />
         </ClientOnly>
       </template>
 
@@ -155,13 +153,21 @@ onMounted(async () => {
             popover
           />
 
-          <UNavigationMenu
-            :collapsed="collapsed"
-            :items="links[1]"
-            orientation="vertical"
-            tooltip
-            class="mt-auto"
-          />
+          <div class="mt-auto space-y-2">
+            <UDashboardSidebarCollapse
+              variant="subtle"
+              block
+              :icon="collapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-left'"
+              :label="collapsed ? undefined : 'Collapse sidebar'"
+            />
+
+            <UNavigationMenu
+              :collapsed="collapsed"
+              :items="links[1]"
+              orientation="vertical"
+              tooltip
+            />
+          </div>
         </ClientOnly>
       </template>
 
