@@ -37,8 +37,8 @@ class Settings(BaseSettings):
 
     # Ollama (Local LLM)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL_SUMMARIZATION: str = "llama3.1:70b"
-    OLLAMA_MODEL_TAGGING: str = "llama3.1:70b"
+    OLLAMA_MODEL_SUMMARIZATION: str = "llama3.1:7b"
+    OLLAMA_MODEL_TAGGING: str = "llama3.1:7b"
     OLLAMA_REQUEST_TIMEOUT: int = 300  # 5 minutes for large models
 
     # Neo4j (Knowledge Graph)

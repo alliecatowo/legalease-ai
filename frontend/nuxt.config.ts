@@ -25,7 +25,12 @@ export default defineNuxtConfig({
       }
     },
     '/documents/**': { ssr: false },
-    '/documents': { ssr: false }
+    '/documents': { ssr: false },
+    '/cases/**': { ssr: false },
+    '/cases': { ssr: false },
+    '/search': { ssr: false },
+    '/transcripts/**': { ssr: false },
+    '/transcripts': { ssr: false }
   },
 
   compatibilityDate: '2024-07-11',

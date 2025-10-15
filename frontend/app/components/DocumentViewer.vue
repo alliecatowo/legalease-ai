@@ -59,7 +59,7 @@ const config = useRuntimeConfig()
 const pdfUrl = ref<string>('')
 const currentPage = ref(props.initialPage)
 const totalPages = ref(0)
-const zoom = ref(1.0)
+const zoom = ref(1.5)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 const pdfViewerRef = useTemplateRef('pdfViewerRef')
@@ -301,6 +301,13 @@ const fetchDocumentContent = async () => {
 
     jumpToFirstMatch()
 
+    // Get accurate page count from PDF viewer after it loads
+    setTimeout(() => {
+      if (pdfViewerRef.value?.totalPages) {
+        totalPages.value = pdfViewerRef.value.totalPages
+      }
+    }, 1000)
+
   } catch (e: any) {
     console.error('Error fetching document content:', e)
     error.value = e.message || 'Failed to load document'
@@ -329,7 +336,19 @@ const zoomOut = () => {
 }
 
 const resetZoom = () => {
-  zoom.value = 1.0
+  zoom.value = 1.5
+}
+
+// Print functionality
+const handlePrint = () => {
+  if (!pdfUrl.value) return
+  // Open PDF in new window and trigger print dialog
+  const printWindow = window.open(pdfUrl.value, '_blank')
+  if (printWindow) {
+    printWindow.addEventListener('load', () => {
+      printWindow.print()
+    })
+  }
 }
 
 // Watch for query or content changes to rehighlight and jump to first match
@@ -422,6 +441,15 @@ watch(() => props.documentId, () => {
             {{ pageHighlights.length }} on this page
           </UBadge>
         </UTooltip>
+        <UTooltip text="Print Document">
+          <UButton
+            icon="i-lucide-printer"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            @click="handlePrint"
+          />
+        </UTooltip>
         <UButton
           icon="i-lucide-refresh-cw"
           color="neutral"
@@ -435,9 +463,7 @@ watch(() => props.documentId, () => {
     </div>
 
     <!-- PDF Viewer Container -->
-    <div
-      class="viewer-content relative overflow-auto bg-muted/5 p-6 flex-1"
-    >
+    <div class="viewer-content relative bg-muted/5">
       <!-- Loading State -->
       <div v-if="isLoading" class="flex items-center justify-center h-full">
         <div class="text-center space-y-4">
@@ -464,10 +490,12 @@ watch(() => props.documentId, () => {
       </div>
 
       <!-- PDF with Overlay -->
-      <div v-else class="pdf-wrapper relative w-full mx-auto shadow-lg">
+      <div v-else class="pdf-wrapper">
         <PDFViewerWithHighlights
           ref="pdfViewerRef"
           :document-url="pdfUrl"
+          :page="currentPage"
+          :zoom="zoom"
           :bounding-boxes="allHighlights.map((b, i) => ({
             id: String(i),
             page: b.page,
@@ -505,6 +533,26 @@ watch(() => props.documentId, () => {
 </template>
 
 <style scoped>
+.document-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 800px; /* Fixed height for the viewer - taller rectangle */
+}
+
+.viewer-toolbar {
+  flex-shrink: 0;
+}
+
+.viewer-content {
+  flex: 1;
+  min-height: 0; /* Important for flex children with overflow */
+  overflow: hidden;
+}
+
+.viewer-footer {
+  flex-shrink: 0;
+}
+
 .pdf-page {
   display: block;
   width: 100%;
@@ -513,9 +561,8 @@ watch(() => props.documentId, () => {
 }
 
 .pdf-wrapper {
-  position: relative;
   width: 100%;
-  max-width: 100%;
+  height: 100%;
 }
 
 .bbox-overlay {
@@ -529,16 +576,5 @@ watch(() => props.documentId, () => {
 .highlight-box:hover {
   fill: rgba(255, 235, 59, 0.5);
   stroke-width: 3;
-}
-
-.viewer-content {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-.pdf-wrapper {
-  position: relative;
-  background: white;
 }
 </style>

@@ -18,6 +18,8 @@ router = APIRouter()
 async def search_documents(
     q: str = Query(..., description="Search query"),
     case_ids: Optional[List[int]] = Query(None, description="Filter by case IDs"),
+    document_types: Optional[List[str]] = Query(None, description="Filter by document types: 'document', 'transcript', or both"),
+    speakers: Optional[List[str]] = Query(None, description="Filter by speaker names (for transcripts only)"),
     limit: int = Query(10, ge=1, le=100, description="Number of results to return"),
     min_score: Optional[float] = Query(
         0.3,
@@ -52,10 +54,21 @@ async def search_documents(
         Search results with normalized scores and metadata
     """
     try:
+        # Determine chunk types based on document_types filter
+        chunk_types = None
+        if document_types:
+            chunk_types = []
+            if 'transcript' in document_types:
+                chunk_types.append('transcript_segment')
+            if 'document' in document_types:
+                # Add standard document chunk types
+                chunk_types.extend(['summary', 'section', 'microblock'])
+
         # Create search request
         request = HybridSearchRequest(
             query=q,
             case_ids=case_ids,
+            chunk_types=chunk_types,
             top_k=limit,
             score_threshold=min_score,
             use_bm25=True,
@@ -66,6 +79,14 @@ async def search_documents(
         # Execute hybrid search
         search_engine = get_search_engine()
         response = search_engine.search(request)
+
+        # Filter by speaker if specified (post-search filter for transcripts)
+        results = response.results
+        if speakers:
+            results = [
+                r for r in results
+                if r.metadata.get('speaker') in speakers or r.metadata.get('chunk_type') != 'transcript_segment'
+            ]
 
         # Return simplified response
         return {
@@ -78,11 +99,13 @@ async def search_documents(
                     "metadata": r.metadata,
                     "highlights": r.highlights,
                 }
-                for r in response.results
+                for r in results
             ],
-            "total": response.total_results,
+            "total": len(results),
             "limit": limit,
             "min_score": min_score,
+            "document_types": document_types,
+            "speakers": speakers,
             "results_filtered": response.search_metadata.get("results_filtered", 0),
             "search_time_ms": response.search_metadata.get("search_time_ms"),
         }

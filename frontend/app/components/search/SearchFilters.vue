@@ -21,8 +21,15 @@ const emit = defineEmits<{
 }>()
 
 const localCases = computed({
-  get: () => props.selectedCases,
-  set: (value) => emit('update:selectedCases', value)
+  get: () => {
+    // Convert IDs back to objects for USelectMenu
+    return props.availableCases.filter(c => props.selectedCases.includes(c.id))
+  },
+  set: (value) => {
+    // Extract IDs from selected objects
+    const ids = Array.isArray(value) ? value.map(c => c.id).filter(id => id != null) : []
+    emit('update:selectedCases', ids)
+  }
 })
 
 const localDocTypes = computed({
@@ -70,13 +77,12 @@ const clearAllFilters = () => {
       v-model="localCases"
       :items="availableCases"
       multiple
+      by="id"
       :placeholder="selectedCases.length > 0 ? `${selectedCases.length} case${selectedCases.length > 1 ? 's' : ''}` : 'All Cases'"
       :ui="{
         trigger: 'inline-flex items-center gap-x-1.5',
         width: 'w-auto min-w-[160px]'
       }"
-      value-attribute="id"
-      option-attribute="name"
     >
       <template #label>
         <UIcon name="i-lucide-briefcase" class="size-4" />

@@ -5,6 +5,7 @@ FROM python:3.11-slim AS base
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
+    git \
     libpq-dev \
     libxml2-dev \
     libxslt1-dev \
@@ -22,8 +23,8 @@ COPY backend/pyproject.toml backend/uv.lock* ./
 # Development stage
 FROM base AS development
 
-# Install all dependencies including dev dependencies
-RUN uv sync
+# Install all dependencies including dev dependencies (but exclude worker group)
+RUN uv sync --no-group worker
 
 # Copy application code
 COPY backend/ ./
@@ -37,8 +38,8 @@ CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "800
 # Production dependencies stage
 FROM base AS dependencies
 
-# Install production dependencies only
-RUN uv sync --no-dev
+# Install production dependencies only (exclude worker group)
+RUN uv sync --no-dev --no-group worker
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -47,6 +48,7 @@ FROM python:3.11-slim AS production
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv

@@ -3,41 +3,72 @@ import { ref, computed } from 'vue'
 
 const api = useApi()
 
-// Fetch all cases first, then get documents for all cases
-const { data: casesData } = await useAsyncData('all-cases', () => api.cases.list())
+// Fetch all cases first
+const { data: casesData, refresh: refreshCases } = await useAsyncData(
+  'all-cases',
+  () => api.cases.list(),
+  {
+    default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
+  }
+)
 
-// Fetch documents from all cases
+// State for documents
 const allDocuments = ref<any[]>([])
+const loadingDocuments = ref(false)
 
-// Fetch documents for each case
-if (casesData.value?.cases) {
-  for (const case_ of casesData.value.cases) {
-    try {
-      const docsData = await api.documents.listByCase(case_.id)
-      if (docsData?.documents) {
-        allDocuments.value.push(...docsData.documents.map((d: any) => ({
-          ...d,
-          case_name: case_.name,
-          case_id: case_.id,
-          document_type: d.meta_data?.document_type || 'general',
-          title: d.meta_data?.title || d.filename,
-          summary: d.meta_data?.summary,
-          file_size: d.size,
-          created_at: d.uploaded_at,
-          updated_at: d.uploaded_at
-        })))
+// Fetch documents for all cases
+async function fetchAllDocuments() {
+  if (!casesData.value?.cases || casesData.value.cases.length === 0) {
+    allDocuments.value = []
+    return
+  }
+
+  loadingDocuments.value = true
+  const fetchedDocs: any[] = []
+
+  try {
+    // Fetch documents for each case in parallel
+    const docPromises = casesData.value.cases.map(async (case_: any) => {
+      try {
+        const docsData = await api.documents.listByCase(case_.id)
+        if (docsData?.documents) {
+          return docsData.documents.map((d: any) => ({
+            ...d,
+            case_name: case_.name,
+            case_id: case_.id,
+            document_type: d.meta_data?.document_type || 'general',
+            title: d.meta_data?.title || d.filename,
+            summary: d.meta_data?.summary,
+            file_size: d.size,
+            created_at: d.uploaded_at,
+            updated_at: d.uploaded_at
+          }))
+        }
+        return []
+      } catch (e) {
+        console.error(`Failed to fetch documents for case ${case_.id}:`, e)
+        return []
       }
-    } catch (e) {
-      console.error(`Failed to fetch documents for case ${case_.id}:`, e)
-    }
+    })
+
+    const results = await Promise.all(docPromises)
+    results.forEach(docs => fetchedDocs.push(...docs))
+    allDocuments.value = fetchedDocs
+  } finally {
+    loadingDocuments.value = false
   }
 }
+
+// Fetch documents when component mounts or cases change
+watch(() => casesData.value?.cases, () => {
+  fetchAllDocuments()
+}, { immediate: true })
 
 const documents = computed(() => allDocuments.value)
 
 async function refresh() {
-  // TODO: Implement refresh
-  window.location.reload()
+  await refreshCases()
+  await fetchAllDocuments()
 }
 
 const searchQuery = ref('')
@@ -281,14 +312,14 @@ const documentTypeIcons: Record<string, string> = {
 <template>
   <UDashboardPanel>
     <template #header>
-      <UDashboardNavbar title="Document Library">
+      <UDashboardNavbar title="Documents">
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
         <template #trailing>
           <UButton
-            icon="i-lucide-upload"
             label="Upload"
+            icon="i-lucide-upload"
             color="primary"
             @click="showUploadModal = true"
           />
@@ -296,8 +327,8 @@ const documentTypeIcons: Record<string, string> = {
       </UDashboardNavbar>
     </template>
 
-    <div class="overflow-y-auto h-[calc(100vh-64px)]">
-      <div class="max-w-7xl mx-auto p-6 space-y-6">
+    <template #body>
+      <div class="max-w-7xl mx-auto space-y-6">
         <!-- Bulk Actions Banner -->
       <div v-if="selectedDocuments.size > 0" class="bg-primary/10 border border-primary rounded-lg p-4">
         <div class="flex items-center justify-between">
@@ -597,12 +628,14 @@ const documentTypeIcons: Record<string, string> = {
           {{ searchQuery ? 'Try adjusting your search or filters' : 'Upload your first document to get started' }}
         </p>
         <UButton v-if="!searchQuery" icon="i-lucide-upload" label="Upload Document" color="primary" @click="showUploadModal = true" />
-        </div>
       </div>
-    </div>
+      </div>
+    </template>
+  </UDashboardPanel>
 
-    <!-- Upload Modal -->
-    <UModal v-model:open="showUploadModal" title="Upload Documents">
+  <!-- Upload Modal -->
+    <ClientOnly>
+      <UModal v-model:open="showUploadModal" title="Upload Documents">
       <template #body>
         <div class="space-y-4">
           <!-- File Upload Component -->
@@ -650,5 +683,5 @@ const documentTypeIcons: Record<string, string> = {
         </div>
       </template>
     </UModal>
-  </UDashboardPanel>
+  </ClientOnly>
 </template>

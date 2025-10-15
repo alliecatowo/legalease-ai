@@ -22,9 +22,24 @@ export const useApi = () => {
       // Show toast on client-side only to avoid SSR issues
       if (import.meta.client) {
         const toast = useToast()
+        let description = 'An error occurred'
+
+        // Extract error message from different response formats
+        if (response._data?.detail) {
+          if (Array.isArray(response._data.detail)) {
+            // Validation errors: extract first error message
+            description = response._data.detail[0]?.msg || description
+          } else if (typeof response._data.detail === 'string') {
+            // Simple string error
+            description = response._data.detail
+          }
+        } else if (response.statusText) {
+          description = response.statusText
+        }
+
         toast.add({
           title: 'Error',
-          description: response._data?.detail || response.statusText || 'An error occurred',
+          description,
           color: 'error'
         })
       }
@@ -64,13 +79,40 @@ export const useApi = () => {
 
     // Transcriptions
     transcriptions: {
-      list: () => api('/api/v1/transcriptions'),
-      get: (id: string) => api(`/api/v1/transcriptions/${id}`),
-      create: (formData: FormData) => api('/api/v1/transcriptions', { method: 'POST', body: formData }),
-      bulkCreate: (formData: FormData) => api('/api/v1/transcriptions/bulk', { method: 'POST', body: formData }),
-      delete: (id: string) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
-      export: (id: string, format: 'docx' | 'srt' | 'vtt') =>
-        api(`/api/v1/transcriptions/${id}/export/${format}`)
+      listForCase: (caseId: number) => api(`/api/v1/cases/${caseId}/transcriptions`),
+      get: (id: number) => api(`/api/v1/transcriptions/${id}`),
+      upload: (caseId: number, formData: FormData) =>
+        api(`/api/v1/cases/${caseId}/transcriptions`, { method: 'POST', body: formData }),
+      delete: (id: number) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
+      download: (id: number, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') =>
+        api(`/api/v1/transcriptions/${id}/download/${format}`),
+
+      // Summarization
+      getSummary: (id: number) => api(`/api/v1/transcriptions/${id}/summary`),
+      generateSummary: (id: number, options?: any) =>
+        api(`/api/v1/transcriptions/${id}/summarize`, { method: 'POST', body: options || {} }),
+      regenerateSummary: (id: number, components?: string[]) =>
+        api(`/api/v1/transcriptions/${id}/summary/regenerate`, { method: 'POST', body: components }),
+      quickSummary: (id: number) =>
+        api(`/api/v1/transcriptions/${id}/summary/quick`, { method: 'POST' }),
+      summaryStatus: (transcriptionId: number, taskId: string) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/summary/status/${taskId}`),
+
+      // Key Moments
+      toggleKeyMoment: (transcriptionId: number, segmentId: string, isKeyMoment: boolean) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/segments/${segmentId}/key-moment`, {
+          method: 'PATCH',
+          body: { is_key_moment: isKeyMoment }
+        }),
+      getKeyMoments: (transcriptionId: number) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/key-moments`),
+
+      // Speakers
+      updateSpeaker: (transcriptionId: number, speakerId: string, updates: { name: string, role?: string }) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/speakers/${speakerId}`, {
+          method: 'PATCH',
+          body: updates
+        })
     },
 
     // Stats & Analytics

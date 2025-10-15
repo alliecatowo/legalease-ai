@@ -18,6 +18,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    MatchAny,
     SearchRequest,
     NamedVector,
     SparseVector,
@@ -358,28 +359,57 @@ def build_filter(
     conditions = []
 
     if case_ids:
-        conditions.append(
-            FieldCondition(
-                key="case_id",
-                match=MatchValue(value=case_ids[0] if len(case_ids) == 1 else case_ids),
+        # Handle single vs multiple case_ids properly
+        if len(case_ids) == 1:
+            conditions.append(
+                FieldCondition(
+                    key="case_id",
+                    match=MatchValue(value=case_ids[0]),
+                )
             )
-        )
+        else:
+            conditions.append(
+                FieldCondition(
+                    key="case_id",
+                    match=MatchAny(any=case_ids),
+                )
+            )
 
     if document_ids:
-        conditions.append(
-            FieldCondition(
-                key="document_id",
-                match=MatchValue(value=document_ids[0] if len(document_ids) == 1 else document_ids),
+        # Handle single vs multiple document_ids properly
+        if len(document_ids) == 1:
+            conditions.append(
+                FieldCondition(
+                    key="document_id",
+                    match=MatchValue(value=document_ids[0]),
+                )
             )
-        )
+        else:
+            conditions.append(
+                FieldCondition(
+                    key="document_id",
+                    match=MatchAny(any=document_ids),
+                )
+            )
 
     if chunk_types:
-        conditions.append(
-            FieldCondition(
-                key="chunk_type",
-                match=MatchValue(value=chunk_types[0] if len(chunk_types) == 1 else chunk_types),
+        # Handle single vs multiple chunk_types properly
+        if len(chunk_types) == 1:
+            # Single chunk_type: use MatchValue with a string
+            conditions.append(
+                FieldCondition(
+                    key="chunk_type",
+                    match=MatchValue(value=chunk_types[0]),
+                )
             )
-        )
+        else:
+            # Multiple chunk_types: use MatchAny with a list
+            conditions.append(
+                FieldCondition(
+                    key="chunk_type",
+                    match=MatchAny(any=chunk_types),
+                )
+            )
 
     if additional_conditions:
         conditions.extend(additional_conditions)

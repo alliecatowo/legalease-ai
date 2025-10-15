@@ -28,16 +28,18 @@ const { data: casesData } = await useAsyncData('search-cases', () => api.cases.l
 })
 const availableCases = computed(() =>
   (casesData.value?.cases || []).map((c: any) => ({
+    id: Number(c.id),
+    name: c.name,
     label: c.name,
-    value: c.id,
-    case_number: c.case_number,
-    ...c
+    case_number: c.case_number
   }))
 )
 
 // Filter state
 const selectedCases = ref<number[]>([])
 const selectedDocumentTypes = ref<string[]>([])
+const selectedSpeakers = ref<string[]>([])
+const includeTranscripts = ref(true)
 
 const documentTypeOptions = [
   { value: 'contract', label: 'Contracts', icon: 'i-lucide-file-text' },
@@ -83,6 +85,9 @@ const performSearch = async () => {
   isLoading.value = true
   isSearching.value = true
   try {
+    // Filter out null/undefined values and convert to integers
+    const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
+
     // Build search request with filters
     const request = {
       query: searchQuery.value,
@@ -91,9 +96,15 @@ const performSearch = async () => {
       fusion_method: searchSettings.value.fusion_method,
       top_k: searchSettings.value.top_k,
       chunk_types: selectedChunkTypes.value.length > 0 ? selectedChunkTypes.value : undefined,
-      case_ids: selectedCases.value.length > 0 ? selectedCases.value : undefined,
+      case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
       document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
     }
+
+    // DEBUG: Log search request details
+    console.log('🔍 Search Request Debug:')
+    console.log('  selectedCases.value:', selectedCases.value)
+    console.log('  selectedChunkTypes.value:', selectedChunkTypes.value)
+    console.log('  Full request object:', JSON.stringify(request, null, 2))
 
     // Use hybrid endpoint by default
     const response = await api.search.hybrid(request)
@@ -120,6 +131,11 @@ const performSearch = async () => {
     // Client-side filter by document type if selected
     if (selectedDocumentTypes.value.length > 0) {
       results = results.filter(r => selectedDocumentTypes.value.includes(r.documentType))
+    }
+
+    // Filter transcripts if not included
+    if (!includeTranscripts.value) {
+      results = results.filter(r => r.documentType !== 'transcript' && r.chunkType !== 'transcript_segment')
     }
 
     searchResults.value = results
@@ -414,106 +430,107 @@ defineShortcuts({
       </UDashboardNavbar>
     </template>
 
-    <div class="flex h-[calc(100vh-64px)]">
-      <!-- Main Content Area -->
-      <div class="flex-1 overflow-y-auto">
-        <!-- Hero Search (when not searching or no results yet) -->
-        <div
-          v-show="searchResults.length === 0 && !isSearching"
-          class="flex items-center justify-center min-h-full px-6 py-12"
-        >
-          <div class="w-full max-w-5xl mx-auto text-center space-y-12">
-            <!-- Logo/Icon -->
-            <div class="flex items-center justify-center gap-5">
-              <UIcon name="i-lucide-scale" class="size-20 text-primary" />
-              <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
-                LegalEase AI
-              </h1>
-            </div>
+    <template #body>
+      <div class="flex h-full">
+        <!-- Main Content Area -->
+        <div class="flex-1 overflow-y-auto">
+          <!-- Hero Search (when not searching or no results yet) -->
+          <div
+            v-show="searchResults.length === 0 && !isSearching"
+            class="flex items-center justify-center min-h-full px-6 py-12"
+          >
+            <div class="w-full max-w-5xl mx-auto text-center space-y-12">
+              <!-- Logo/Icon -->
+              <div class="flex items-center justify-center gap-5">
+                <UIcon name="i-lucide-scale" class="size-20 text-primary" />
+                <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
+                  LegalEase AI
+                </h1>
+              </div>
 
-            <p class="text-xl text-muted max-w-2xl mx-auto">
-              Intelligent hybrid search across your legal documents, contracts, and case files
-            </p>
+              <p class="text-xl text-muted max-w-2xl mx-auto">
+                Intelligent hybrid search across your legal documents, contracts, and case files
+              </p>
 
-            <!-- Hero Search Bar - Centered and Large -->
-            <div class="w-full max-w-5xl mx-auto space-y-6">
-              <UInput
-                ref="heroSearchInput"
-                v-model="searchQuery"
-                icon="i-lucide-search"
-                placeholder="Search for legal terms, clauses, concepts, or natural language queries..."
-                size="xl"
-                :loading="isLoading"
-                autofocus
-                class="!text-lg shadow-xl hover:shadow-2xl transition-shadow"
-                :ui="{
-                  base: 'px-6 py-5 text-lg rounded-2xl',
-                  leadingIcon: 'size-7'
-                }"
-              >
-                <template #trailing>
-                  <UKbd value="/" />
-                </template>
-              </UInput>
+              <!-- Hero Search Bar - Centered and Large -->
+              <div class="w-full max-w-5xl mx-auto space-y-6">
+                <UInput
+                  ref="heroSearchInput"
+                  v-model="searchQuery"
+                  icon="i-lucide-search"
+                  placeholder="Search for legal terms, clauses, concepts, or natural language queries..."
+                  size="xl"
+                  :loading="isLoading"
+                  autofocus
+                  class="!text-lg shadow-xl hover:shadow-2xl transition-shadow"
+                  :ui="{
+                    base: 'px-6 py-5 text-lg rounded-2xl',
+                    leadingIcon: 'size-7'
+                  }"
+                >
+                  <template #trailing>
+                    <UKbd value="/" />
+                  </template>
+                </UInput>
 
-              <!-- Prominent Filter Bar in Hero View -->
-              <div class="flex justify-center">
-                <SearchFilters
-                  v-model:selected-cases="selectedCases"
-                  v-model:selected-document-types="selectedDocumentTypes"
-                  v-model:selected-chunk-types="selectedChunkTypes"
-                  :available-cases="availableCases"
-                  :show-chunk-types="true"
-                  @clear="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+                <!-- Prominent Filter Bar in Hero View -->
+                <div class="flex justify-center">
+                  <SearchFilters
+                    v-model:selected-cases="selectedCases"
+                    v-model:selected-document-types="selectedDocumentTypes"
+                    v-model:selected-chunk-types="selectedChunkTypes"
+                    :available-cases="availableCases"
+                    :show-chunk-types="true"
+                    @clear="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+                  />
+                </div>
+              </div>
+
+              <!-- Quick Examples -->
+              <div class="flex flex-wrap justify-center gap-2 mt-6">
+                <UButton
+                  v-for="example in ['indemnification clauses', 'force majeure', 'non-compete agreements', 'intellectual property rights']"
+                  :key="example"
+                  :label="example"
+                  color="neutral"
+                  variant="outline"
+                  size="xs"
+                  @click="searchQuery = example"
                 />
               </div>
-            </div>
 
-            <!-- Quick Examples -->
-            <div class="flex flex-wrap justify-center gap-2 mt-6">
-              <UButton
-                v-for="example in ['indemnification clauses', 'force majeure', 'non-compete agreements', 'intellectual property rights']"
-                :key="example"
-                :label="example"
-                color="neutral"
-                variant="outline"
-                size="xs"
-                @click="searchQuery = example"
-              />
-            </div>
-
-            <!-- Feature Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
-              <UCard :ui="{ body: 'space-y-3' }">
-                <UIcon name="i-lucide-zap" class="size-8 text-primary" />
-                <h3 class="font-semibold text-lg">Semantic Search</h3>
-                <p class="text-sm text-muted">
-                  Find documents by meaning and context, not just exact keywords
-                </p>
-              </UCard>
-              <UCard :ui="{ body: 'space-y-3' }">
-                <UIcon name="i-lucide-target" class="size-8 text-primary" />
-                <h3 class="font-semibold text-lg">Entity Recognition</h3>
-                <p class="text-sm text-muted">
-                  Automatic identification of parties, dates, amounts, and legal citations
-                </p>
-              </UCard>
-              <UCard :ui="{ body: 'space-y-3' }">
-                <UIcon name="i-lucide-sparkles" class="size-8 text-primary" />
-                <h3 class="font-semibold text-lg">AI-Powered</h3>
-                <p class="text-sm text-muted">
-                  Advanced language models trained on legal corpus for accuracy
-                </p>
-              </UCard>
+              <!-- Feature Cards -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+                <UCard :ui="{ body: 'space-y-3' }">
+                  <UIcon name="i-lucide-zap" class="size-8 text-primary" />
+                  <h3 class="font-semibold text-lg">Semantic Search</h3>
+                  <p class="text-sm text-muted">
+                    Find documents by meaning and context, not just exact keywords
+                  </p>
+                </UCard>
+                <UCard :ui="{ body: 'space-y-3' }">
+                  <UIcon name="i-lucide-target" class="size-8 text-primary" />
+                  <h3 class="font-semibold text-lg">Entity Recognition</h3>
+                  <p class="text-sm text-muted">
+                    Automatic identification of parties, dates, amounts, and legal citations
+                  </p>
+                </UCard>
+                <UCard :ui="{ body: 'space-y-3' }">
+                  <UIcon name="i-lucide-sparkles" class="size-8 text-primary" />
+                  <h3 class="font-semibold text-lg">AI-Powered</h3>
+                  <p class="text-sm text-muted">
+                    Advanced language models trained on legal corpus for accuracy
+                  </p>
+                </UCard>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Search Results -->
-        <div v-show="searchResults.length > 0 || isSearching" class="p-6">
-          <UContainer>
-            <!-- Compact Search Bar (kept in DOM to prevent focus loss) -->
-            <div class="mb-6 space-y-3">
+          <!-- Search Results -->
+          <div v-show="searchResults.length > 0 || isSearching" class="p-6">
+            <UContainer>
+              <!-- Compact Search Bar (kept in DOM to prevent focus loss) -->
+              <div class="mb-6 space-y-3">
               <UInput
                 ref="compactSearchInput"
                 v-model="searchQuery"
@@ -594,17 +611,17 @@ defineShortcuts({
               <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mb-4" />
               <p class="text-muted">Searching through documents...</p>
               <p class="text-sm text-dimmed mt-2">Using {{ searchMode }} search with {{ searchSettings.fusion_method.toUpperCase() }} fusion</p>
-            </div>
-          </UContainer>
+              </div>
+            </UContainer>
+          </div>
         </div>
-      </div>
 
-      <!-- Settings Sidebar -->
-      <div
-        v-if="showSettings"
-        class="w-80 border-l border-default bg-default overflow-y-auto p-6"
-      >
-        <div class="space-y-6">
+        <!-- Settings Sidebar -->
+        <div
+          v-if="showSettings"
+          class="w-80 border-l border-default bg-default overflow-y-auto p-6"
+        >
+          <div class="space-y-6">
           <div>
             <h3 class="font-semibold text-lg mb-1">Search Settings</h3>
             <p class="text-sm text-muted">Configure your search parameters</p>
@@ -733,8 +750,25 @@ defineShortcuts({
 
           <USeparator />
 
+          <!-- Include Transcripts Toggle -->
+          <UFormField label="Transcripts" help="Include or exclude audio transcripts from search results">
+            <UCheckbox
+              v-model="includeTranscripts"
+              label="Include Transcripts in Results"
+            >
+              <template #label>
+                <div class="flex items-center gap-2">
+                  <UIcon name="i-lucide-mic" class="size-4" />
+                  <span>Include Transcripts</span>
+                </div>
+              </template>
+            </UCheckbox>
+          </UFormField>
+
+          <USeparator />
+
           <!-- Active Filters Summary -->
-          <div v-if="selectedCases.length > 0 || selectedDocumentTypes.length > 0 || selectedChunkTypes.length > 0" class="space-y-2">
+          <div v-if="selectedCases.length > 0 || selectedDocumentTypes.length > 0 || selectedChunkTypes.length > 0 || !includeTranscripts" class="space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium text-highlighted">Active Filters</span>
               <UButton
@@ -742,7 +776,7 @@ defineShortcuts({
                 color="neutral"
                 variant="ghost"
                 size="xs"
-                @click="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []"
+                @click="selectedCases = []; selectedDocumentTypes = []; selectedChunkTypes = []; includeTranscripts = true"
               />
             </div>
             <div class="flex flex-wrap gap-1.5">
@@ -785,6 +819,21 @@ defineShortcuts({
                   <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />
                 </template>
               </UBadge>
+              <UBadge
+                v-if="!includeTranscripts"
+                label="Exclude Transcripts"
+                color="warning"
+                variant="soft"
+                size="sm"
+                @click="includeTranscripts = true"
+              >
+                <template #leading>
+                  <UIcon name="i-lucide-mic-off" class="size-3" />
+                </template>
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" />
+                </template>
+              </UBadge>
             </div>
           </div>
 
@@ -806,8 +855,9 @@ defineShortcuts({
               </div>
             </div>
           </UCard>
+          </div>
         </div>
       </div>
-    </div>
+    </template>
   </UDashboardPanel>
 </template>
