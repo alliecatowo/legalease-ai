@@ -487,7 +487,7 @@ Return JSON with speaker names and confidence scores:"""
                 response = await client.post(
                     f"{ollama_url}/api/generate",
                     json={
-                        "model": "llama3.1:7b",
+                        "model": "llama3.1:latest",
                         "prompt": prompt,
                         "system": system_prompt,
                         "stream": False,
@@ -514,6 +514,8 @@ Return JSON with speaker names and confidence scores:"""
                         return {}
                 else:
                     logger.error(f"Ollama API error: {response.status_code}")
+                    logger.error(f"Ollama API response body: {response.text}")
+                    logger.error(f"Ollama API response headers: {response.headers}")
                     return {}
 
         except Exception as e:
