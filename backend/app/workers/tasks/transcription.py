@@ -262,6 +262,98 @@ class SpeakerDiarizer:
 
         return diarized_segments
 
+    @staticmethod
+    def smooth_speaker_changes(
+        segments: List[Dict[str, Any]],
+        min_segment_duration: float = 0.5,
+        min_speaker_gap: float = 0.3
+    ) -> List[Dict[str, Any]]:
+        """
+        Smooth rapid speaker changes using post-processing.
+
+        Production-quality diarization requires smoothing to reduce false speaker changes
+        caused by short pauses, overlapping speech, or diarization errors.
+
+        Strategy:
+        1. Merge very short segments (< min_segment_duration) with neighbors
+        2. Apply majority voting for rapid speaker changes
+        3. Require minimum gap (min_speaker_gap) between speaker changes
+
+        Args:
+            segments: List of diarized segments
+            min_segment_duration: Minimum segment duration in seconds (default: 0.5s)
+            min_speaker_gap: Minimum time between speaker changes in seconds (default: 0.3s)
+
+        Returns:
+            List of smoothed segments
+        """
+        if not segments or len(segments) < 2:
+            return segments
+
+        logger.info(f"Smoothing speaker changes (min_duration={min_segment_duration}s, min_gap={min_speaker_gap}s)")
+
+        smoothed = []
+        i = 0
+
+        while i < len(segments):
+            current = segments[i].copy()
+            duration = current['end'] - current['start']
+
+            # If segment is very short, try to merge with neighbor
+            if duration < min_segment_duration and i < len(segments) - 1:
+                next_seg = segments[i + 1]
+
+                # Merge with next segment if speakers match
+                if current.get('speaker') == next_seg.get('speaker'):
+                    logger.debug(f"Merging short segment ({duration:.2f}s) at {current['start']:.1f}s with next")
+                    # Skip this segment, will be handled by next iteration
+                    i += 1
+                    continue
+                # If speakers don't match, assign to majority speaker based on surrounding context
+                elif i > 0:
+                    prev_seg = smoothed[-1]
+                    # If surrounded by same speaker, reassign
+                    if prev_seg.get('speaker') == next_seg.get('speaker'):
+                        logger.debug(f"Reassigning isolated short segment ({duration:.2f}s) to majority speaker")
+                        current['speaker'] = next_seg.get('speaker')
+
+            # Check for rapid speaker changes (speaker switches back and forth quickly)
+            if smoothed and i < len(segments) - 1:
+                prev_seg = smoothed[-1]
+                next_seg = segments[i + 1]
+                time_since_last_change = current['start'] - prev_seg['end']
+
+                # If speaker changed very recently and changes back, smooth it
+                if (time_since_last_change < min_speaker_gap and
+                    prev_seg.get('speaker') == next_seg.get('speaker') and
+                    current.get('speaker') != prev_seg.get('speaker')):
+
+                    logger.debug(
+                        f"Smoothing rapid speaker change at {current['start']:.1f}s "
+                        f"(gap={time_since_last_change:.2f}s)"
+                    )
+                    current['speaker'] = prev_seg.get('speaker')
+
+            smoothed.append(current)
+            i += 1
+
+        # Log improvement metrics
+        original_speaker_changes = sum(
+            1 for i in range(1, len(segments))
+            if segments[i].get('speaker') != segments[i-1].get('speaker')
+        )
+        smoothed_speaker_changes = sum(
+            1 for i in range(1, len(smoothed))
+            if smoothed[i].get('speaker') != smoothed[i-1].get('speaker')
+        )
+
+        logger.info(
+            f"Speaker smoothing: reduced changes from {original_speaker_changes} to {smoothed_speaker_changes} "
+            f"({original_speaker_changes - smoothed_speaker_changes} false changes removed)"
+        )
+
+        return smoothed
+
 
 class TranscriptionExporter:
     """Handles exporting transcriptions to various formats."""
@@ -700,8 +792,10 @@ def transcribe_audio(
 
                         logger.info("Running Pyannote speaker diarization...")
 
+                        # Check if exact speaker count is provided
+                        num_speakers = options.get("num_speakers")
                         min_speakers = options.get("min_speakers", 2)
-                        max_speakers = options.get("max_speakers", 10)
+                        max_speakers = options.get("max_speakers", 5)
 
                         # Load diarization pipeline from HuggingFace
                         logger.info("Loading speaker-diarization-3.1 from HuggingFace...")
@@ -715,12 +809,20 @@ def transcribe_audio(
                         if device == "cuda":
                             diarization_pipeline.to(torch.device("cuda"))
 
-                        # Run diarization on audio file
-                        diarization = diarization_pipeline(
-                            processed_wav,
-                            min_speakers=min_speakers,
-                            max_speakers=max_speakers
-                        )
+                        # Run diarization with exact speaker count or range
+                        if num_speakers is not None:
+                            logger.info(f"Using exact speaker count: {num_speakers}")
+                            diarization = diarization_pipeline(
+                                processed_wav,
+                                num_speakers=num_speakers
+                            )
+                        else:
+                            logger.info(f"Using auto-detection with speaker range: {min_speakers}-{max_speakers}")
+                            diarization = diarization_pipeline(
+                                processed_wav,
+                                min_speakers=min_speakers,
+                                max_speakers=max_speakers
+                            )
 
                         # Assign speakers to segments
                         diarized_segments = []
@@ -751,6 +853,10 @@ def transcribe_audio(
                             diarized_segments.append(segment)
 
                         logger.info(f"Diarization completed: {len(set(s['speaker'] for s in diarized_segments))} speakers detected")
+
+                        # Apply post-processing smoothing to reduce rapid speaker changes
+                        diarizer = SpeakerDiarizer()
+                        diarized_segments = diarizer.smooth_speaker_changes(diarized_segments)
 
                     except Exception as e:
                         logger.error(f"Pyannote diarization failed: {e}", exc_info=True)

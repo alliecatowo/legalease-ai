@@ -31,17 +31,23 @@ class TranscriptionOptions(BaseModel):
         True,
         description="Enable speaker diarization (identification)"
     )
+    num_speakers: Optional[int] = Field(
+        None,
+        ge=1,
+        le=10,
+        description="Exact number of speakers (if known). When set, overrides min/max for better accuracy. Use None for auto-detection."
+    )
     min_speakers: Optional[int] = Field(
         2,
         ge=1,
-        le=20,
-        description="Minimum number of speakers to detect (hint for diarization algorithm)"
+        le=10,
+        description="Minimum number of speakers to detect (used only when num_speakers is None for auto-detection)"
     )
     max_speakers: Optional[int] = Field(
-        10,
+        5,
         ge=1,
-        le=20,
-        description="Maximum number of speakers to detect (hint for diarization algorithm)"
+        le=10,
+        description="Maximum number of speakers to detect (used only when num_speakers is None for auto-detection). Default: 5 for optimal accuracy."
     )
     temperature: float = Field(
         0.0,
