@@ -77,21 +77,27 @@ const case_ = computed(() => {
   }
 })
 
-// Transform documents
+// Transform documents (filter out audio/video files - they should be transcriptions)
 const documents = computed(() => {
   if (!documentsData.value?.documents) return []
 
-  return documentsData.value.documents.map((d: any) => ({
-    id: String(d.id),
-    filename: d.filename,
-    title: d.meta_data?.title || d.filename,
-    type: d.meta_data?.document_type || 'general',
-    size: d.size || 0,
-    uploadedAt: d.uploaded_at,
-    status: d.status || 'indexed',
-    summary: d.meta_data?.summary,
-    pageCount: d.meta_data?.page_count
-  }))
+  return documentsData.value.documents
+    .filter((d: any) => {
+      // Exclude audio/video files from documents list
+      const mimeType = d.mime_type || ''
+      return !mimeType.startsWith('audio/') && !mimeType.startsWith('video/')
+    })
+    .map((d: any) => ({
+      id: String(d.id),
+      filename: d.filename,
+      title: d.meta_data?.title || d.filename,
+      type: d.meta_data?.document_type || 'general',
+      size: d.size || 0,
+      uploadedAt: d.uploaded_at,
+      status: d.status || 'indexed',
+      summary: d.meta_data?.summary,
+      pageCount: d.meta_data?.page_count
+    }))
 })
 
 // Status configuration
@@ -413,8 +419,8 @@ function getRelativeTime(dateStr: string): string {
       </UDashboardNavbar>
     </template>
 
-    <div class="overflow-y-auto h-[calc(100vh-64px)]">
-      <div class="max-w-7xl mx-auto p-6 space-y-6">
+    <template #body>
+      <div class="max-w-7xl mx-auto space-y-6">
         <!-- Loading State -->
         <div v-if="loading" class="flex items-center justify-center py-20">
           <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin" />
@@ -823,13 +829,15 @@ function getRelativeTime(dateStr: string): string {
           </div>
         </template>
       </div>
-    </div>
+    </template>
+  </UDashboardPanel>
 
-    <!-- Add Document Modal -->
-    <UModal
-      v-model:open="showAddDocumentModal"
-      title="Add Documents to Case"
-    >
+  <!-- Add Document Modal -->
+    <ClientOnly>
+      <UModal
+        v-model:open="showAddDocumentModal"
+        title="Add Documents to Case"
+      >
       <template #body>
         <div class="space-y-4">
           <!-- File Upload Component -->
@@ -872,9 +880,11 @@ function getRelativeTime(dateStr: string): string {
         </div>
       </template>
     </UModal>
+  </ClientOnly>
 
     <!-- Archive Confirmation Modal -->
-    <UModal
+    <ClientOnly>
+      <UModal
       v-model:open="showArchiveConfirm"
       title="Archive Case"
       icon="i-lucide-archive"
@@ -912,5 +922,5 @@ function getRelativeTime(dateStr: string): string {
         </div>
       </template>
     </UModal>
-  </UDashboardPanel>
+  </ClientOnly>
 </template>

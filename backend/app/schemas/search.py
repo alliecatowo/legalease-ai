@@ -237,7 +237,7 @@ class SearchQuery(BaseModel):
     def validate_chunk_types(cls, v):
         """Validate chunk types against allowed values."""
         if v is not None:
-            allowed_types = {"summary", "section", "microblock", "paragraph", "page"}
+            allowed_types = {"summary", "section", "microblock", "paragraph", "page", "transcript_segment"}
             invalid_types = set(v) - allowed_types
             if invalid_types:
                 raise ValueError(f"Invalid chunk types: {invalid_types}. Allowed: {allowed_types}")
@@ -347,7 +347,7 @@ class HybridSearchRequest(BaseModel):
     def validate_chunk_types(cls, v):
         """Validate chunk types against allowed values."""
         if v is not None:
-            allowed_types = {"summary", "section", "microblock", "paragraph", "page"}
+            allowed_types = {"summary", "section", "microblock", "paragraph", "page", "transcript_segment"}
             invalid_types = set(v) - allowed_types
             if invalid_types:
                 raise ValueError(f"Invalid chunk types: {invalid_types}. Allowed: {allowed_types}")
@@ -443,7 +443,7 @@ class DocumentChunk(BaseModel):
     @classmethod
     def validate_chunk_type(cls, v):
         """Validate chunk type."""
-        allowed_types = {"summary", "section", "microblock", "paragraph", "page"}
+        allowed_types = {"summary", "section", "microblock", "paragraph", "page", "transcript_segment"}
         if v not in allowed_types:
             raise ValueError(f"Invalid chunk type: {v}. Allowed: {allowed_types}")
         return v
