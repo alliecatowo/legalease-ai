@@ -18,6 +18,8 @@ from app.schemas.transcription import (
     TranscriptionUploadResponse,
     TranscriptionFormat,
     TranscriptionOptions,
+    UpdateSpeakerRequest,
+    SpeakerResponse,
 )
 from app.services.transcription_service import TranscriptionService
 from app.workers.tasks.summarization import (
@@ -686,3 +688,69 @@ def get_key_moments(
     )
 
     return KeyMomentsResponse(**result)
+
+
+# ===== Speaker Management Endpoints =====
+
+
+@router.patch(
+    "/transcriptions/{transcription_id}/speakers/{speaker_id}",
+    response_model=SpeakerResponse,
+    summary="Update speaker information",
+    description="Update speaker name and role. Changes are reflected across all segments using this speaker.",
+)
+def update_speaker(
+    transcription_id: int = Path(..., description="ID of the transcription"),
+    speaker_id: str = Path(..., description="Speaker identifier (e.g., SPEAKER_00)"),
+    request: UpdateSpeakerRequest = Body(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Update speaker information (name and role).
+
+    Args:
+        transcription_id: ID of the transcription
+        speaker_id: Speaker identifier
+        request: Update request with name and role
+        db: Database session
+
+    Returns:
+        SpeakerResponse: Updated speaker information
+    """
+    logger.info(f"Updating speaker {speaker_id} in transcription {transcription_id}")
+
+    # Get transcription
+    transcription = TranscriptionService.get_transcription(transcription_id, db)
+
+    # Find speaker in speakers list
+    speaker_found = False
+    for speaker in transcription.speakers:
+        if speaker.get('id') == speaker_id:
+            speaker['name'] = request.name
+            if request.role is not None:
+                speaker['role'] = request.role
+            speaker_found = True
+            break
+
+    if not speaker_found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Speaker {speaker_id} not found in transcription {transcription_id}"
+        )
+
+    # Mark as modified and commit
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(transcription, "speakers")
+    db.commit()
+    db.refresh(transcription)
+
+    logger.info(f"Successfully updated speaker {speaker_id}")
+
+    # Return updated speaker
+    updated_speaker = next(s for s in transcription.speakers if s.get('id') == speaker_id)
+    return SpeakerResponse(
+        speaker_id=updated_speaker.get('id'),
+        name=updated_speaker.get('name'),
+        role=updated_speaker.get('role'),
+        color=updated_speaker.get('color')
+    )

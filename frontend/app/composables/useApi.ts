@@ -105,7 +105,14 @@ export const useApi = () => {
           body: { is_key_moment: isKeyMoment }
         }),
       getKeyMoments: (transcriptionId: number) =>
-        api(`/api/v1/transcriptions/${transcriptionId}/key-moments`)
+        api(`/api/v1/transcriptions/${transcriptionId}/key-moments`),
+
+      // Speakers
+      updateSpeaker: (transcriptionId: number, speakerId: string, updates: { name: string, role?: string }) =>
+        api(`/api/v1/transcriptions/${transcriptionId}/speakers/${speakerId}`, {
+          method: 'PATCH',
+          body: updates
+        })
     },
 
     // Stats & Analytics
