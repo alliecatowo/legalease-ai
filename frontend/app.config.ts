@@ -21,7 +21,9 @@ export default defineAppConfig({
       loading: 'i-lucide-loader-circle',
       external: 'i-lucide-external-link',
       plus: 'i-lucide-plus',
-      minus: 'i-lucide-minus'
+      minus: 'i-lucide-minus',
+      menu: 'i-lucide-menu',
+      panelClose: 'i-lucide-panel-left-close'
     }
   }
 })
