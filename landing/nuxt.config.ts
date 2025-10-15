@@ -17,6 +17,7 @@ export default defineNuxtConfig({
 
   app: {
     baseURL: process.env.NUXT_APP_BASE_URL || '/',
+    cdnURL: process.env.NUXT_APP_BASE_URL || '/',
     head: {
       link: [
         { rel: 'icon', type: 'image/x-icon', href: `${process.env.NUXT_APP_BASE_URL || ''}/favicon.ico` }
@@ -33,6 +34,7 @@ export default defineNuxtConfig({
   ssr: true,
 
   nitro: {
+    baseURL: process.env.NUXT_APP_BASE_URL || '/',
     prerender: {
       routes: [
         '/'
@@ -40,6 +42,10 @@ export default defineNuxtConfig({
       crawlLinks: true,
       failOnError: false
     }
+  },
+
+  vite: {
+    base: process.env.NUXT_APP_BASE_URL || '/'
   },
 
   eslint: {
