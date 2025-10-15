@@ -16,11 +16,11 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   app: {
-    baseURL: process.env.NUXT_APP_BASE_URL || '/',
-    cdnURL: process.env.NUXT_APP_BASE_URL || '/',
+    baseURL: process.env.NODE_ENV === 'production' ? '/legalease-ai/' : '/',
+    cdnURL: process.env.NODE_ENV === 'production' ? '/legalease-ai/' : '/',
     head: {
       link: [
-        { rel: 'icon', type: 'image/x-icon', href: `${process.env.NUXT_APP_BASE_URL || ''}/favicon.ico` }
+        { rel: 'icon', type: 'image/x-icon', href: (process.env.NODE_ENV === 'production' ? '/legalease-ai' : '') + '/favicon.ico' }
       ]
     }
   },
@@ -35,7 +35,7 @@ export default defineNuxtConfig({
 
   nitro: {
     preset: 'static',
-    baseURL: process.env.NUXT_APP_BASE_URL || '/',
+    baseURL: process.env.NODE_ENV === 'production' ? '/legalease-ai/' : '/',
     prerender: {
       routes: [
         '/'
@@ -46,7 +46,7 @@ export default defineNuxtConfig({
   },
 
   vite: {
-    base: process.env.NUXT_APP_BASE_URL || '/'
+    base: process.env.NODE_ENV === 'production' ? '/legalease-ai/' : '/'
   },
 
   eslint: {
