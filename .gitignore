@@ -28,3 +28,8 @@ build/
 
 # Dependencies
 node_modules/
+
+# ML Models and binaries
+*.bin
+backend/models/pyannote/
+backend/models/*.bin
