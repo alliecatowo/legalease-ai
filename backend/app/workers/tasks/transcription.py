@@ -9,6 +9,9 @@ import json
 import logging
 import tempfile
 import subprocess
+import uuid
+import re
+import httpx
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -120,7 +123,10 @@ class WhisperTranscriber:
     def transcribe(
         self,
         audio_path: str,
-        language: str = "en",
+        language: Optional[str] = None,
+        task: str = "transcribe",
+        temperature: float = 0.0,
+        initial_prompt: Optional[str] = None,
         task_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -128,7 +134,10 @@ class WhisperTranscriber:
 
         Args:
             audio_path: Path to audio file
-            language: Language code (e.g., 'en', 'es')
+            language: Language code (e.g., 'en', 'es') or None for auto-detect
+            task: 'transcribe' for same-language or 'translate' for English translation
+            temperature: Sampling temperature (0.0-1.0)
+            initial_prompt: Optional context prompt
             task_id: Optional Celery task ID for progress updates
 
         Returns:
@@ -139,24 +148,36 @@ class WhisperTranscriber:
 
             client = OpenAI(api_key=self.api_key)
 
-            logger.info(f"Starting Whisper API transcription for {audio_path}")
+            logger.info(f"Starting Whisper API transcription for {audio_path} (task={task}, language={language})")
 
             with open(audio_path, 'rb') as audio_file:
-                # Use Whisper API with timestamp granularities
-                response = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language=language,
-                    response_format="verbose_json",
-                    timestamp_granularities=["segment", "word"]
-                )
+                # Build API parameters
+                api_params = {
+                    "model": "whisper-1",
+                    "file": audio_file,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities": ["segment", "word"],
+                    "temperature": temperature,
+                }
+
+                # Add optional parameters
+                if language and language != "auto":
+                    api_params["language"] = language
+                if initial_prompt:
+                    api_params["prompt"] = initial_prompt
+
+                # Use transcriptions or translations API based on task
+                if task == "translate":
+                    response = client.audio.translations.create(**api_params)
+                else:
+                    response = client.audio.transcriptions.create(**api_params)
 
             # Parse response into segments format
             segments = []
             if hasattr(response, 'segments') and response.segments:
                 for idx, segment in enumerate(response.segments):
                     seg_data = {
-                        'id': idx,
+                        'id': str(uuid.uuid4()),  # Generate UUID for segment
                         'start': segment.get('start', 0.0),
                         'end': segment.get('end', 0.0),
                         'text': segment.get('text', '').strip(),
@@ -176,7 +197,7 @@ class WhisperTranscriber:
             else:
                 # Fallback: create single segment from text
                 segments = [{
-                    'id': 0,
+                    'id': str(uuid.uuid4()),  # Generate UUID for segment
                     'start': 0.0,
                     'end': 0.0,
                     'text': response.text,
@@ -242,6 +263,333 @@ class SpeakerDiarizer:
             diarized_segments.append(segment_copy)
 
         return diarized_segments
+
+    @staticmethod
+    def smooth_speaker_changes(
+        segments: List[Dict[str, Any]],
+        min_segment_duration: float = 0.5,
+        min_speaker_gap: float = 0.3
+    ) -> List[Dict[str, Any]]:
+        """
+        Smooth rapid speaker changes using post-processing.
+
+        Production-quality diarization requires smoothing to reduce false speaker changes
+        caused by short pauses, overlapping speech, or diarization errors.
+
+        Strategy:
+        1. Merge very short segments (< min_segment_duration) with neighbors
+        2. Apply majority voting for rapid speaker changes
+        3. Require minimum gap (min_speaker_gap) between speaker changes
+
+        Args:
+            segments: List of diarized segments
+            min_segment_duration: Minimum segment duration in seconds (default: 0.5s)
+            min_speaker_gap: Minimum time between speaker changes in seconds (default: 0.3s)
+
+        Returns:
+            List of smoothed segments
+        """
+        if not segments or len(segments) < 2:
+            return segments
+
+        logger.info(f"Smoothing speaker changes (min_duration={min_segment_duration}s, min_gap={min_speaker_gap}s)")
+
+        smoothed = []
+        i = 0
+
+        while i < len(segments):
+            current = segments[i].copy()
+            duration = current['end'] - current['start']
+
+            # If segment is very short, try to merge with neighbor
+            if duration < min_segment_duration and i < len(segments) - 1:
+                next_seg = segments[i + 1]
+
+                # Merge with next segment if speakers match
+                if current.get('speaker') == next_seg.get('speaker'):
+                    logger.debug(f"Merging short segment ({duration:.2f}s) at {current['start']:.1f}s with next")
+                    # Skip this segment, will be handled by next iteration
+                    i += 1
+                    continue
+                # If speakers don't match, assign to majority speaker based on surrounding context
+                elif i > 0:
+                    prev_seg = smoothed[-1]
+                    # If surrounded by same speaker, reassign
+                    if prev_seg.get('speaker') == next_seg.get('speaker'):
+                        logger.debug(f"Reassigning isolated short segment ({duration:.2f}s) to majority speaker")
+                        current['speaker'] = next_seg.get('speaker')
+
+            # Check for rapid speaker changes (speaker switches back and forth quickly)
+            if smoothed and i < len(segments) - 1:
+                prev_seg = smoothed[-1]
+                next_seg = segments[i + 1]
+                time_since_last_change = current['start'] - prev_seg['end']
+
+                # If speaker changed very recently and changes back, smooth it
+                if (time_since_last_change < min_speaker_gap and
+                    prev_seg.get('speaker') == next_seg.get('speaker') and
+                    current.get('speaker') != prev_seg.get('speaker')):
+
+                    logger.debug(
+                        f"Smoothing rapid speaker change at {current['start']:.1f}s "
+                        f"(gap={time_since_last_change:.2f}s)"
+                    )
+                    current['speaker'] = prev_seg.get('speaker')
+
+            smoothed.append(current)
+            i += 1
+
+        # Log improvement metrics
+        original_speaker_changes = sum(
+            1 for i in range(1, len(segments))
+            if segments[i].get('speaker') != segments[i-1].get('speaker')
+        )
+        smoothed_speaker_changes = sum(
+            1 for i in range(1, len(smoothed))
+            if smoothed[i].get('speaker') != smoothed[i-1].get('speaker')
+        )
+
+        logger.info(
+            f"Speaker smoothing: reduced changes from {original_speaker_changes} to {smoothed_speaker_changes} "
+            f"({original_speaker_changes - smoothed_speaker_changes} false changes removed)"
+        )
+
+        return smoothed
+
+
+class SpeakerNameInferencer:
+    """Handles AI-powered speaker name inference from conversation content."""
+
+    @staticmethod
+    def extract_name_patterns(segments: List[Dict[str, Any]], filename: Optional[str] = None) -> Dict[str, List[str]]:
+        """
+        Extract potential speaker names using pattern matching.
+
+        Patterns:
+        - "Hi [NAME]" / "Hello [NAME]"
+        - "I'm [NAME]" / "My name is [NAME]"
+        - "[NAME]?" / "[NAME]!"
+        - Filename patterns like "jane_mark_conversation.mp3"
+
+        Args:
+            segments: List of transcription segments
+            filename: Optional filename to extract names from
+
+        Returns:
+            Dict mapping potential names to their sources
+        """
+        patterns = {
+            'greeting': r'\b(?:hi|hello|hey)\s+([A-Z][a-z]+)\b',
+            'introduction': r'\b(?:I\'m|I am|my name is|this is)\s+([A-Z][a-z]+)\b',
+            'direct_address': r'\b([A-Z][a-z]+)[?!]\b',
+            'possessive': r'\b([A-Z][a-z]+)\'s\b'
+        }
+
+        potential_names = {}
+
+        # Extract from segments
+        for segment in segments[:20]:  # Check first 20 segments
+            text = segment.get('text', '')
+
+            for pattern_type, pattern in patterns.items():
+                matches = re.findall(pattern, text)
+                for name in matches:
+                    # Filter out common words that might match
+                    if name.lower() not in ['i', 'you', 'we', 'they', 'okay', 'yeah', 'sure', 'right', 'well']:
+                        if name not in potential_names:
+                            potential_names[name] = []
+                        potential_names[name].append(f"{pattern_type}: '{text[:50]}...'")
+
+        # Extract from filename
+        if filename:
+            # Pattern: "jane_mark_conversation.mp3" or "john-doe-interview.wav"
+            filename_clean = re.sub(r'\.(mp3|wav|m4a|mp4|avi|mov)$', '', filename.lower())
+            filename_parts = re.split(r'[_\-\s]+', filename_clean)
+
+            # Look for name-like parts (capitalized words)
+            for part in filename_parts:
+                if len(part) > 2 and part not in ['conversation', 'interview', 'call', 'meeting', 'recording', 'audio', 'video']:
+                    name_capitalized = part.capitalize()
+                    if name_capitalized not in potential_names:
+                        potential_names[name_capitalized] = []
+                    potential_names[name_capitalized].append(f"filename: '{filename}'")
+
+        logger.info(f"Extracted {len(potential_names)} potential names from patterns: {list(potential_names.keys())}")
+        return potential_names
+
+    @staticmethod
+    async def infer_names_with_llm(
+        segments: List[Dict[str, Any]],
+        speakers: List[str],
+        potential_names: Dict[str, List[str]],
+        ollama_url: str = "http://localhost:11434"
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Use LLM to infer speaker names from conversation context.
+
+        Args:
+            segments: List of transcription segments
+            speakers: List of unique speaker IDs
+            potential_names: Dictionary of potential names from pattern matching
+            ollama_url: Ollama API URL
+
+        Returns:
+            Dict mapping speaker IDs to inferred names with confidence scores
+        """
+        try:
+            # Prepare conversation context (first ~10 segments)
+            context_segments = segments[:min(10, len(segments))]
+            conversation_text = "\n".join([
+                f"{seg.get('speaker', 'UNKNOWN')}: {seg.get('text', '')}"
+                for seg in context_segments
+            ])
+
+            # Build prompt
+            system_prompt = """You are an AI assistant that identifies speakers in conversations.
+Analyze the conversation and infer the most likely names for each speaker.
+Return ONLY valid JSON with no additional text or markdown formatting.
+
+Response format:
+{
+  "SPEAKER_00": {
+    "name": "John",
+    "confidence": 0.85,
+    "reasoning": "Speaker introduces themselves as John in the first segment"
+  },
+  "SPEAKER_01": {
+    "name": "Sarah",
+    "confidence": 0.75,
+    "reasoning": "Other speaker addresses them as Sarah"
+  }
+}
+
+Guidelines:
+- Only include speakers you can confidently identify
+- Confidence score: 0.0 to 1.0 (only suggest names with confidence > 0.8)
+- Use first names only unless full name is clear
+- If unsure, do not include that speaker"""
+
+            potential_names_str = ""
+            if potential_names:
+                potential_names_str = f"\n\nPotential names found: {', '.join(potential_names.keys())}"
+
+            prompt = f"""Analyze this conversation and identify the speakers:
+
+{conversation_text}
+{potential_names_str}
+
+Speakers to identify: {', '.join(speakers)}
+
+Return JSON with speaker names and confidence scores:"""
+
+            # Call Ollama API
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{ollama_url}/api/generate",
+                    json={
+                        "model": "llama3.1:latest",
+                        "prompt": prompt,
+                        "system": system_prompt,
+                        "stream": False,
+                        "format": "json",
+                        "options": {
+                            "temperature": 0.1,  # Low temperature for consistent results
+                            "top_p": 0.9
+                        }
+                    }
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    response_text = result.get('response', '{}')
+
+                    # Parse JSON response
+                    try:
+                        inferred_names = json.loads(response_text)
+                        logger.info(f"LLM inference result: {inferred_names}")
+                        return inferred_names
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse LLM JSON response: {e}")
+                        logger.debug(f"Raw response: {response_text}")
+                        return {}
+                else:
+                    logger.error(f"Ollama API error: {response.status_code}")
+                    logger.error(f"Ollama API response body: {response.text}")
+                    logger.error(f"Ollama API response headers: {response.headers}")
+                    return {}
+
+        except Exception as e:
+            logger.error(f"LLM name inference failed: {e}", exc_info=True)
+            return {}
+
+    @staticmethod
+    async def infer_speaker_names(
+        segments: List[Dict[str, Any]],
+        speakers: Dict[str, Dict[str, Any]],
+        filename: Optional[str] = None,
+        ollama_url: str = "http://localhost:11434"
+    ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+        """
+        Main method to infer speaker names using pattern matching and LLM.
+
+        Args:
+            segments: List of transcription segments
+            speakers: Dictionary of speaker information
+            filename: Optional filename to extract names from
+            ollama_url: Ollama API URL
+
+        Returns:
+            Tuple of (updated_speakers, metadata with inference info)
+        """
+        logger.info("Starting speaker name inference...")
+
+        # Step 1: Extract potential names using pattern matching
+        potential_names = SpeakerNameInferencer.extract_name_patterns(segments, filename)
+
+        # Step 2: Use LLM to infer names with confidence scores
+        speaker_ids = list(speakers.keys())
+        inferred_names = await SpeakerNameInferencer.infer_names_with_llm(
+            segments,
+            speaker_ids,
+            potential_names,
+            ollama_url
+        )
+
+        # Step 3: Apply inferred names if confidence > 0.8
+        updated_speakers = speakers.copy()
+        metadata = {
+            'inference_performed': True,
+            'potential_names': potential_names,
+            'llm_inferences': inferred_names,
+            'applied_names': {}
+        }
+
+        for speaker_id, inference in inferred_names.items():
+            confidence = inference.get('confidence', 0.0)
+            inferred_name = inference.get('name', '')
+            reasoning = inference.get('reasoning', '')
+
+            if speaker_id in updated_speakers:
+                if confidence > 0.8 and inferred_name:
+                    # Apply inferred name
+                    old_name = updated_speakers[speaker_id].get('name', speaker_id)
+                    updated_speakers[speaker_id]['name'] = inferred_name
+                    metadata['applied_names'][speaker_id] = {
+                        'old_name': old_name,
+                        'new_name': inferred_name,
+                        'confidence': confidence,
+                        'reasoning': reasoning
+                    }
+                    logger.info(f"Applied inferred name for {speaker_id}: '{inferred_name}' (confidence: {confidence:.2f})")
+                else:
+                    logger.info(f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.8")
+
+        if metadata['applied_names']:
+            logger.info(f"Successfully inferred {len(metadata['applied_names'])} speaker names")
+        else:
+            logger.info("No speaker names met confidence threshold (0.8), using default names")
+
+        return updated_speakers, metadata
 
 
 class TranscriptionExporter:
@@ -480,7 +828,7 @@ class TranscriptionExporter:
 def transcribe_audio(
     self,
     document_id: int,
-    language: str = "en"
+    options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Transcribe an audio/video file to text with timestamps and speaker diarization.
@@ -489,7 +837,7 @@ def transcribe_audio(
     1. Download audio/video from MinIO
     2. Preprocess with FFmpeg (convert to 16kHz mono WAV)
     3. Transcribe with OpenAI Whisper API
-    4. Diarize speakers (simple heuristic-based)
+    4. Diarize speakers (optional, based on options)
     5. Export to DOCX, SRT, VTT, JSON formats
     6. Upload exports to MinIO
     7. Update transcription record in PostgreSQL
@@ -497,13 +845,26 @@ def transcribe_audio(
 
     Args:
         document_id: ID of the document to transcribe
-        language: Language code for transcription (default: "en")
+        options: Optional dict containing transcription configuration:
+            - language: Language code or None for auto-detect
+            - task: 'transcribe' or 'translate'
+            - enable_diarization: Enable speaker identification
+            - temperature: Sampling temperature
+            - initial_prompt: Optional context prompt
 
     Returns:
         Dict containing transcription status and results
     """
     db = SessionLocal()
     temp_dir = None
+
+    # Parse options with defaults
+    options = options or {}
+    language = options.get("language")
+    task = options.get("task", "transcribe")
+    enable_diarization = options.get("enable_diarization", True)
+    temperature = options.get("temperature", 0.0)
+    initial_prompt = options.get("initial_prompt")
 
     try:
         # Update task state to STARTED
@@ -571,39 +932,267 @@ def transcribe_audio(
             meta={'status': 'Transcribing audio', 'progress': 30}
         )
 
-        logger.info("Starting Whisper transcription")
-        transcriber = WhisperTranscriber()
-        transcription_result = transcriber.transcribe(
-            processed_wav,
-            language=language,
-            task_id=self.request.id
-        )
+        # Use self-hosted transcription with Pyannote diarization (NO HuggingFace token needed)
+        logger.info(f"Starting self-hosted transcription (language={language or 'auto'}, diarization={enable_diarization})")
 
-        segments = transcription_result['segments']
-        full_text = transcription_result['text']
+        try:
+            import torch
+            from app.services.model_manager import get_pyannote_model_paths
+            from app.services.device_manager import get_device, get_compute_type
 
-        logger.info(f"Transcription completed: {len(segments)} segments, {len(full_text)} characters")
+            # Get device and compute type (supports both CUDA and ROCm)
+            device = get_device()
+            compute_type = get_compute_type(prefer_fp16=True)
 
-        # Step 5: Diarize speakers
-        self.update_state(
-            state='PROCESSING',
-            meta={'status': 'Identifying speakers', 'progress': 60}
-        )
+            logger.info(f"Using device: {device} with compute type: {compute_type}")
 
-        logger.info("Performing speaker diarization")
-        diarizer = SpeakerDiarizer()
-        diarized_segments = diarizer.diarize_segments(segments)
+            # Check if HF token is available for Pyannote diarization
+            hf_token = os.getenv("HF_TOKEN")
+            pyannote_available = hf_token is not None and enable_diarization
 
-        # Extract speaker information
+            if pyannote_available:
+                logger.info("HuggingFace token available - will use Pyannote for speaker diarization")
+            elif enable_diarization:
+                logger.warning("No HF_TOKEN found - will use simple heuristic diarization")
+
+            # Try WhisperX for transcription + alignment (faster, more accurate)
+            try:
+                from app.workers.pipelines.whisperx_pipeline import WhisperXPipeline
+
+                min_speakers = options.get("min_speakers", 2)
+                max_speakers = options.get("max_speakers", 10)
+
+                # Initialize WhisperX WITHOUT diarization (we'll use Pyannote directly)
+                pipeline = WhisperXPipeline(
+                    model_name="medium",  # Medium model (~5GB VRAM, good balance of speed/quality)
+                    device=device,
+                    compute_type=compute_type,
+                    language=language if language and language != "auto" else None,
+                    hf_token=None  # No HF token needed!
+                )
+
+                # Transcribe with alignment only (no diarization yet)
+                result = pipeline.transcribe(
+                    audio_path=processed_wav,
+                    enable_alignment=True,
+                    enable_diarization=False,  # We'll do this separately
+                    batch_size=16
+                )
+
+                # Convert WhisperX result to our format and add UUIDs
+                segments = []
+                for seg in result.segments:
+                    seg_dict = seg.to_dict()
+                    seg_dict['id'] = str(uuid.uuid4())  # Add unique ID for each segment
+                    segments.append(seg_dict)
+
+                full_text = result.get_full_text()
+                detected_language = result.language
+
+                logger.info(f"WhisperX transcription completed: {len(segments)} segments, language={detected_language}")
+
+                # Cleanup WhisperX models from memory
+                pipeline.cleanup()
+
+            except ImportError:
+                logger.info("WhisperX not available, using OpenAI Whisper API")
+
+                # Fallback to OpenAI Whisper API
+                transcriber = WhisperTranscriber()
+                transcription_result = transcriber.transcribe(
+                    processed_wav,
+                    language=language,
+                    task=task,
+                    temperature=temperature,
+                    initial_prompt=initial_prompt,
+                    task_id=self.request.id
+                )
+
+                segments = transcription_result['segments']
+                full_text = transcription_result['text']
+                detected_language = transcription_result.get('language', language)
+
+                logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+
+            # Step 5: Speaker diarization (if enabled)
+            if enable_diarization:
+                self.update_state(
+                    state='PROCESSING',
+                    meta={'status': 'Identifying speakers', 'progress': 60}
+                )
+
+                # Try Pyannote if HF token available, otherwise use simple diarization
+                if pyannote_available:
+                    try:
+                        # Use Pyannote.audio directly with HuggingFace models
+                        from pyannote.audio import Pipeline
+
+                        logger.info("Running Pyannote speaker diarization...")
+
+                        # Check if exact speaker count is provided
+                        num_speakers = options.get("num_speakers")
+                        min_speakers = options.get("min_speakers", 2)
+                        max_speakers = options.get("max_speakers", 5)
+
+                        # Load diarization pipeline from HuggingFace
+                        logger.info("Loading speaker-diarization-3.1 from HuggingFace...")
+                        diarization_pipeline = Pipeline.from_pretrained(
+                            "pyannote/speaker-diarization-3.1",
+                            use_auth_token=hf_token
+                        )
+                        logger.info("Pyannote pipeline loaded successfully")
+
+                        # Move to GPU if available
+                        if device == "cuda":
+                            diarization_pipeline.to(torch.device("cuda"))
+
+                        # Run diarization with exact speaker count or range
+                        if num_speakers is not None:
+                            logger.info(f"Using exact speaker count: {num_speakers}")
+                            diarization = diarization_pipeline(
+                                processed_wav,
+                                num_speakers=num_speakers
+                            )
+                        else:
+                            logger.info(f"Using auto-detection with speaker range: {min_speakers}-{max_speakers}")
+                            diarization = diarization_pipeline(
+                                processed_wav,
+                                min_speakers=min_speakers,
+                                max_speakers=max_speakers
+                            )
+
+                        # Assign speakers to segments
+                        diarized_segments = []
+                        for segment in segments:
+                            # Find overlapping speaker from diarization
+                            segment_start = segment['start']
+                            segment_end = segment['end']
+
+                            # Find most common speaker in this segment
+                            speaker_times = {}
+                            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                                # Calculate overlap with this segment
+                                overlap_start = max(segment_start, turn.start)
+                                overlap_end = min(segment_end, turn.end)
+                                overlap_duration = max(0, overlap_end - overlap_start)
+
+                                if overlap_duration > 0:
+                                    speaker_times[speaker] = speaker_times.get(speaker, 0) + overlap_duration
+
+                            # Assign speaker with most overlap
+                            if speaker_times:
+                                assigned_speaker = max(speaker_times, key=speaker_times.get)
+                                # Pyannote returns speaker labels like "SPEAKER_00", use directly
+                                segment['speaker'] = assigned_speaker if assigned_speaker.startswith("SPEAKER_") else f"SPEAKER_{assigned_speaker}"
+                            else:
+                                segment['speaker'] = "SPEAKER_00"
+
+                            diarized_segments.append(segment)
+
+                        logger.info(f"Diarization completed: {len(set(s['speaker'] for s in diarized_segments))} speakers detected")
+
+                        # Apply post-processing smoothing to reduce rapid speaker changes
+                        diarizer = SpeakerDiarizer()
+                        diarized_segments = diarizer.smooth_speaker_changes(diarized_segments)
+
+                    except Exception as e:
+                        logger.error(f"Pyannote diarization failed: {e}", exc_info=True)
+                        logger.warning("Falling back to simple heuristic diarization")
+
+                        diarizer = SpeakerDiarizer()
+                        diarized_segments = diarizer.diarize_segments(segments)
+                else:
+                    # Pyannote not available, use simple heuristic diarization
+                    logger.info("Using simple heuristic diarization (no HF token or diarization disabled)")
+                    diarizer = SpeakerDiarizer()
+                    diarized_segments = diarizer.diarize_segments(segments)
+            else:
+                logger.info("Speaker diarization disabled")
+                diarized_segments = segments
+
+        except Exception as e:
+            logger.error(f"Self-hosted transcription failed: {e}", exc_info=True)
+            raise TranscriptionError(f"Transcription failed: {str(e)}")
+
+        # Extract speaker information and generate speaker colors
+        def generate_speaker_color(index: int) -> str:
+            """Generate a distinct color for each speaker."""
+            colors = [
+                "#3B82F6",  # Blue
+                "#EF4444",  # Red
+                "#10B981",  # Green
+                "#F59E0B",  # Amber
+                "#8B5CF6",  # Purple
+                "#EC4899",  # Pink
+                "#14B8A6",  # Teal
+                "#F97316",  # Orange
+                "#6366F1",  # Indigo
+                "#84CC16",  # Lime
+            ]
+            return colors[index % len(colors)]
+
         speakers = {}
+        speaker_index = 0
         for segment in diarized_segments:
-            speaker = segment.get('speaker', 'SPEAKER_01')
-            if speaker not in speakers:
-                speakers[speaker] = {
-                    'id': speaker,
+            speaker_id = segment.get('speaker', 'SPEAKER_01')
+            if speaker_id not in speakers:
+                # Generate human-readable name from speaker ID
+                # Use the current speaker_index + 1 for consistent numbering
+                speaker_name = f"Speaker {speaker_index + 1}"
+
+                speakers[speaker_id] = {
+                    'id': speaker_id,
+                    'name': speaker_name,
+                    'color': generate_speaker_color(speaker_index),
                     'segments_count': 0
                 }
-            speakers[speaker]['segments_count'] += 1
+                speaker_index += 1
+            speakers[speaker_id]['segments_count'] += 1
+
+        # Step 5.5: AI-powered speaker name inference (if enabled)
+        inference_metadata = None
+        enable_name_inference = options.get("enable_name_inference", True)
+
+        if enable_name_inference and len(speakers) > 0:
+            try:
+                self.update_state(
+                    state='PROCESSING',
+                    meta={'status': 'Inferring speaker names with AI', 'progress': 65}
+                )
+
+                # Get Ollama URL from environment
+                ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+                # Run async inference in sync context using asyncio
+                import asyncio
+
+                # Create event loop if needed
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                # Perform inference
+                inferencer = SpeakerNameInferencer()
+                speakers, inference_metadata = loop.run_until_complete(
+                    inferencer.infer_speaker_names(
+                        segments=diarized_segments,
+                        speakers=speakers,
+                        filename=document.filename,
+                        ollama_url=ollama_url
+                    )
+                )
+
+                logger.info(f"Speaker name inference completed with metadata: {inference_metadata}")
+
+            except Exception as e:
+                logger.warning(f"Speaker name inference failed, using default names: {e}")
+                inference_metadata = {
+                    'inference_performed': True,
+                    'error': str(e),
+                    'applied_names': {}
+                }
 
         # Step 6: Export to multiple formats
         self.update_state(
@@ -614,7 +1203,7 @@ def transcribe_audio(
         logger.info("Exporting transcription to multiple formats")
         exporter = TranscriptionExporter()
 
-        # Prepare metadata
+        # Prepare metadata (include inference metadata if available)
         metadata = {
             'document_id': document_id,
             'filename': document.filename,
@@ -623,6 +1212,10 @@ def transcribe_audio(
             'segments_count': len(diarized_segments),
             'speakers_count': len(speakers)
         }
+
+        # Add inference metadata if name inference was performed
+        if inference_metadata:
+            metadata['speaker_name_inference'] = inference_metadata
 
         # Export paths
         docx_path = os.path.join(temp_dir, "transcription.docx")
@@ -684,47 +1277,58 @@ def transcribe_audio(
 
         logger.info("Updating database with transcription results")
 
-        # Check if transcription record exists
+        # Find existing transcription (should always exist now)
         transcription = db.query(Transcription).filter(
             Transcription.document_id == document_id
         ).first()
 
         if not transcription:
-            # Create new transcription record
-            transcription = Transcription(
-                document_id=document_id,
-                format=ext.lstrip('.') if ext else None,
-                duration=duration,
-                speakers=list(speakers.values()),
-                segments=diarized_segments
-            )
+            # This should not happen with new flow, but handle gracefully
+            logger.warning(f"Transcription not found for document {document_id}, creating new one")
+            transcription = Transcription(document_id=document_id)
             db.add(transcription)
-        else:
-            # Update existing record
-            transcription.format = ext.lstrip('.') if ext else None
-            transcription.duration = duration
-            transcription.speakers = list(speakers.values())
-            transcription.segments = diarized_segments
+
+        # Update transcription fields
+        transcription.format = ext.lstrip('.') if ext else None
+        transcription.duration = duration
+        transcription.speakers = list(speakers.values())
+        transcription.segments = diarized_segments
 
         # Update document status and metadata
         document.status = DocumentStatus.COMPLETED
         document.meta_data = document.meta_data or {}
+
+        transcription_metadata = {
+            'completed_at': datetime.utcnow().isoformat(),
+            'duration': duration,
+            'segments_count': len(diarized_segments),
+            'speakers_count': len(speakers),
+            'language': language,
+            'export_formats': list(export_paths.keys())
+        }
+
+        # Add speaker name inference metadata if available
+        if inference_metadata:
+            transcription_metadata['speaker_name_inference'] = inference_metadata
+
         document.meta_data.update({
-            'transcription': {
-                'completed_at': datetime.utcnow().isoformat(),
-                'duration': duration,
-                'segments_count': len(diarized_segments),
-                'speakers_count': len(speakers),
-                'language': language,
-                'export_formats': list(export_paths.keys())
-            }
+            'transcription': transcription_metadata
         })
 
         db.commit()
 
         logger.info(f"Transcription completed successfully for document {document_id}")
 
-        # Step 9: Return success result
+        # Step 9: Queue transcript indexing for search
+        try:
+            from app.workers.tasks.transcript_indexing import index_transcript
+            logger.info(f"Queueing transcript indexing for transcription {transcription.id}")
+            index_transcript.delay(transcription.id)
+        except Exception as e:
+            logger.warning(f"Failed to queue transcript indexing: {e}")
+            # Don't fail the whole transcription if indexing fails to queue
+
+        # Step 10: Return success result
         return {
             'status': 'completed',
             'document_id': document_id,

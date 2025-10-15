@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { VuePDF, usePDF } from '@tato30/vue-pdf'
 import '@tato30/vue-pdf/style.css'
 
@@ -15,11 +15,16 @@ interface BoundingBox {
   entityType?: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   documentUrl: string
   boundingBoxes?: BoundingBox[]
   selectedBoxId?: string | null
-}>()
+  page?: number
+  zoom?: number
+}>(), {
+  page: 1,
+  zoom: 1.0
+})
 
 const emit = defineEmits<{
   'box-click': [box: BoundingBox]
@@ -29,10 +34,23 @@ const emit = defineEmits<{
 
 // PDF state
 const { pdf, pages, info } = usePDF(props.documentUrl)
-const currentPage = ref(1)
-const scale = ref(1.0)
+const currentPage = ref(props.page)
+const scale = ref(props.zoom)
 const isLoading = computed(() => !pdf.value)
 const error = ref<string | null>(null)
+
+// Sync with parent props
+watch(() => props.page, (newPage) => {
+  if (newPage && newPage !== currentPage.value) {
+    currentPage.value = newPage
+  }
+})
+
+watch(() => props.zoom, (newZoom) => {
+  if (newZoom && newZoom !== scale.value) {
+    scale.value = newZoom
+  }
+})
 
 // Page dimensions tracking
 const pageElements = ref<HTMLElement[]>([])
@@ -231,6 +249,59 @@ onMounted(() => {
   setTimeout(updatePageDimensions, 1000)
 })
 
+// Mouse panning
+const containerRef = useTemplateRef('containerRef')
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0 })
+const scrollStart = ref({ left: 0, top: 0 })
+
+const handleMouseDown = (e: MouseEvent) => {
+  if (e.button !== 0) return // Only left mouse button
+
+  const container = containerRef.value
+  if (!container) return
+
+  isPanning.value = true
+  panStart.value = { x: e.clientX, y: e.clientY }
+  scrollStart.value = {
+    left: container.scrollLeft,
+    top: container.scrollTop
+  }
+
+  e.preventDefault()
+}
+
+const handleMouseMove = (e: MouseEvent) => {
+  if (!isPanning.value || !containerRef.value) return
+
+  const dx = e.clientX - panStart.value.x
+  const dy = e.clientY - panStart.value.y
+
+  containerRef.value.scrollLeft = scrollStart.value.left - dx
+  containerRef.value.scrollTop = scrollStart.value.top - dy
+
+  e.preventDefault()
+}
+
+const handleMouseUp = () => {
+  isPanning.value = false
+}
+
+const handleMouseLeave = () => {
+  isPanning.value = false
+}
+
+// Add global listeners for smooth panning
+onMounted(() => {
+  document.addEventListener('mousemove', handleMouseMove)
+  document.addEventListener('mouseup', handleMouseUp)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', handleMouseMove)
+  document.removeEventListener('mouseup', handleMouseUp)
+})
+
 defineExpose({
   goToPage,
   nextPage,
@@ -246,91 +317,15 @@ defineExpose({
 
 <template>
   <ClientOnly>
-    <div class="relative w-full h-full flex flex-col bg-muted/20">
-      <!-- Toolbar -->
-      <div class="flex items-center justify-between p-3 border-b border-default bg-default">
-        <!-- Page Navigation -->
-        <div class="flex items-center gap-2">
-          <div class="inline-flex items-center gap-1">
-            <UButton
-              icon="i-lucide-chevron-left"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              :disabled="currentPage <= 1"
-              @click="prevPage"
-            />
-            <UInput
-              :model-value="currentPage"
-              type="number"
-              :min="1"
-              :max="totalPages"
-              class="w-16 text-center"
-              size="sm"
-              @update:model-value="(val: any) => goToPage(Number(val))"
-            />
-            <UButton
-              icon="i-lucide-chevron-right"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              :disabled="currentPage >= totalPages"
-              @click="nextPage"
-            />
-          </div>
-          <span class="text-sm text-muted">/ {{ totalPages }}</span>
-        </div>
-
-        <!-- Zoom Controls -->
-        <div class="flex items-center gap-2">
-          <div class="inline-flex items-center gap-1">
-            <UButton
-              icon="i-lucide-zoom-out"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="zoomOut"
-            />
-            <UButton
-              :label="`${Math.round(scale * 100)}%`"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="resetZoom"
-            />
-            <UButton
-              icon="i-lucide-zoom-in"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="zoomIn"
-            />
-          </div>
-        </div>
-
-        <!-- Additional Tools -->
-        <div class="flex items-center gap-2">
-          <UTooltip text="Download">
-            <UButton
-              icon="i-lucide-download"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-            />
-          </UTooltip>
-          <UTooltip text="Print">
-            <UButton
-              icon="i-lucide-printer"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-            />
-          </UTooltip>
-        </div>
-      </div>
-
+    <div class="relative w-full h-full">
       <!-- PDF Canvas Container -->
-      <div class="flex-1 overflow-auto pdf-container">
+      <div
+        ref="containerRef"
+        class="w-full h-full overflow-auto pdf-container"
+        :class="{ 'cursor-grab': !isPanning, 'cursor-grabbing': isPanning }"
+        @mousedown="handleMouseDown"
+        @mouseleave="handleMouseLeave"
+      >
         <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
           <UIcon name="i-lucide-loader" class="size-12 text-primary animate-spin mb-4" />
           <p class="text-muted">Loading document...</p>
@@ -341,9 +336,9 @@ defineExpose({
           <p class="text-error font-medium mb-2">{{ error }}</p>
         </div>
 
-        <div v-else class="relative flex items-start justify-center p-6">
+        <div v-else class="relative p-20">
           <!-- PDF Renderer -->
-          <div class="relative shadow-2xl">
+          <div class="relative shadow-2xl mx-auto" style="width: fit-content;">
             <div class="relative">
               <VuePDF
                 :pdf="pdf"
@@ -417,6 +412,15 @@ defineExpose({
 <style scoped>
 .pdf-container {
   background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.03));
+  user-select: none;
+}
+
+.pdf-container.cursor-grab {
+  cursor: grab;
+}
+
+.pdf-container.cursor-grabbing {
+  cursor: grabbing;
 }
 
 /* Bounding box overlay positioning */

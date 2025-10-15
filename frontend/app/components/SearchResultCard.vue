@@ -29,8 +29,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const router = useRouter()
-
 type ColorType = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral'
 
 // Document type configuration
@@ -71,15 +69,46 @@ const formattedDate = computed(() => {
   }
 })
 
-// Handle click - navigate to document with highlight
+// Check if this is a transcript segment
+const isTranscript = computed(() =>
+  props.result.documentType === 'transcript' || props.result.chunkType === 'transcript_segment'
+)
+
+// Format timestamp for transcripts
+const formatTimestamp = (seconds: number): string => {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// Handle click - navigate to document or transcript with highlight
 const handleClick = () => {
   const query: any = {}
 
+  // For transcripts, navigate to transcript page
+  if (isTranscript.value) {
+    const transcriptId = props.result.metadata?.transcription_id || props.result.metadata?.document_id || props.result.id
+    if (props.result.metadata?.start_time !== undefined) query.t = props.result.metadata.start_time
+    if (props.query) query.q = props.query
+
+    navigateTo({
+      path: `/transcripts/${transcriptId}`,
+      query
+    })
+    return
+  }
+
+  // For documents
   if (props.result.pageNumber) query.page = props.result.pageNumber
   if (props.result.metadata?.chunk_id) query.chunk = props.result.metadata.chunk_id
   if (props.query) query.q = props.query
 
-  router.push({
+  navigateTo({
     path: `/documents/${props.result.metadata?.document_id || props.result.id}`,
     query
   })
@@ -115,8 +144,39 @@ const scoreColor = computed((): ColorType => {
             </h3>
             <div class="flex items-center gap-2 flex-wrap text-xs">
               <UBadge :label="typeConfig.label" :color="typeConfig.color" variant="soft" size="sm" />
-              <span v-if="result.chunkType" class="text-muted">{{ result.chunkType }}</span>
-              <span v-if="result.pageNumber" class="text-muted">Page {{ result.pageNumber }}</span>
+
+              <!-- Transcript-specific metadata -->
+              <template v-if="isTranscript">
+                <UBadge
+                  v-if="result.metadata?.speaker"
+                  :label="result.metadata.speaker"
+                  color="info"
+                  variant="soft"
+                  size="sm"
+                >
+                  <template #leading>
+                    <UIcon name="i-lucide-user" class="size-3" />
+                  </template>
+                </UBadge>
+                <UBadge
+                  v-if="result.metadata?.start_time !== undefined"
+                  :label="formatTimestamp(result.metadata.start_time)"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                >
+                  <template #leading>
+                    <UIcon name="i-lucide-clock" class="size-3" />
+                  </template>
+                </UBadge>
+              </template>
+
+              <!-- Document-specific metadata -->
+              <template v-else>
+                <span v-if="result.chunkType" class="text-muted">{{ result.chunkType }}</span>
+                <span v-if="result.pageNumber" class="text-muted">Page {{ result.pageNumber }}</span>
+              </template>
+
               <span class="text-muted">{{ formattedDate }}</span>
               <span v-if="result.jurisdiction" class="text-muted">{{ result.jurisdiction }}</span>
             </div>

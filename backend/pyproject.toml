@@ -2,7 +2,7 @@
 name = "legalease-backend"
 version = "0.1.0"
 description = "LegalEase Backend API - Legal document search and transcription"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "accelerate>=0.27.0",
     "alembic",
@@ -35,10 +35,10 @@ dependencies = [
     "qdrant-client>=1.14.0",
     "redis",
     "reportlab>=4.4.4",
+    "sentence-transformers",
     "spacy",
     "sqlalchemy>=2.0",
     "tiktoken",
-    "torch",
     "transformers",
     "uvicorn[standard]",
 ]
@@ -52,6 +52,13 @@ dev = [
     "pytest-cov",
     "ruff",
 ]
+worker = [
+    "pyannote.audio",
+    "whisperx @ git+https://github.com/m-bain/whisperx.git",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
