@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     libxslt1-dev \
     ffmpeg \
     ca-certificates \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -74,6 +76,8 @@ RUN apt-get update && apt-get install -y \
     git \
     ffmpeg \
     ca-certificates \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
