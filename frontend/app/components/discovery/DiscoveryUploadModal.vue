@@ -28,7 +28,7 @@ const cases = ref<Array<{ id: number; name: string }>>([])
 
 async function fetchCases() {
   try {
-    const response = await $fetch('/api/cases')
+    const response = await $fetch('/api/v1/cases')
     cases.value = response.cases || []
   } catch (error) {
     console.error('Error fetching cases:', error)
@@ -169,7 +169,7 @@ async function handleUpload() {
       uploading.value = false
     })
 
-    xhr.open('POST', '/api/discovery/items')
+    xhr.open('POST', '/api/v1/discovery/items')
     xhr.send(formData)
   } catch (error) {
     console.error('Upload error:', error)
