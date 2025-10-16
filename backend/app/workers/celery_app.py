@@ -14,6 +14,7 @@ celery_app = Celery(
     include=[
         "app.workers.tasks.document_processing",
         "app.workers.tasks.transcription",
+        "app.workers.tasks.discovery_processing",
     ],
 )
 
@@ -40,6 +41,7 @@ celery_app.conf.update(
         Queue("documents", routing_key="documents"),
         Queue("transcription", routing_key="transcription"),
         Queue("ai", routing_key="ai"),
+        Queue("discovery", routing_key="discovery"),
     ),
 
     # Default queue
@@ -55,6 +57,10 @@ celery_app.conf.update(
         "process_transcription": {"queue": "transcription"},
         "extract_entities": {"queue": "ai"},
         "analyze_document": {"queue": "ai"},
+        "process_discovery_photo": {"queue": "discovery"},
+        "process_discovery_video": {"queue": "discovery"},
+        "extract_video_frames": {"queue": "discovery"},
+        "analyze_video_frame": {"queue": "discovery"},
     },
 
     # Beat schedule (for periodic tasks - can be configured later)

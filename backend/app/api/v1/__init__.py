@@ -42,3 +42,9 @@ try:
     api_router.include_router(indexing.router, prefix="/indexing", tags=["indexing"])
 except ImportError as e:
     print(f"Warning: Could not import indexing router: {e}")
+
+try:
+    from app.api.v1 import discovery
+    api_router.include_router(discovery.router, tags=["discovery"])
+except ImportError as e:
+    print(f"Warning: Could not import discovery router: {e}")

@@ -14,3 +14,9 @@ try:
     __all__.extend(["HybridSearchEngine", "get_search_engine"])
 except ImportError as e:
     print(f"Warning: Could not import search_service: {e}")
+
+try:
+    from app.services.importance_scoring_service import ImportanceScorer, get_importance_scorer
+    __all__.extend(["ImportanceScorer", "get_importance_scorer"])
+except ImportError as e:
+    print(f"Warning: Could not import importance_scoring_service: {e}")
