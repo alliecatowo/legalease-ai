@@ -93,11 +93,16 @@ export interface SocialMediaPost {
   platform: string
   author: string | null
   content: string | null
+  post_text?: string | null
   post_url: string | null
   post_date: string | null
+  post_timestamp?: string | null
   engagement_metrics: Record<string, any> | null
   hashtags: string[] | null
   mentions: string[] | null
+  media_urls?: string[] | null
+  attachments?: Array<Record<string, any>> | null
+  comments?: Array<Record<string, any>> | null
   created_at: string
 }
 
@@ -204,6 +209,9 @@ export type DiscoveryItemPreviewType =
   | 'audio'
   | 'text'
   | 'table'
+  | 'key_value'
+  | 'markdown'
+  | 'html'
   | 'binary'
   | 'unsupported'
 
@@ -215,4 +223,7 @@ export interface DiscoveryItemPreview {
   truncated: boolean
   headers?: string[] | null
   rows?: string[][] | null
+  key_values?: Array<{ label: string; value: string }> | null
+  html?: string | null
+  markdown?: string | null
 }

@@ -22,6 +22,25 @@ const previewLoading = ref(false)
 const previewError = ref<string | null>(null)
 
 const downloadUrl = computed(() => item.value ? `/api/v1/discovery/items/${item.value.id}/download` : null)
+const manualCategories = computed(() => item.value?.categories?.filter(cat => cat.type === 'MANUAL' || cat.type === 'CASE_SPECIFIC') || [])
+const autoCategories = computed(() => item.value?.categories?.filter(cat => cat.type === 'AUTO_GENERATED') || [])
+const hasManualCategories = computed(() => manualCategories.value.length > 0)
+const hasAutoCategories = computed(() => autoCategories.value.length > 0)
+const socialPost = computed(() => item.value?.social_media_post || null)
+const socialContent = computed(() => socialPost.value?.content || socialPost.value?.post_text || '')
+const socialTimestamp = computed(() => socialPost.value?.post_date || socialPost.value?.post_timestamp || null)
+const socialMediaUrls = computed(() => socialPost.value?.media_urls || [])
+const socialHashtags = computed(() => socialPost.value?.hashtags || [])
+const socialMentions = computed(() => socialPost.value?.mentions || [])
+const socialEngagement = computed(() => {
+  const metrics = socialPost.value?.engagement_metrics
+  if (!metrics) return []
+  return Object.entries(metrics).map(([key, value]) => ({
+    key,
+    value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+  }))
+})
+const socialComments = computed(() => socialPost.value?.comments || [])
 
 // Fetch item details
 async function fetchItem() {
@@ -189,6 +208,15 @@ function formatLabel(value?: string | null) {
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString()
+}
 </script>
 
 <template>
@@ -288,39 +316,70 @@ function formatLabel(value?: string | null) {
               </div>
 
               <!-- Categories -->
-              <div class="mt-4">
-                <p class="text-sm text-dimmed mb-2">Categories</p>
-                <div v-if="item.categories && item.categories.length > 0" class="flex flex-wrap gap-2">
-                  <UBadge
-                    v-for="category in item.categories"
-                    :key="category.id"
-                    :label="category.name"
-                    color="primary"
-                    variant="subtle"
-                    size="sm"
-                  >
-                    <template #trailing>
-                      <UIcon
-                        name="i-lucide-x"
-                        class="size-3 cursor-pointer"
-                        @click="removeCategory(category.id)"
-                      />
-                    </template>
+              <div class="mt-4 space-y-3">
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-semibold text-dimmed">Categories</p>
+                  <UBadge v-if="hasManualCategories" color="neutral" size="xs" variant="soft">
+                    Manual
+                  </UBadge>
+                  <UBadge v-if="hasAutoCategories" color="emerald" size="xs" variant="soft">
+                    Auto-generated
                   </UBadge>
                 </div>
-                <p v-else class="text-sm text-dimmed">No categories assigned</p>
+
+                <div v-if="hasManualCategories" class="space-y-2">
+                  <p class="text-xs uppercase tracking-wide text-dimmed">Manual Tags</p>
+                  <div class="flex flex-wrap gap-2">
+                    <UBadge
+                      v-for="category in manualCategories"
+                      :key="category.id"
+                      color="primary"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      {{ category.name }}
+                      <UIcon
+                        name="i-lucide-x"
+                        class="ml-1 size-3 cursor-pointer"
+                        @click.stop="removeCategory(category.id)"
+                      />
+                    </UBadge>
+                  </div>
+                </div>
+
+                <div v-if="hasAutoCategories" class="space-y-2">
+                  <p class="text-xs uppercase tracking-wide text-dimmed">AI Insights</p>
+                  <div class="flex flex-wrap gap-2">
+                    <UBadge
+                      v-for="category in autoCategories"
+                      :key="category.id"
+                      color="emerald"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      <UIcon name="i-lucide-sparkles" class="mr-1 size-3" />
+                      {{ category.name }}
+                    </UBadge>
+                  </div>
+                </div>
+
+                <p v-if="!hasManualCategories && !hasAutoCategories" class="text-sm text-dimmed">
+                  No categories assigned
+                </p>
               </div>
             </div>
           </div>
         </UCard>
 
-        <DiscoveryItemViewer
-          :item="item"
-          :preview="preview"
-          :loading="previewLoading"
-          :error="previewError"
-          :download-url="downloadUrl || null"
-        />
+        <ClientOnly>
+          <DiscoveryItemViewer
+            :item="item"
+            :preview="preview"
+            :loading="previewLoading"
+            :error="previewError"
+            :download-url="downloadUrl || null"
+          />
+        </ClientOnly>
 
         <!-- Visual Content -->
         <UCard v-if="item.visual_content && item.visual_content.length > 0">
@@ -454,6 +513,30 @@ function formatLabel(value?: string | null) {
                 </p>
               </div>
             </div>
+
+            <div
+              v-if="item.video_summary.flagged_content && item.video_summary.flagged_content.length > 0"
+              class="space-y-2"
+            >
+              <p class="text-sm font-semibold text-dimmed">Flagged Content</p>
+              <div class="space-y-2">
+                <div
+                  v-for="(flag, index) in item.video_summary.flagged_content"
+                  :key="index"
+                  class="rounded-lg border border-amber-300/60 bg-amber-50/40 p-3"
+                >
+                  <p class="text-sm font-semibold text-amber-600">
+                    {{ flag.title || flag.reason || 'Flagged Segment' }}
+                  </p>
+                  <p v-if="flag.description" class="mt-1 text-sm text-amber-700 leading-relaxed">
+                    {{ flag.description }}
+                  </p>
+                  <p v-if="flag.timestamp" class="mt-1 text-xs text-amber-500">
+                    Timestamp: {{ formatTimestamp(flag.timestamp) }}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </UCard>
 
@@ -529,30 +612,125 @@ function formatLabel(value?: string | null) {
         </UCard>
 
         <!-- Social Media Post -->
-        <UCard v-if="item.social_media_post">
+        <UCard v-if="socialPost">
           <template #header>
             <h3 class="font-semibold">Social Media Post</h3>
           </template>
 
-          <div class="space-y-3">
-            <div>
-              <p class="text-sm font-semibold text-dimmed">Platform</p>
-              <p>{{ item.social_media_post.platform }}</p>
-            </div>
-            <div v-if="item.social_media_post.author">
-              <p class="text-sm font-semibold text-dimmed">Author</p>
-              <p>{{ item.social_media_post.author }}</p>
-            </div>
-            <div v-if="item.social_media_post.content">
-              <p class="text-sm font-semibold text-dimmed">Content</p>
-              <div class="p-3 rounded bg-elevated">
-                <p class="whitespace-pre-wrap">{{ item.social_media_post.content }}</p>
+          <div class="space-y-4">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <p class="text-sm font-semibold text-dimmed">Platform</p>
+                <UBadge color="neutral" variant="soft" size="sm">
+                  {{ formatLabel(socialPost.platform) }}
+                </UBadge>
+              </div>
+              <div v-if="socialPost.author">
+                <p class="text-sm font-semibold text-dimmed">Author</p>
+                <p class="text-sm text-highlighted">{{ socialPost.author }}</p>
+              </div>
+              <div v-if="socialTimestamp">
+                <p class="text-sm font-semibold text-dimmed">Posted</p>
+                <p class="text-sm text-highlighted">{{ formatDateTime(socialTimestamp) }}</p>
+              </div>
+              <div v-if="socialPost.post_url">
+                <p class="text-sm font-semibold text-dimmed">Original Link</p>
+                <ULink :to="socialPost.post_url" target="_blank" color="primary">
+                  View post
+                </ULink>
+              </div>
+              <div v-if="socialPost.thread_id">
+                <p class="text-sm font-semibold text-dimmed">Thread</p>
+                <p class="text-sm text-highlighted">{{ socialPost.thread_id }}</p>
               </div>
             </div>
-            <div v-if="item.social_media_post.engagement_metrics" class="grid grid-cols-3 gap-4">
-              <div v-for="(value, key) in item.social_media_post.engagement_metrics" :key="key">
-                <p class="text-sm font-semibold text-dimmed">{{ key }}</p>
-                <p>{{ value }}</p>
+
+            <div v-if="socialContent" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Content</p>
+              <div class="rounded-lg border border-default bg-default/30 p-3">
+                <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ socialContent }}</p>
+              </div>
+            </div>
+
+            <div v-if="socialMediaUrls.length > 0" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Media</p>
+              <div class="grid gap-3 md:grid-cols-2">
+                <div
+                  v-for="(mediaUrl, index) in socialMediaUrls"
+                  :key="`${mediaUrl}-${index}`"
+                  class="overflow-hidden rounded-lg border border-default bg-default/40"
+                >
+                  <img v-if="mediaUrl.match(/\.(png|jpe?g|gif|webp)$/i)" :src="mediaUrl" class="w-full object-cover" alt="Social media attachment" />
+                  <video v-else-if="mediaUrl.match(/\.(mp4|mov|webm)$/i)" :src="mediaUrl" controls class="w-full" />
+                  <ULink v-else :to="mediaUrl" target="_blank" class="block px-3 py-2 text-sm text-primary">
+                    View attachment
+                  </ULink>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="socialHashtags.length > 0" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Hashtags</p>
+              <div class="flex flex-wrap gap-2">
+                <UBadge
+                  v-for="tag in socialHashtags"
+                  :key="tag"
+                  color="primary"
+                  variant="subtle"
+                  size="xs"
+                >
+                  #{{ tag }}
+                </UBadge>
+              </div>
+            </div>
+
+            <div v-if="socialMentions.length > 0" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Mentions</p>
+              <div class="flex flex-wrap gap-2">
+                <UBadge
+                  v-for="mention in socialMentions"
+                  :key="mention"
+                  color="neutral"
+                  variant="soft"
+                  size="xs"
+                >
+                  @{{ mention }}
+                </UBadge>
+              </div>
+            </div>
+
+            <div v-if="socialEngagement.length > 0" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Engagement</p>
+              <div class="grid gap-3 md:grid-cols-3">
+                <div
+                  v-for="metric in socialEngagement"
+                  :key="metric.key"
+                  class="rounded-lg border border-default bg-default/40 p-3"
+                >
+                  <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">{{ formatLabel(metric.key) }}</p>
+                  <p class="mt-1 text-sm text-highlighted">{{ metric.value }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="socialComments.length > 0" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Comments</p>
+              <div class="space-y-3">
+                <div
+                  v-for="(comment, index) in socialComments"
+                  :key="index"
+                  class="rounded-lg border border-default bg-default/20 p-3"
+                >
+                  <p v-if="comment.author" class="text-xs font-semibold uppercase tracking-wide text-dimmed">
+                    {{ comment.author }}
+                  </p>
+                  <p class="mt-1 text-sm leading-relaxed text-highlighted">
+                    {{ comment.text || comment.content || comment.comment || '' }}
+                  </p>
+                  <p v-if="comment.timestamp" class="mt-2 text-xs text-dimmed">
+                    {{ formatDateTime(comment.timestamp) }}
+                  </p>
+                </div>
               </div>
             </div>
           </div>

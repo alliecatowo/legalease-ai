@@ -184,47 +184,53 @@ async function bulkDownload() {
   const ids = Array.from(selectedItems.value)
 
   toast.add({
-    title: 'Preparing downloads',
-    description: `Starting download for ${ids.length} item${ids.length === 1 ? '' : 's'}`,
+    title: 'Preparing archive',
+    description: `Bundling ${ids.length} item${ids.length === 1 ? '' : 's'} for download`,
     color: 'primary'
   })
 
-  for (const id of ids) {
-    const fallbackName = items.value.find(item => item.id === id)?.original_filename || `discovery-item-${id}`
+  try {
+    const response = await fetch('/api/v1/discovery/items/bulk-download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ item_ids: ids })
+    })
 
-    try {
-      const response = await fetch(`/api/v1/discovery/items/${id}/download`)
-      if (!response.ok) {
-        throw new Error(`Download request failed with status ${response.status}`)
-      }
-
-      const blob = await response.blob()
-      const filename = extractFilenameFromDisposition(response.headers.get('Content-Disposition'), fallbackName)
-
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Bulk download error:', error)
-      toast.add({
-        title: 'Download failed',
-        description: `Unable to download ${fallbackName}`,
-        color: 'red'
-      })
-      return
+    if (!response.ok) {
+      throw new Error(`Bulk download failed with status ${response.status}`)
     }
-  }
 
-  toast.add({
-    title: 'Downloads started',
-    description: 'Files are downloading in your browser',
-    color: 'green'
-  })
+    const blob = await response.blob()
+    const filename = extractFilenameFromDisposition(
+      response.headers.get('Content-Disposition'),
+      `discovery-items-${new Date().toISOString()}.zip`
+    )
+
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    toast.add({
+      title: 'Download ready',
+      description: 'Archive download started in your browser',
+      color: 'green'
+    })
+    clearSelection()
+  } catch (error) {
+    console.error('Bulk download error:', error)
+    toast.add({
+      title: 'Download failed',
+      description: 'Unable to bundle the selected files',
+      color: 'red'
+    })
+  }
 }
 
 // Bulk actions
