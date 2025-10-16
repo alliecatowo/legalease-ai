@@ -53,6 +53,13 @@ const links = [[{
     open.value = false
   }
 }, {
+  label: 'Discovery',
+  icon: 'i-lucide-image',
+  to: '/discovery',
+  onSelect: () => {
+    open.value = false
+  }
+}, {
   label: 'Search',
   icon: 'i-lucide-search',
   to: '/search',
