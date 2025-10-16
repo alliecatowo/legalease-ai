@@ -26,10 +26,9 @@ export type DiscoveryItemFormFactor =
   | 'BATCH_DUMP'
 
 export type CategoryType =
-  | 'EVIDENCE_TYPE'
-  | 'SUBJECT_MATTER'
-  | 'LEGAL_RELEVANCE'
-  | 'CUSTOM'
+  | 'AUTO_GENERATED'
+  | 'MANUAL'
+  | 'CASE_SPECIFIC'
 
 export type ImportStatus =
   | 'PENDING'
@@ -86,15 +85,6 @@ export interface Category {
   icon: string | null
   created_at: string
   updated_at: string
-}
-
-export interface DiscoveryItemCategory {
-  discovery_item_id: number
-  category_id: number
-  confidence_score: number | null
-  auto_generated: boolean
-  assigned_at: string
-  category: Category
 }
 
 export interface SocialMediaPost {
@@ -171,7 +161,7 @@ export interface DiscoveryItem {
   // Relationships
   visual_content?: VisualContent[]
   video_summary?: VideoSummary
-  categories?: DiscoveryItemCategory[]
+  categories?: Category[]
   social_media_post?: SocialMediaPost
   email_message?: EmailMessage
   call_log?: CallLog

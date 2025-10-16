@@ -246,6 +246,45 @@ const hasActiveFilters = computed(() => {
          filters.endDate || filters.categories.length > 0 ||
          filters.processedOnly || filters.memeFilter !== null
 })
+
+const storageDisplay = computed(() => formatStorage(stats.value.storageUsed))
+const processingCount = computed(() => items.value.filter(item => !item.processed).length)
+const isHighImportanceActive = computed(() => filters.minImportance === 0.7 && filters.maxImportance === 1.0)
+const isMemeOnlyActive = computed(() => filters.memeFilter === true)
+const isProcessedOnlyActive = computed(() => filters.processedOnly)
+const highImportancePercent = computed(() => {
+  if (!stats.value.total) return 0
+  return Math.round((stats.value.highImportance / stats.value.total) * 100)
+})
+
+function formatStorage(bytes: number) {
+  if (!bytes || bytes <= 0) return '0 GB'
+  const gb = bytes / (1024 ** 3)
+  if (gb >= 1) return `${gb.toFixed(1)} GB`
+  const mb = bytes / (1024 ** 2)
+  return `${mb.toFixed(1)} MB`
+}
+
+function toggleHighImportance() {
+  if (isHighImportanceActive.value) {
+    filters.minImportance = null
+    filters.maxImportance = null
+  } else {
+    filters.minImportance = 0.7
+    filters.maxImportance = 1.0
+  }
+  page.value = 1
+}
+
+function toggleMemeOnly() {
+  filters.memeFilter = isMemeOnlyActive.value ? null : true
+  page.value = 1
+}
+
+function toggleProcessedOnly() {
+  filters.processedOnly = !filters.processedOnly
+  page.value = 1
+}
 </script>
 
 <template>
@@ -257,47 +296,56 @@ const hasActiveFilters = computed(() => {
         </template>
 
         <template #trailing>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3">
+            <UInput
+              v-model="filters.search"
+              placeholder="Search discovery..."
+              icon="i-lucide-search"
+              class="hidden w-64 lg:flex"
+              clearable
+            />
+
             <!-- View mode toggle -->
-            <UFieldGroup>
+            <UFieldGroup class="hidden md:flex">
               <UButton
                 :color="viewMode === 'grid' ? 'primary' : 'neutral'"
-                :variant="viewMode === 'grid' ? 'solid' : 'ghost'"
+                :variant="viewMode === 'grid' ? 'solid' : 'soft'"
                 icon="i-lucide-grid-3x3"
                 square
+                size="sm"
                 @click="viewMode = 'grid'"
               />
               <UButton
                 :color="viewMode === 'list' ? 'primary' : 'neutral'"
-                :variant="viewMode === 'list' ? 'solid' : 'ghost'"
+                :variant="viewMode === 'list' ? 'solid' : 'soft'"
                 icon="i-lucide-list"
                 square
+                size="sm"
                 @click="viewMode = 'list'"
               />
               <UButton
                 :color="viewMode === 'timeline' ? 'primary' : 'neutral'"
-                :variant="viewMode === 'timeline' ? 'solid' : 'ghost'"
+                :variant="viewMode === 'timeline' ? 'solid' : 'soft'"
                 icon="i-lucide-clock"
                 square
+                size="sm"
                 @click="viewMode = 'timeline'"
               />
             </UFieldGroup>
 
-            <!-- Upload button -->
+            <UButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-folder-up"
+              :to="'/discovery/import'"
+              aria-label="Batch import"
+            />
+
             <UButton
               label="Upload"
               icon="i-lucide-upload"
               color="primary"
               @click="uploadModalOpen = true"
-            />
-
-            <!-- Batch import button -->
-            <UButton
-              label="Batch Import"
-              icon="i-lucide-folder-up"
-              color="neutral"
-              variant="outline"
-              :to="'/discovery/import'"
             />
           </div>
         </template>
@@ -305,59 +353,66 @@ const hasActiveFilters = computed(() => {
     </template>
 
     <template #body>
-      <!-- Stats Cards -->
-      <div class="p-6 border-b border-default bg-elevated">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Total Items -->
-        <UCard class="bg-gradient-to-br from-blue-500/10 to-blue-600/10">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-dimmed">Total Items</p>
-              <p class="text-3xl font-bold">{{ stats.total.toLocaleString() }}</p>
+      <div class="border-b border-default bg-surface/70">
+        <div class="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-xl border border-default/70 bg-surface px-5 py-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">Total items</p>
+                <p class="mt-1 text-3xl font-semibold">{{ stats.total.toLocaleString() }}</p>
+                <p class="text-xs text-dimmed opacity-80">{{ processingCount }} still processing</p>
+              </div>
+              <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <UIcon name="i-lucide-layers" class="size-5" />
+              </div>
             </div>
-            <UIcon name="i-lucide-image" class="size-12 text-blue-500 opacity-50" />
           </div>
-        </UCard>
 
-        <!-- High Importance -->
-        <UCard class="bg-gradient-to-br from-amber-500/10 to-amber-600/10">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-dimmed">High Importance</p>
-              <p class="text-3xl font-bold">{{ stats.highImportance.toLocaleString() }}</p>
+          <div class="rounded-xl border border-default/70 bg-surface px-5 py-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">High importance</p>
+                <p class="mt-1 text-3xl font-semibold">{{ stats.highImportance.toLocaleString() }}</p>
+                <p class="text-xs text-dimmed opacity-80">{{ highImportancePercent }}% of collection</p>
+              </div>
+              <div class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/10 text-amber-500">
+                <UIcon name="i-lucide-star" class="size-5" />
+              </div>
             </div>
-            <UIcon name="i-lucide-star" class="size-12 text-amber-500 opacity-50" />
           </div>
-        </UCard>
 
-        <!-- Processing -->
-        <UCard class="bg-gradient-to-br from-purple-500/10 to-purple-600/10">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-dimmed">Processing</p>
-              <p class="text-3xl font-bold">{{ stats.processing.toLocaleString() }}</p>
+          <div class="rounded-xl border border-default/70 bg-surface px-5 py-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">Processing queue</p>
+                <p class="mt-1 text-3xl font-semibold">{{ stats.processing.toLocaleString() }}</p>
+                <p class="text-xs text-dimmed opacity-80">{{ processingCount }} visible in this view</p>
+              </div>
+              <div class="flex h-10 w-10 items-center justify-center rounded-full bg-purple-500/10 text-purple-500">
+                <UIcon name="i-lucide-loader-2" class="size-5 animate-spin" />
+              </div>
             </div>
-            <UIcon name="i-lucide-loader-2" class="size-12 text-purple-500 opacity-50 animate-spin" />
           </div>
-        </UCard>
 
-        <!-- Storage Used -->
-        <UCard class="bg-gradient-to-br from-green-500/10 to-green-600/10">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-dimmed">Storage Used</p>
-              <p class="text-3xl font-bold">{{ (stats.storageUsed / 1024 / 1024 / 1024).toFixed(2) }} GB</p>
+          <div class="rounded-xl border border-default/70 bg-surface px-5 py-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">Storage used</p>
+                <p class="mt-1 text-3xl font-semibold">{{ storageDisplay }}</p>
+                <p class="text-xs text-dimmed opacity-80">Across all discovery assets</p>
+              </div>
+              <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
+                <UIcon name="i-lucide-hard-drive" class="size-5" />
+              </div>
             </div>
-            <UIcon name="i-lucide-hard-drive" class="size-12 text-green-500 opacity-50" />
           </div>
-        </UCard>
         </div>
       </div>
 
       <!-- Filters & Content -->
       <div class="flex min-h-0 flex-1">
         <!-- Filter Sidebar - Hidden on mobile, visible on large screens -->
-        <div class="hidden lg:block w-80 border-r border-default bg-elevated/50 flex-shrink-0">
+        <div class="hidden lg:block w-80 flex-shrink-0 border-r border-default bg-surface/60">
           <DiscoveryFilterSidebar
             v-model:filters="filters"
             :has-active-filters="hasActiveFilters"
@@ -367,22 +422,71 @@ const hasActiveFilters = computed(() => {
 
         <!-- Main Content -->
         <div class="flex-1 overflow-y-auto p-4 lg:p-6">
+        <!-- Mobile search -->
+        <div class="mb-4 md:hidden">
+          <UInput
+            v-model="filters.search"
+            placeholder="Search discovery..."
+            icon="i-lucide-search"
+            clearable
+          />
+        </div>
+
+        <!-- Quick filters -->
+        <div class="mb-6 flex flex-wrap items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wide text-dimmed">Quick filters</span>
+          <UButton
+            size="xs"
+            :color="isHighImportanceActive ? 'amber' : 'neutral'"
+            :variant="isHighImportanceActive ? 'solid' : 'soft'"
+            icon="i-lucide-star"
+            label="High importance"
+            @click="toggleHighImportance"
+          />
+          <UButton
+            size="xs"
+            :color="isMemeOnlyActive ? 'pink' : 'neutral'"
+            :variant="isMemeOnlyActive ? 'solid' : 'soft'"
+            icon="i-lucide-smile"
+            label="Memes only"
+            @click="toggleMemeOnly"
+          />
+          <UButton
+            size="xs"
+            :color="isProcessedOnlyActive ? 'primary' : 'neutral'"
+            :variant="isProcessedOnlyActive ? 'solid' : 'soft'"
+            icon="i-lucide-badge-check"
+            label="Processed only"
+            @click="toggleProcessedOnly"
+          />
+          <UButton
+            v-if="hasActiveFilters"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-rotate-ccw"
+            label="Reset"
+            @click="clearFilters"
+          />
+        </div>
+
         <!-- Bulk action bar -->
         <div
           v-if="selectedItems.size > 0"
-          class="mb-4 p-4 bg-primary/10 border border-primary rounded-lg flex items-center justify-between"
+          class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 px-4 py-3"
         >
-          <div class="flex items-center gap-4">
-            <span class="font-semibold">{{ selectedItems.size }} items selected</span>
+          <div class="flex items-center gap-3 text-sm">
+            <UIcon name="i-lucide-check-square" class="size-4 text-primary" />
+            <span class="font-semibold text-primary">{{ selectedItems.size }} items selected</span>
             <UButton
               label="Select All"
-              size="sm"
+              size="xs"
               variant="ghost"
               @click="selectAll"
             />
             <UButton
               label="Clear Selection"
-              size="sm"
+              size="xs"
               variant="ghost"
               @click="clearSelection"
             />
@@ -391,13 +495,13 @@ const hasActiveFilters = computed(() => {
             <UButton
               label="Add Category"
               icon="i-lucide-tag"
-              size="sm"
+              size="xs"
               @click="bulkActionOpen = true"
             />
             <UButton
               label="Delete"
               icon="i-lucide-trash"
-              size="sm"
+              size="xs"
               color="red"
               @click="bulkDelete"
             />
@@ -436,7 +540,7 @@ const hasActiveFilters = computed(() => {
         <!-- Grid View -->
         <div
           v-else-if="viewMode === 'grid'"
-          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+          class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
         >
           <DiscoveryItemCard
             v-for="item in items"
@@ -449,7 +553,7 @@ const hasActiveFilters = computed(() => {
         </div>
 
         <!-- List View -->
-        <div v-else-if="viewMode === 'list'" class="space-y-2">
+        <div v-else-if="viewMode === 'list'" class="space-y-3">
           <DiscoveryItemCard
             v-for="item in items"
             :key="item.id"

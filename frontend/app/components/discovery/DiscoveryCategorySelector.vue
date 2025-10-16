@@ -16,7 +16,7 @@ const showCreateModal = ref(false)
 const newCategory = reactive({
   name: '',
   description: '',
-  type: 'CUSTOM' as CategoryType,
+  type: 'MANUAL' as CategoryType,
   parent_category_id: null as number | null,
   color: '#3b82f6',
   icon: 'i-lucide-tag'
@@ -50,7 +50,7 @@ async function createCategory() {
     Object.assign(newCategory, {
       name: '',
       description: '',
-      type: 'CUSTOM',
+      type: 'MANUAL',
       parent_category_id: null,
       color: '#3b82f6',
       icon: 'i-lucide-tag'
@@ -82,14 +82,17 @@ const filteredCategories = computed(() => {
 // Group categories by type
 const groupedCategories = computed(() => {
   const groups: Record<CategoryType, Category[]> = {
-    EVIDENCE_TYPE: [],
-    SUBJECT_MATTER: [],
-    LEGAL_RELEVANCE: [],
-    CUSTOM: []
+    AUTO_GENERATED: [],
+    MANUAL: [],
+    CASE_SPECIFIC: []
   }
 
   filteredCategories.value.forEach(cat => {
-    groups[cat.type].push(cat)
+    if (groups[cat.type]) {
+      groups[cat.type].push(cat)
+    } else {
+      groups.MANUAL.push(cat)
+    }
   })
 
   return groups
@@ -98,10 +101,9 @@ const groupedCategories = computed(() => {
 // Type options
 const typeOptions = [
   { label: 'All Types', value: null },
-  { label: 'Evidence Type', value: 'EVIDENCE_TYPE' },
-  { label: 'Subject Matter', value: 'SUBJECT_MATTER' },
-  { label: 'Legal Relevance', value: 'LEGAL_RELEVANCE' },
-  { label: 'Custom', value: 'CUSTOM' }
+  { label: 'Manual', value: 'MANUAL' },
+  { label: 'Auto Generated', value: 'AUTO_GENERATED' },
+  { label: 'Case Specific', value: 'CASE_SPECIFIC' }
 ]
 
 // Icon options for new categories
