@@ -216,47 +216,60 @@ function close() {
       <div class="space-y-4">
         <!-- Case Selection -->
         <UFormField label="Case" required>
-          <USelect
+          <USelectMenu
             v-model="form.caseId"
-            :options="caseOptions"
-            option-attribute="label"
-            value-attribute="value"
+            :items="caseOptions"
             placeholder="Select a case"
             :disabled="uploading"
-          />
+            by="value"
+          >
+            <template #label>
+              <span v-if="form.caseId">{{ caseOptions.find(c => c.value === form.caseId)?.label }}</span>
+              <span v-else>Select a case</span>
+            </template>
+          </USelectMenu>
         </UFormField>
 
         <!-- Type -->
         <UFormField label="Type" required>
-          <USelect
+          <USelectMenu
             v-model="form.type"
-            :options="typeOptions"
-            option-attribute="label"
-            value-attribute="value"
+            :items="typeOptions"
             :disabled="uploading"
-          />
+            by="value"
+          >
+            <template #label>
+              {{ typeOptions.find(option => option.value === form.type)?.label }}
+            </template>
+          </USelectMenu>
         </UFormField>
 
         <!-- Source -->
         <UFormField label="Source" required>
-          <USelect
+          <USelectMenu
             v-model="form.source"
-            :options="sourceOptions"
-            option-attribute="label"
-            value-attribute="value"
+            :items="sourceOptions"
             :disabled="uploading"
-          />
+            by="value"
+          >
+            <template #label>
+              {{ sourceOptions.find(option => option.value === form.source)?.label }}
+            </template>
+          </USelectMenu>
         </UFormField>
 
         <!-- Form Factor -->
         <UFormField label="Form Factor" required>
-          <USelect
+          <USelectMenu
             v-model="form.formFactor"
-            :options="formFactorOptions"
-            option-attribute="label"
-            value-attribute="value"
+            :items="formFactorOptions"
             :disabled="uploading"
-          />
+            by="value"
+          >
+            <template #label>
+              {{ formFactorOptions.find(option => option.value === form.formFactor)?.label }}
+            </template>
+          </USelectMenu>
         </UFormField>
 
         <!-- File Upload -->
