@@ -24,6 +24,8 @@ sections:
     description: World-class AI-powered legal document search and analysis platform. Self-hosted, privacy-first, with no external APIs. All data processing happens locally on your infrastructure.
     id: features
     orientation: horizontal
+    image: /transcription_speaker_diarization.png
+    imageAlt: AI Transcription with Speaker Diarization
     features:
       - name: Hybrid Search Engine
         description: Lightning-fast hybrid search combining BM25 keyword matching with semantic vector search. Sub-100ms latency for instant results with PDF highlighting.
@@ -38,6 +40,8 @@ sections:
     description: Built with modern technologies and best practices for performance, security, and scalability. Everything you need for legal document analysis.
     orientation: horizontal
     reverse: true
+    image: /document_with_overlay.png
+    imageAlt: Document Viewer with Search Highlights
     features:
       - name: Entity Extraction
         description: Identify parties, dates, amounts, and citations using GLiNER and LexNLP. Auto-tag documents with intelligent categorization.
