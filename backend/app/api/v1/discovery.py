@@ -1,8 +1,13 @@
 """Discovery item API endpoints."""
 
+import csv
+import io
 import logging
+import mimetypes
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -26,6 +31,7 @@ from app.schemas.discovery import (
     DiscoverySearchRequest,
     DiscoverySearchResponse,
     ReprocessResponse,
+    DiscoveryItemPreviewResponse,
 )
 from app.models.discovery_item import (
     DiscoveryItem,
@@ -38,10 +44,14 @@ from app.models.video_summary import VideoSummary
 from app.models.import_batch import ImportBatch, ImportStatus
 from app.models.category import Category, CategoryType
 from app.models.discovery_item_category import DiscoveryItemCategory
+from app.services.discovery_service import DiscoveryService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+MAX_PREVIEW_BYTES = 512 * 1024  # 512 KB
+MAX_PREVIEW_ROWS = 50
 
 
 # ==================== Discovery Item Upload & Management ====================
@@ -246,6 +256,174 @@ async def get_discovery_item(
         )
 
     return item
+
+
+@router.get(
+    "/discovery/items/{item_id}/download",
+    summary="Download discovery item file",
+    description="Download the original file associated with a discovery item.",
+)
+async def download_discovery_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Download a discovery item file.
+
+    Args:
+        item_id: Discovery item ID
+        db: Database session
+
+    Returns:
+        StreamingResponse: File stream response
+    """
+    logger.info(f"Downloading discovery item {item_id}")
+
+    content, filename, content_type = DiscoveryService.download_discovery_item(item_id, db)
+
+    if not content_type:
+        guess, _ = mimetypes.guess_type(filename)
+        content_type = guess or "application/octet-stream"
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"'
+    }
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type,
+        headers=headers,
+    )
+
+
+@router.get(
+    "/discovery/items/{item_id}/preview",
+    response_model=DiscoveryItemPreviewResponse,
+    summary="Get discovery item preview",
+    description="Return a lightweight preview of a discovery item's content for inline viewing.",
+)
+async def preview_discovery_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a preview for a discovery item.
+
+    Args:
+        item_id: Discovery item ID
+        db: Database session
+
+    Returns:
+        DiscoveryItemPreviewResponse: Preview details for the item
+    """
+    logger.info(f"Generating preview for discovery item {item_id}")
+
+    item = db.query(DiscoveryItem).filter(DiscoveryItem.id == item_id).first()
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discovery item {item_id} not found",
+        )
+
+    try:
+        content, filename, content_type = DiscoveryService.download_discovery_item(item_id, db)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR:
+            logger.warning("Preview unavailable for item %s due to storage error: %s", item_id, exc.detail)
+            metadata = item.item_metadata or {}
+            fallback_type = metadata.get("content_type") or mimetypes.guess_type(item.original_filename)[0] or "application/octet-stream"
+            return DiscoveryItemPreviewResponse(
+                preview_type="unsupported",
+                content_type=fallback_type,
+                size=0,
+                text=None,
+                truncated=False,
+                headers=None,
+                rows=None,
+            )
+        raise
+
+    if not content_type:
+        guess, _ = mimetypes.guess_type(filename)
+        content_type = guess or "application/octet-stream"
+
+    preview_type = "binary"
+    text_preview: Optional[str] = None
+    headers: Optional[List[str]] = None
+    rows: Optional[List[List[str]]] = None
+    truncated = False
+
+    extension = Path(filename).suffix.lower()
+
+    if item.type == DiscoveryItemType.PHOTO or content_type.startswith("image/"):
+        preview_type = "image"
+    elif item.type == DiscoveryItemType.VIDEO or content_type.startswith("video/"):
+        preview_type = "video"
+    elif item.type == DiscoveryItemType.AUDIO or content_type.startswith("audio/"):
+        preview_type = "audio"
+    else:
+        preview_bytes = content[:MAX_PREVIEW_BYTES]
+        truncated = len(content) > MAX_PREVIEW_BYTES
+
+        # Determine if we should treat content as text/structured data
+        is_csv = (
+            content_type in {"text/csv", "application/csv"}
+            or extension == ".csv"
+            or item.type == DiscoveryItemType.CALL_LOG
+        )
+        is_json = content_type in {"application/json", "text/json"} or extension == ".json"
+        is_text = (
+            content_type.startswith("text/")
+            or extension in {".txt", ".log", ".md"}
+            or is_csv
+            or is_json
+        )
+
+        if is_csv:
+            preview_type = "table"
+            try:
+                decoded = preview_bytes.decode("utf-8", errors="replace")
+                reader = csv.reader(io.StringIO(decoded))
+                rows_list = list(reader)
+                if rows_list:
+                    headers = rows_list[0]
+                    rows = rows_list[1:MAX_PREVIEW_ROWS + 1]
+                    if len(rows_list) - 1 > MAX_PREVIEW_ROWS:
+                        truncated = True
+                else:
+                    headers = []
+                    rows = []
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Failed to parse CSV preview for item %s: %s", item_id, exc)
+                preview_type = "text"
+                text_preview = preview_bytes.decode("utf-8", errors="replace")
+        elif is_json:
+            preview_type = "text"
+            try:
+                import json
+
+                decoded = preview_bytes.decode("utf-8", errors="replace")
+                parsed = json.loads(decoded)
+                text_preview = json.dumps(parsed, indent=2)[:MAX_PREVIEW_BYTES]
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Failed to parse JSON preview for item %s: %s", item_id, exc)
+                text_preview = preview_bytes.decode("utf-8", errors="replace")
+        elif is_text:
+            preview_type = "text"
+            text_preview = preview_bytes.decode("utf-8", errors="replace")
+        else:
+            preview_type = "binary"
+
+    return DiscoveryItemPreviewResponse(
+        preview_type=preview_type,
+        content_type=content_type,
+        size=len(content),
+        text=text_preview,
+        truncated=truncated,
+        headers=headers,
+        rows=rows,
+    )
 
 
 @router.patch(

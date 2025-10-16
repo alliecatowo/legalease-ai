@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DiscoveryItem } from '~/types/discovery'
+import type { DiscoveryItem, DiscoveryItemPreview } from '~/types/discovery'
 
 definePageMeta({
   title: 'Discovery Item',
@@ -17,6 +17,11 @@ const item = ref<DiscoveryItem | null>(null)
 const loading = ref(false)
 const showCategoryModal = ref(false)
 const showEditModal = ref(false)
+const preview = ref<DiscoveryItemPreview | null>(null)
+const previewLoading = ref(false)
+const previewError = ref<string | null>(null)
+
+const downloadUrl = computed(() => item.value ? `/api/v1/discovery/items/${item.value.id}/download` : null)
 
 // Fetch item details
 async function fetchItem() {
@@ -24,6 +29,7 @@ async function fetchItem() {
   try {
     const response = await $fetch(`/api/v1/discovery/items/${itemId.value}`)
     item.value = response
+    await fetchPreview()
   } catch (error) {
     console.error('Error fetching item:', error)
     toast.add({
@@ -33,6 +39,24 @@ async function fetchItem() {
     })
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchPreview() {
+  if (!item.value) return
+
+  previewLoading.value = true
+  previewError.value = null
+  preview.value = null
+
+  try {
+    const response = await $fetch<DiscoveryItemPreview>(`/api/v1/discovery/items/${itemId.value}/preview`)
+    preview.value = response
+  } catch (error) {
+    console.error('Error fetching item preview:', error)
+    previewError.value = 'Preview is not available yet for this file.'
+  } finally {
+    previewLoading.value = false
   }
 }
 
@@ -132,9 +156,39 @@ function formatFileSize(bytes: number) {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
 }
 
-onMounted(() => {
+watch(itemId, () => {
   fetchItem()
-})
+}, { immediate: true })
+
+function formatCallDuration(duration?: number | null) {
+  if (!duration) return 'Unknown'
+  const hours = Math.floor(duration / 3600)
+  const minutes = Math.floor((duration % 3600) / 60)
+  const seconds = Math.floor(duration % 60)
+  const parts: string[] = []
+
+  if (hours > 0) parts.push(`${hours}h`)
+  if (minutes > 0) parts.push(`${minutes}m`)
+  parts.push(`${seconds}s`)
+
+  return parts.join(' ')
+}
+
+function formatTimestamp(seconds: number) {
+  if (!Number.isFinite(seconds)) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function formatLabel(value?: string | null) {
+  if (!value) return 'Unknown'
+  return value
+    .toLowerCase()
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
 </script>
 
 <template>
@@ -153,6 +207,14 @@ onMounted(() => {
 
         <template #trailing>
           <div class="flex items-center gap-2">
+            <UButton
+              v-if="downloadUrl"
+              label="Download"
+              icon="i-lucide-download"
+              color="primary"
+              :href="downloadUrl"
+              download
+            />
             <UButton
               label="Add Category"
               icon="i-lucide-tag"
@@ -196,15 +258,15 @@ onMounted(() => {
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <p class="text-dimmed">Type</p>
-                  <p class="font-semibold">{{ item.type }}</p>
+                  <p class="font-semibold">{{ formatLabel(item.type) }}</p>
                 </div>
                 <div>
                   <p class="text-dimmed">Source</p>
-                  <p class="font-semibold">{{ item.source }}</p>
+                  <p class="font-semibold">{{ formatLabel(item.source) }}</p>
                 </div>
                 <div>
                   <p class="text-dimmed">Form Factor</p>
-                  <p class="font-semibold">{{ item.form_factor }}</p>
+                  <p class="font-semibold">{{ formatLabel(item.form_factor) }}</p>
                 </div>
                 <div>
                   <p class="text-dimmed">Status</p>
@@ -220,7 +282,7 @@ onMounted(() => {
               <div class="mt-4">
                 <p class="text-sm text-dimmed mb-1">Importance Score</p>
                 <DiscoveryImportanceIndicator
-                  v-if="item.importance_score"
+                  v-if="item.importance_score !== null"
                   :score="item.importance_score"
                 />
               </div>
@@ -252,6 +314,14 @@ onMounted(() => {
           </div>
         </UCard>
 
+        <DiscoveryItemViewer
+          :item="item"
+          :preview="preview"
+          :loading="previewLoading"
+          :error="previewError"
+          :download-url="downloadUrl || null"
+        />
+
         <!-- Visual Content -->
         <UCard v-if="item.visual_content && item.visual_content.length > 0">
           <template #header>
@@ -262,20 +332,29 @@ onMounted(() => {
             <div
               v-for="visual in item.visual_content"
               :key="visual.id"
-              class="p-4 rounded-lg border border-default"
+              class="space-y-4 rounded-lg border border-default p-4"
             >
-              <!-- Caption -->
-              <div v-if="visual.caption" class="mb-3">
-                <p class="text-sm font-semibold text-dimmed mb-1">Caption</p>
-                <p>{{ visual.caption }}</p>
+              <div class="flex flex-wrap items-center gap-3 text-xs text-dimmed">
+                <span v-if="visual.timestamp_in_video != null">Timestamp: {{ Number(visual.timestamp_in_video).toFixed(1) }}s</span>
+                <span v-if="visual.frame_number != null">Frame #{{ visual.frame_number }}</span>
+                <UBadge
+                  v-if="visual.is_meme"
+                  label="Meme detected"
+                  color="pink"
+                  size="xs"
+                />
               </div>
 
-              <!-- Objects -->
-              <div v-if="visual.objects_detected && visual.objects_detected.length > 0" class="mb-3">
-                <p class="text-sm font-semibold text-dimmed mb-2">Objects Detected</p>
+              <div v-if="visual.vlm_caption" class="space-y-1">
+                <p class="text-sm font-semibold text-dimmed">Caption</p>
+                <p class="text-sm leading-relaxed text-highlighted">{{ visual.vlm_caption }}</p>
+              </div>
+
+              <div v-if="visual.detected_objects && visual.detected_objects.length > 0" class="space-y-2">
+                <p class="text-sm font-semibold text-dimmed">Objects Detected</p>
                 <div class="flex flex-wrap gap-2">
                   <UBadge
-                    v-for="(obj, idx) in visual.objects_detected"
+                    v-for="(obj, idx) in visual.detected_objects"
                     :key="idx"
                     :label="obj"
                     color="neutral"
@@ -284,39 +363,102 @@ onMounted(() => {
                 </div>
               </div>
 
-              <!-- OCR Text -->
-              <div v-if="visual.ocr_text" class="mb-3">
-                <p class="text-sm font-semibold text-dimmed mb-1">Text (OCR)</p>
-                <p class="text-sm">{{ visual.ocr_text }}</p>
+              <div v-if="visual.detected_scenes && visual.detected_scenes.length > 0" class="space-y-2">
+                <p class="text-sm font-semibold text-dimmed">Scenes</p>
+                <div class="flex flex-wrap gap-2">
+                  <UBadge
+                    v-for="(scene, idx) in visual.detected_scenes"
+                    :key="idx"
+                    :label="scene"
+                    color="blue"
+                    size="xs"
+                    variant="subtle"
+                  />
+                </div>
               </div>
 
-              <!-- Flags -->
-              <div class="flex gap-2">
-                <UBadge
-                  v-if="visual.is_meme"
-                  label="Meme"
-                  color="purple"
-                  size="xs"
-                />
-                <UBadge
-                  v-if="visual.contains_people"
-                  label="Contains People"
-                  color="blue"
-                  size="xs"
-                />
-                <UBadge
-                  v-if="visual.contains_faces"
-                  label="Contains Faces"
-                  color="blue"
-                  size="xs"
-                />
+              <div v-if="visual.detected_activities && visual.detected_activities.length > 0" class="space-y-2">
+                <p class="text-sm font-semibold text-dimmed">Activities</p>
+                <div class="flex flex-wrap gap-2">
+                  <UBadge
+                    v-for="(activity, idx) in visual.detected_activities"
+                    :key="idx"
+                    :label="activity"
+                    color="emerald"
+                    size="xs"
+                    variant="subtle"
+                  />
+                </div>
+              </div>
+
+              <div v-if="visual.sensitive_flags && Object.keys(visual.sensitive_flags).length > 0" class="space-y-2">
+                <p class="text-sm font-semibold text-dimmed">Sensitive Flags</p>
+                <div class="flex flex-wrap gap-2">
+                  <UBadge
+                    v-for="(value, key) in visual.sensitive_flags"
+                    :key="key"
+                    :label="`${key}: ${value ? 'Yes' : 'No'}`"
+                    color="amber"
+                    size="xs"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </UCard>
+
+        <!-- Video Summary -->
+        <UCard v-if="item.video_summary">
+          <template #header>
+            <h3 class="font-semibold">Video Summary</h3>
+          </template>
+
+          <div class="space-y-4">
+            <div v-if="item.video_summary.comprehensive_summary" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Overview</p>
+              <p class="text-sm leading-relaxed text-highlighted">
+                {{ item.video_summary.comprehensive_summary }}
+              </p>
+            </div>
+
+            <div v-if="item.video_summary.key_moments && item.video_summary.key_moments.length > 0" class="space-y-2">
+              <p class="text-sm font-semibold text-dimmed">Key Moments</p>
+              <div class="space-y-2">
+                <div
+                  v-for="(moment, index) in item.video_summary.key_moments"
+                  :key="index"
+                  class="flex items-start gap-3 rounded-lg border border-default/70 bg-default/40 p-3"
+                >
+                  <UBadge color="neutral" size="xs" variant="soft">
+                    {{ formatTimestamp(moment.timestamp) }}
+                  </UBadge>
+                  <div class="space-y-1">
+                    <p class="text-sm font-medium text-highlighted">{{ moment.description }}</p>
+                    <p class="text-xs text-dimmed">Importance {{ ((moment.importance ?? 0) * 100).toFixed(0) }}%</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <div v-if="item.video_summary.visual_summary" class="space-y-2">
+                <p class="text-sm font-semibold text-dimmed">Visual Summary</p>
+                <p class="text-sm text-highlighted leading-relaxed">
+                  {{ item.video_summary.visual_summary }}
+                </p>
+              </div>
+              <div v-if="item.video_summary.audio_summary" class="space-y-2">
+                <p class="text-sm font-semibold text-dimmed">Audio Summary</p>
+                <p class="text-sm text-highlighted leading-relaxed">
+                  {{ item.video_summary.audio_summary }}
+                </p>
               </div>
             </div>
           </div>
         </UCard>
 
         <!-- Email Content -->
-        <UCard v-if="item.email">
+        <UCard v-if="item.email_message">
           <template #header>
             <h3 class="font-semibold">Email Details</h3>
           </template>
@@ -324,24 +466,24 @@ onMounted(() => {
           <div class="space-y-3">
             <div>
               <p class="text-sm font-semibold text-dimmed">From</p>
-              <p>{{ item.email.from_address }}</p>
+              <p>{{ item.email_message.sender || 'Unknown sender' }}</p>
             </div>
             <div>
               <p class="text-sm font-semibold text-dimmed">To</p>
-              <p>{{ item.email.to_addresses }}</p>
+              <p>{{ item.email_message.recipients?.join(', ') || 'No recipients listed' }}</p>
             </div>
-            <div v-if="item.email.cc_addresses">
+            <div v-if="item.email_message.cc?.length">
               <p class="text-sm font-semibold text-dimmed">CC</p>
-              <p>{{ item.email.cc_addresses }}</p>
+              <p>{{ item.email_message.cc.join(', ') }}</p>
             </div>
             <div>
               <p class="text-sm font-semibold text-dimmed">Subject</p>
-              <p>{{ item.email.subject }}</p>
+              <p>{{ item.email_message.subject || 'No subject' }}</p>
             </div>
-            <div v-if="item.email.body">
+            <div v-if="item.email_message.body">
               <p class="text-sm font-semibold text-dimmed">Body</p>
               <div class="p-3 rounded bg-elevated">
-                <pre class="text-sm whitespace-pre-wrap">{{ item.email.body }}</pre>
+                <pre class="text-sm whitespace-pre-wrap">{{ item.email_message.body }}</pre>
               </div>
             </div>
           </div>
@@ -355,24 +497,33 @@ onMounted(() => {
 
           <div class="space-y-3">
             <div>
-              <p class="text-sm font-semibold text-dimmed">Phone Number</p>
-              <p>{{ item.call_log.phone_number }}</p>
-            </div>
-            <div v-if="item.call_log.contact_name">
-              <p class="text-sm font-semibold text-dimmed">Contact Name</p>
-              <p>{{ item.call_log.contact_name }}</p>
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-dimmed">Direction</p>
+              <p class="text-sm font-semibold text-dimmed">Call Type</p>
               <UBadge
-                :label="item.call_log.direction"
-                :color="item.call_log.direction === 'INCOMING' ? 'blue' : 'green'"
+                :label="item.call_log.call_type"
+                color="neutral"
                 size="sm"
+                variant="subtle"
               />
             </div>
-            <div>
+            <div v-if="item.call_log.caller">
+              <p class="text-sm font-semibold text-dimmed">Caller</p>
+              <p>{{ item.call_log.caller }}</p>
+            </div>
+            <div v-if="item.call_log.recipient">
+              <p class="text-sm font-semibold text-dimmed">Recipient</p>
+              <p>{{ item.call_log.recipient }}</p>
+            </div>
+            <div v-if="item.call_log.duration_seconds != null">
               <p class="text-sm font-semibold text-dimmed">Duration</p>
-              <p>{{ Math.floor(item.call_log.duration / 60) }}m {{ item.call_log.duration % 60 }}s</p>
+              <p>{{ formatCallDuration(item.call_log.duration_seconds) }}</p>
+            </div>
+            <div v-if="item.call_log.call_date">
+              <p class="text-sm font-semibold text-dimmed">Call Date</p>
+              <p>{{ new Date(item.call_log.call_date).toLocaleString() }}</p>
+            </div>
+            <div v-if="item.call_log.notes">
+              <p class="text-sm font-semibold text-dimmed">Notes</p>
+              <p class="whitespace-pre-wrap text-sm">{{ item.call_log.notes }}</p>
             </div>
           </div>
         </UCard>
