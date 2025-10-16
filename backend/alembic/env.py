@@ -19,6 +19,15 @@ from app.models import (
     Entity,
     Transcription,
     ProcessingJob,
+    DiscoveryItem,
+    VisualContent,
+    VideoSummary,
+    Category,
+    DiscoveryItemCategory,
+    SocialMediaPost,
+    EmailMessage,
+    CallLog,
+    ImportBatch,
 )
 
 # this is the Alembic Config object, which provides
