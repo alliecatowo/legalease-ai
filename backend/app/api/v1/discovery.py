@@ -125,17 +125,27 @@ async def create_discovery_item(
     """
     logger.info(f"Uploading discovery item '{file.filename}' to case {case_id}")
 
-    # TODO: Implement upload logic using discovery service
-    # This will:
-    # 1. Validate case exists
-    # 2. Upload file to MinIO
-    # 3. Create DiscoveryItem record
-    # 4. Queue processing job based on type
+    try:
+        # Use the discovery service to handle the upload
+        discovery_item, task_id = await DiscoveryService.upload_discovery_item(
+            case_id=case_id,
+            file=file,
+            item_type=type,
+            source=source,
+            form_factor=form_factor,
+            db=db
+        )
 
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Discovery item upload not yet implemented",
-    )
+        logger.info(f"Successfully uploaded discovery item {discovery_item.id} with task {task_id}")
+
+        return discovery_item
+
+    except Exception as e:
+        logger.error(f"Failed to upload discovery item '{file.filename}': {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload discovery item: {str(e)}",
+        )
 
 
 @router.get(
@@ -801,7 +811,17 @@ async def reprocess_discovery_item(
     item.processed = False
     db.commit()
 
-    # TODO: Queue reprocessing job based on item type
+    # Queue reprocessing job based on item type
+    from app.workers.tasks.discovery_processing import process_discovery_photo, process_discovery_video
+
+    if item.type == DiscoveryItemType.PHOTO:
+        task = process_discovery_photo.delay(item_id)
+        logger.info(f"Queued photo reprocessing task {task.id} for item {item_id}")
+    elif item.type == DiscoveryItemType.VIDEO:
+        task = process_discovery_video.delay(item_id)
+        logger.info(f"Queued video reprocessing task {task.id} for item {item_id}")
+    else:
+        logger.warning(f"Reprocessing not supported for item type {item.type.value}")
 
     return ReprocessResponse(
         discovery_item_id=item_id,

@@ -34,6 +34,7 @@ class VLMService:
     """Handles Vision Language Model (VLM) operations using Ollama."""
 
     def __init__(self, model_name: str = "llava:latest", ollama_url: str = None):
+        self.available_models = None
         """
         Initialize VLM service.
 
@@ -100,11 +101,11 @@ class VLMService:
                         return {'response': response_text}
                 else:
                     logger.error(f"Ollama API error: {response.status_code}")
-                    raise DiscoveryProcessingError(f"VLM API error: {response.status_code}")
+                    raise Exception(f"VLM API error: {response.status_code}")
 
         except Exception as e:
             logger.error(f"VLM analysis failed: {e}", exc_info=True)
-            raise DiscoveryProcessingError(f"VLM analysis failed: {str(e)}")
+            raise Exception(f"VLM analysis failed: {str(e)}")
 
     def generate_caption(self, image_path: str) -> str:
         """
@@ -351,7 +352,7 @@ def process_discovery_photo(self, discovery_item_id: int) -> Dict[str, Any]:
         item = db.query(DiscoveryItem).filter(DiscoveryItem.id == discovery_item_id).first()
 
         if not item:
-            raise DiscoveryProcessingError(f"Discovery item {discovery_item_id} not found")
+            raise Exception(f"Discovery item {discovery_item_id} not found")
 
         # Step 2: Download image from MinIO
         self.update_state(
@@ -363,7 +364,7 @@ def process_discovery_photo(self, discovery_item_id: int) -> Dict[str, Any]:
         image_data = minio_client.download_file(item.file_path)
 
         if not image_data:
-            raise DiscoveryProcessingError("Failed to download image from MinIO")
+            raise Exception("Failed to download image from MinIO")
 
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix='discovery_photo_')
@@ -415,6 +416,7 @@ def process_discovery_photo(self, discovery_item_id: int) -> Dict[str, Any]:
         )
 
         logger.info("Detecting sensitive content")
+        sensitive_flags = vlm.detect_sensitive_content(image_path)
         sensitive_results = vlm.detect_sensitive_content(image_path)
 
         # Step 8: Create VisualContent record
@@ -543,7 +545,7 @@ def process_discovery_video(self, discovery_item_id: int) -> Dict[str, Any]:
         item = db.query(DiscoveryItem).filter(DiscoveryItem.id == discovery_item_id).first()
 
         if not item:
-            raise DiscoveryProcessingError(f"Discovery item {discovery_item_id} not found")
+            raise Exception(f"Discovery item {discovery_item_id} not found")
 
         # Step 2: Download video from MinIO
         self.update_state(
@@ -555,7 +557,7 @@ def process_discovery_video(self, discovery_item_id: int) -> Dict[str, Any]:
         video_data = minio_client.download_file(item.file_path)
 
         if not video_data:
-            raise DiscoveryProcessingError("Failed to download video from MinIO")
+            raise Exception("Failed to download video from MinIO")
 
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix='discovery_video_')
@@ -593,7 +595,7 @@ def process_discovery_video(self, discovery_item_id: int) -> Dict[str, Any]:
         frame_result = frame_task.get(timeout=600)  # 10 minute timeout
 
         if frame_result['status'] != 'completed':
-            raise DiscoveryProcessingError("Frame extraction failed")
+            raise Exception("Frame extraction failed")
 
         # Step 5: Get all frame analyses
         self.update_state(
@@ -729,7 +731,7 @@ def extract_video_frames(self, discovery_item_id: int) -> Dict[str, Any]:
         item = db.query(DiscoveryItem).filter(DiscoveryItem.id == discovery_item_id).first()
 
         if not item:
-            raise DiscoveryProcessingError(f"Discovery item {discovery_item_id} not found")
+            raise Exception(f"Discovery item {discovery_item_id} not found")
 
         # Step 2: Download video
         logger.info(f"Downloading video from MinIO: {item.file_path}")

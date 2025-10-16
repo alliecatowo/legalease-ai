@@ -207,18 +207,26 @@ class DocumentService:
         document = DocumentService.get_document(document_id, db)
 
         try:
-            # Download from MinIO
-            logger.info(f"Downloading document {document_id} from MinIO: {document.file_path}")
-            content = minio_client.download_file(document.file_path)
+            # Clean the file path (remove leading slashes that might cause issues)
+            file_path = document.file_path.lstrip('/')
+            logger.info(f"Downloading document {document_id} from MinIO: {file_path}")
+            content = minio_client.download_file(file_path)
 
             return content, document.filename, document.mime_type or "application/octet-stream"
 
         except S3Error as e:
             logger.error(f"MinIO error downloading document {document_id}: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to download document from storage: {str(e)}",
-            )
+            # Check if this is a "file not found" error
+            if "NoSuchKey" in str(e) or "does not exist" in str(e).lower():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Document file not found in storage. The file may have been deleted or never properly uploaded.",
+                )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to download document from storage: {str(e)}",
+                )
         except Exception as e:
             logger.error(f"Error downloading document {document_id}: {str(e)}")
             raise HTTPException(
@@ -269,15 +277,30 @@ class DocumentService:
 
         if not chunks:
             logger.warning(f"No chunks found for document {document_id}")
-            # Return basic structure with document metadata
+            # Return basic structure with document metadata and placeholder content
+            # This allows the frontend to show something instead of "content not available"
+            metadata = document.meta_data or {}
+            title = metadata.get('title', document.filename)
+            summary = metadata.get('summary', 'Document content not yet processed.')
+
+            placeholder_text = f"# {title}\n\n{summary}\n\n*This document has not been processed for text extraction yet. The file is available for download.*"
+
             return {
-                "text": "",
-                "pages": [],
-                "metadata": document.meta_data or {},
+                "text": placeholder_text,
+                "pages": [{
+                    "page_number": 1,
+                    "text": placeholder_text,
+                    "items": [{
+                        "text": placeholder_text,
+                        "type": "text",
+                        "bboxes": []
+                    }]
+                }],
+                "metadata": metadata,
                 "filename": document.filename,
                 "document_id": document_id,
                 "total_chunks": 0,
-                "total_pages": 0,
+                "total_pages": 1,
             }
 
         # Group chunks by page
