@@ -184,13 +184,13 @@ function formatTime(dateString: string): string {
                 >
                   <UBadge
                     v-for="cat in item.categories.slice(0, 3)"
-                    :key="cat.category_id"
-                    :style="{ backgroundColor: cat.category.color || undefined }"
+                    :key="cat.id"
+                    :style="cat.color ? { backgroundColor: cat.color } : undefined"
                     size="xs"
                     variant="solid"
                   >
-                    <UIcon v-if="cat.category.icon" :name="cat.category.icon" class="size-3 mr-1" />
-                    {{ cat.category.name }}
+                    <UIcon v-if="cat.icon" :name="cat.icon" class="size-3 mr-1" />
+                    {{ cat.name }}
                   </UBadge>
                   <UBadge
                     v-if="item.categories.length > 3"
