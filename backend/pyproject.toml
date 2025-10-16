@@ -32,6 +32,7 @@ dependencies = [
     "pypdf",
     "pytesseract",
     "python-docx",
+    "openpyxl",
     "python-multipart",
     "qdrant-client>=1.14.0",
     "qwen-vl-utils>=0.0.8",

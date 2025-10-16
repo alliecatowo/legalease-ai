@@ -100,8 +100,17 @@ class DiscoveryItemPreviewResponse(BaseModel):
     truncated: bool = Field(False, description="Whether the preview was truncated for size limits")
     headers: Optional[List[str]] = Field(None, description="Table headers for structured previews like CSV")
     rows: Optional[List[List[str]]] = Field(None, description="Table rows for structured previews like CSV")
+    key_values: Optional[List[Dict[str, str]]] = Field(None, description="Key/value representation for structured data")
+    html: Optional[str] = Field(None, description="HTML preview content (sanitized client-side)")
+    markdown: Optional[str] = Field(None, description="Markdown preview content")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DiscoveryBulkDownloadRequest(BaseModel):
+    """Schema for bulk discovery item download."""
+
+    item_ids: List[int] = Field(..., min_length=1, max_length=100, description="IDs of discovery items to download")
 
 
 class DiscoveryItemListResponse(BaseModel):

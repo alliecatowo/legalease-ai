@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
 import type { DiscoveryItem, DiscoveryItemPreview } from '~/types/discovery'
 
 const props = defineProps<{
@@ -12,8 +14,28 @@ const props = defineProps<{
 
 const hasInlinePreview = computed(() => {
   const type = props.preview?.preview_type
-  return type === 'image' || type === 'video' || type === 'audio' || type === 'text' || type === 'table'
+  return [
+    'image',
+    'video',
+    'audio',
+    'text',
+    'table',
+    'key_value',
+    'markdown',
+    'html'
+  ].includes(type as string)
 })
+
+const markdownHtml = computed(() => {
+  if (!props.preview?.markdown) return ''
+  return marked.parse(props.preview.markdown)
+})
+
+function sanitizeContent(value: string | null | undefined) {
+  if (!value) return ''
+  if (typeof window === 'undefined') return value
+  return DOMPurify.sanitize(value)
+}
 
 function formatBytes(bytes: number) {
   if (!bytes || bytes <= 0) return '0 B'
@@ -123,6 +145,39 @@ function formatBytes(bytes: number) {
           </div>
         </div>
 
+        <div v-else-if="preview.preview_type === 'key_value'" class="space-y-3">
+          <p class="text-xs uppercase font-semibold text-dimmed">Record Details</p>
+          <p v-if="(preview.key_values || []).length === 0" class="text-sm text-dimmed">
+            No structured details were provided for this file.
+          </p>
+          <div class="grid gap-3 md:grid-cols-2">
+            <div
+              v-for="pair in preview.key_values || []"
+              :key="pair.label"
+              class="rounded-lg border border-default bg-default/40 p-3"
+            >
+              <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">{{ pair.label }}</p>
+              <p class="mt-1 text-sm leading-relaxed text-highlighted whitespace-pre-wrap break-words">{{ pair.value }}</p>
+            </div>
+          </div>
+          <div v-if="preview.text" class="rounded-lg border border-dashed border-default/80 bg-default/20 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">Raw Data</p>
+            <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-highlighted">{{ preview.text }}</pre>
+          </div>
+        </div>
+
+        <ClientOnly v-else-if="preview.preview_type === 'markdown'">
+          <div class="rounded-lg border border-default bg-default/30 p-4">
+            <div class="space-y-2 text-sm leading-relaxed text-highlighted" v-html="sanitizeContent(markdownHtml)" />
+          </div>
+        </ClientOnly>
+
+        <ClientOnly v-else-if="preview.preview_type === 'html'">
+          <div class="rounded-lg border border-default bg-default/30 p-4">
+            <div class="space-y-2 text-sm leading-relaxed text-highlighted" v-html="sanitizeContent(preview.html)" />
+          </div>
+        </ClientOnly>
+
         <div v-else-if="preview.preview_type === 'text'" class="rounded-lg border border-default bg-default/30 p-4">
           <pre class="max-h-96 overflow-auto text-sm leading-relaxed text-highlighted whitespace-pre-wrap">{{ preview.text }}</pre>
         </div>
@@ -144,15 +199,15 @@ function formatBytes(bytes: number) {
           </p>
         </UAlert>
 
-          <UButton
-            v-if="downloadUrl"
-            color="primary"
-            icon="i-lucide-download"
-            :href="downloadUrl"
-            download
-          >
-            Download File
-          </UButton>
+        <UButton
+          v-if="downloadUrl"
+          color="primary"
+          icon="i-lucide-download"
+          :href="downloadUrl"
+          download
+        >
+          Download File
+        </UButton>
       </div>
     </div>
   </UCard>

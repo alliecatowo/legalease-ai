@@ -2,10 +2,13 @@
 
 import csv
 import io
+import json
 import logging
 import mimetypes
+import zipfile
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -32,6 +35,7 @@ from app.schemas.discovery import (
     DiscoverySearchResponse,
     ReprocessResponse,
     DiscoveryItemPreviewResponse,
+    DiscoveryBulkDownloadRequest,
 )
 from app.models.discovery_item import (
     DiscoveryItem,
@@ -52,6 +56,39 @@ router = APIRouter()
 
 MAX_PREVIEW_BYTES = 512 * 1024  # 512 KB
 MAX_PREVIEW_ROWS = 50
+MAX_KEY_VALUES = 100
+MAX_TEXT_PREVIEW_CHARS = 6000
+
+
+def _flatten_key_values(data, prefix="", results=None):
+    """Flatten nested structures into label/value pairs."""
+
+    if results is None:
+        results = []
+
+    if len(results) >= MAX_KEY_VALUES:
+        return results
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            label = f"{prefix}.{key}" if prefix else str(key)
+            _flatten_key_values(value, label, results)
+            if len(results) >= MAX_KEY_VALUES:
+                break
+    elif isinstance(data, list):
+        for index, value in enumerate(data):
+            label = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            _flatten_key_values(value, label, results)
+            if len(results) >= MAX_KEY_VALUES:
+                break
+    else:
+        label = prefix or "value"
+        results.append({
+            "label": label,
+            "value": str(data)
+        })
+
+    return results
 
 
 # ==================== Discovery Item Upload & Management ====================
@@ -296,6 +333,54 @@ async def download_discovery_item(
     )
 
 
+@router.post(
+    "/discovery/items/bulk-download",
+    summary="Download multiple discovery items as a bundle",
+    description="Download a zipped archive containing the selected discovery item files.",
+)
+async def bulk_download_discovery_items(
+    request: DiscoveryBulkDownloadRequest,
+    db: Session = Depends(get_db),
+):
+    """Bundle multiple discovery item files into a single ZIP download."""
+
+    if len(request.item_ids) == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="At least one item ID is required")
+
+    logger.info("Bulk downloading %d discovery items", len(request.item_ids))
+
+    zip_buffer = io.BytesIO()
+    seen_names = set()
+
+    with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item_id in request.item_ids:
+            item = db.query(DiscoveryItem).filter(DiscoveryItem.id == item_id).first()
+            if not item:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Discovery item {item_id} not found",
+                )
+
+            content, filename, _ = DiscoveryService.download_discovery_item(item_id, db)
+
+            safe_name = filename or f"discovery-item-{item_id}"
+            if safe_name in seen_names:
+                stem = Path(safe_name).stem or f"item-{item_id}"
+                suffix = Path(safe_name).suffix
+                safe_name = f"{stem}_{item_id}{suffix}"
+            seen_names.add(safe_name)
+
+            archive.writestr(safe_name, content)
+
+    zip_buffer.seek(0)
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    headers = {
+        "Content-Disposition": f'attachment; filename="discovery-items-{timestamp}.zip"'
+    }
+
+    return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
+
+
 @router.get(
     "/discovery/items/{item_id}/preview",
     response_model=DiscoveryItemPreviewResponse,
@@ -352,6 +437,9 @@ async def preview_discovery_item(
     text_preview: Optional[str] = None
     headers: Optional[List[str]] = None
     rows: Optional[List[List[str]]] = None
+    key_values: Optional[List[Dict[str, str]]] = None
+    html_content: Optional[str] = None
+    markdown_content: Optional[str] = None
     truncated = False
 
     extension = Path(filename).suffix.lower()
@@ -365,53 +453,120 @@ async def preview_discovery_item(
     else:
         preview_bytes = content[:MAX_PREVIEW_BYTES]
         truncated = len(content) > MAX_PREVIEW_BYTES
+        decoded_text = preview_bytes.decode("utf-8", errors="replace") if preview_bytes else ""
 
-        # Determine if we should treat content as text/structured data
+        is_markdown = content_type in {"text/markdown"} or extension in {".md", ".markdown"}
+        is_html = content_type in {"text/html"} or extension in {".html", ".htm", ".xhtml"}
         is_csv = (
-            content_type in {"text/csv", "application/csv"}
-            or extension == ".csv"
+            content_type in {"text/csv", "application/csv", "text/tab-separated-values"}
+            or extension in {".csv", ".tsv"}
             or item.type == DiscoveryItemType.CALL_LOG
         )
         is_json = content_type in {"application/json", "text/json"} or extension == ".json"
-        is_text = (
-            content_type.startswith("text/")
-            or extension in {".txt", ".log", ".md"}
-            or is_csv
-            or is_json
-        )
+        is_excel = extension in {".xlsx", ".xlsm", ".xltx", ".xltm"}
+        is_docx = extension == ".docx"
+        is_plain_text = content_type.startswith("text/") or extension in {".txt", ".log", ".rtf"}
 
-        if is_csv:
+        if is_markdown and decoded_text:
+            preview_type = "markdown"
+            markdown_content = decoded_text[:MAX_TEXT_PREVIEW_CHARS]
+            if len(decoded_text) > MAX_TEXT_PREVIEW_CHARS:
+                truncated = True
+        elif is_html and decoded_text:
+            preview_type = "html"
+            html_content = decoded_text[:MAX_TEXT_PREVIEW_CHARS]
+            if len(decoded_text) > MAX_TEXT_PREVIEW_CHARS:
+                truncated = True
+        elif is_json and decoded_text:
+            try:
+                parsed = json.loads(decoded_text)
+                pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
+                if len(pretty) > MAX_TEXT_PREVIEW_CHARS:
+                    pretty = pretty[:MAX_TEXT_PREVIEW_CHARS]
+                    truncated = True
+                text_preview = pretty
+                key_values = _flatten_key_values(parsed)
+                if len(key_values) > MAX_KEY_VALUES:
+                    key_values = key_values[:MAX_KEY_VALUES]
+                    truncated = True
+                preview_type = "key_value"
+            except json.JSONDecodeError:
+                preview_type = "text"
+                text_preview = decoded_text[:MAX_TEXT_PREVIEW_CHARS]
+                if len(decoded_text) > MAX_TEXT_PREVIEW_CHARS:
+                    truncated = True
+        elif is_csv and decoded_text:
             preview_type = "table"
             try:
-                decoded = preview_bytes.decode("utf-8", errors="replace")
-                reader = csv.reader(io.StringIO(decoded))
+                delimiter = '\t' if extension == ".tsv" else ','
+                reader = csv.reader(io.StringIO(decoded_text), delimiter=delimiter)
                 rows_list = list(reader)
                 if rows_list:
-                    headers = rows_list[0]
-                    rows = rows_list[1:MAX_PREVIEW_ROWS + 1]
+                    headers = [cell.strip() for cell in rows_list[0]]
+                    rows = [
+                        [cell.strip() for cell in row]
+                        for row in rows_list[1:MAX_PREVIEW_ROWS + 1]
+                    ]
                     if len(rows_list) - 1 > MAX_PREVIEW_ROWS:
                         truncated = True
                 else:
                     headers = []
                     rows = []
             except Exception as exc:  # pylint: disable=broad-except
-                logger.warning("Failed to parse CSV preview for item %s: %s", item_id, exc)
+                logger.warning("Failed to parse CSV/TSV preview for item %s: %s", item_id, exc)
                 preview_type = "text"
-                text_preview = preview_bytes.decode("utf-8", errors="replace")
-        elif is_json:
-            preview_type = "text"
+                text_preview = decoded_text[:MAX_TEXT_PREVIEW_CHARS]
+                if len(decoded_text) > MAX_TEXT_PREVIEW_CHARS:
+                    truncated = True
+        elif is_excel:
+            preview_type = "table"
             try:
-                import json
+                from openpyxl import load_workbook
 
-                decoded = preview_bytes.decode("utf-8", errors="replace")
-                parsed = json.loads(decoded)
-                text_preview = json.dumps(parsed, indent=2)[:MAX_PREVIEW_BYTES]
+                workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+                sheet = workbook.active
+                headers = []
+                rows = []
+
+                for row_index, row in enumerate(sheet.iter_rows(values_only=True)):
+                    values = ["" if cell is None else str(cell) for cell in row]
+                    if row_index == 0:
+                        headers = values
+                    else:
+                        rows.append(values)
+                        if len(rows) >= MAX_PREVIEW_ROWS:
+                            truncated = True
+                            break
+
+                if not headers and rows:
+                    max_columns = max(len(r) for r in rows)
+                    headers = [f"Column {i + 1}" for i in range(max_columns)]
+
+                workbook.close()
             except Exception as exc:  # pylint: disable=broad-except
-                logger.warning("Failed to parse JSON preview for item %s: %s", item_id, exc)
-                text_preview = preview_bytes.decode("utf-8", errors="replace")
-        elif is_text:
+                logger.warning("Failed to parse spreadsheet preview for item %s: %s", item_id, exc)
+                preview_type = "binary"
+                headers = None
+                rows = None
+        elif is_docx:
+            try:
+                from docx import Document
+
+                document = Document(io.BytesIO(content))
+                paragraphs = [para.text for para in document.paragraphs if para.text.strip()]
+                combined = '\n\n'.join(paragraphs)
+                text_preview = combined[:MAX_TEXT_PREVIEW_CHARS]
+                if len(combined) > MAX_TEXT_PREVIEW_CHARS:
+                    truncated = True
+                preview_type = "text"
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Failed to parse DOCX preview for item %s: %s", item_id, exc)
+                preview_type = "binary"
+        elif is_plain_text and decoded_text:
             preview_type = "text"
-            text_preview = preview_bytes.decode("utf-8", errors="replace")
+            text_preview = decoded_text[:MAX_TEXT_PREVIEW_CHARS]
+            if len(decoded_text) > MAX_TEXT_PREVIEW_CHARS:
+                truncated = True
         else:
             preview_type = "binary"
 
@@ -423,6 +578,9 @@ async def preview_discovery_item(
         truncated=truncated,
         headers=headers,
         rows=rows,
+        key_values=key_values,
+        html=html_content,
+        markdown=markdown_content,
     )
 
 
