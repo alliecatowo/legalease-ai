@@ -124,7 +124,8 @@ class DiscoveryItem(Base):
         "CallLog",
         back_populates="discovery_item",
         uselist=False,  # One-to-one relationship
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        foreign_keys="[CallLog.discovery_item_id]"
     )
     categories = relationship(
         "Category",
