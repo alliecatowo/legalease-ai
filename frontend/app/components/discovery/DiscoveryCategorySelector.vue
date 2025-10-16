@@ -26,7 +26,7 @@ const newCategory = reactive({
 async function fetchCategories() {
   loading.value = true
   try {
-    const response = await $fetch('/api/discovery/categories')
+    const response = await $fetch('/api/v1/discovery/categories')
     categories.value = response
   } catch (error) {
     console.error('Error fetching categories:', error)
@@ -38,7 +38,7 @@ async function fetchCategories() {
 // Create category
 async function createCategory() {
   try {
-    const response = await $fetch('/api/discovery/categories', {
+    const response = await $fetch('/api/v1/discovery/categories', {
       method: 'POST',
       body: newCategory
     })

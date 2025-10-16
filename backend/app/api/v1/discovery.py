@@ -167,6 +167,55 @@ async def list_discovery_items(
 
 
 @router.get(
+    "/discovery/stats",
+    summary="Get discovery statistics",
+    description="Get aggregate statistics for discovery items.",
+)
+async def get_discovery_stats(
+    case_id: Optional[int] = Query(None, description="Filter by case ID"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get discovery statistics.
+
+    Args:
+        case_id: Optional case ID filter
+        db: Database session
+
+    Returns:
+        dict: Statistics including total, high importance, processing, storage used
+    """
+    logger.info(f"Getting discovery stats{f' for case {case_id}' if case_id else ''}")
+
+    query = db.query(DiscoveryItem)
+    if case_id:
+        query = query.filter(DiscoveryItem.case_id == case_id)
+
+    # Total items
+    total = query.count()
+
+    # High importance items (>= 0.7)
+    high_importance = query.filter(DiscoveryItem.importance_score >= 0.7).count()
+
+    # Processing items
+    processing = query.filter(DiscoveryItem.processed == False).count()
+
+    # Storage used (sum of file sizes from metadata)
+    items = query.all()
+    storage_used = sum(
+        item.item_metadata.get("file_size", 0) if item.item_metadata else 0
+        for item in items
+    )
+
+    return {
+        "total": total,
+        "highImportance": high_importance,
+        "processing": processing,
+        "storageUsed": storage_used,
+    }
+
+
+@router.get(
     "/discovery/items/{item_id}",
     response_model=DiscoveryItemResponse,
     summary="Get discovery item details",

@@ -15,7 +15,7 @@ const categories = ref<Category[]>([])
 
 async function fetchCategories() {
   try {
-    const response = await $fetch('/api/discovery/categories')
+    const response = await $fetch('/api/v1/discovery/categories')
     categories.value = response
   } catch (error) {
     console.error('Error fetching categories:', error)

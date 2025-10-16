@@ -66,7 +66,7 @@ async function fetchItems() {
     params.append('skip', ((page.value - 1) * limit.value).toString())
     params.append('limit', limit.value.toString())
 
-    const response = await $fetch(`/api/discovery/items?${params.toString()}`)
+    const response = await $fetch(`/api/v1/discovery/items?${params.toString()}`)
 
     items.value = response.items
     totalItems.value = response.total
@@ -99,7 +99,7 @@ async function fetchItems() {
 // Fetch stats
 async function fetchStats() {
   try {
-    const response = await $fetch('/api/discovery/stats')
+    const response = await $fetch('/api/v1/discovery/stats')
     stats.value = response
   } catch (error) {
     console.error('Error fetching stats:', error)
@@ -151,7 +151,7 @@ async function bulkDelete() {
   if (!confirm(`Delete ${selectedItems.value.size} items?`)) return
 
   try {
-    await $fetch('/api/discovery/bulk-delete', {
+    await $fetch('/api/v1/discovery/bulk-delete', {
       method: 'POST',
       body: { item_ids: Array.from(selectedItems.value) }
     })
@@ -176,7 +176,7 @@ async function bulkDelete() {
 
 async function bulkAddCategory(categoryId: number) {
   try {
-    await $fetch('/api/discovery/bulk-categorize', {
+    await $fetch('/api/v1/discovery/bulk-categorize', {
       method: 'POST',
       body: {
         item_ids: Array.from(selectedItems.value),
@@ -259,26 +259,29 @@ const hasActiveFilters = computed(() => {
         <template #trailing>
           <div class="flex items-center gap-2">
             <!-- View mode toggle -->
-            <UButtonGroup>
+            <UFieldGroup>
               <UButton
                 :color="viewMode === 'grid' ? 'primary' : 'neutral'"
                 :variant="viewMode === 'grid' ? 'solid' : 'ghost'"
                 icon="i-lucide-grid-3x3"
+                square
                 @click="viewMode = 'grid'"
               />
               <UButton
                 :color="viewMode === 'list' ? 'primary' : 'neutral'"
                 :variant="viewMode === 'list' ? 'solid' : 'ghost'"
                 icon="i-lucide-list"
+                square
                 @click="viewMode = 'list'"
               />
               <UButton
                 :color="viewMode === 'timeline' ? 'primary' : 'neutral'"
                 :variant="viewMode === 'timeline' ? 'solid' : 'ghost'"
                 icon="i-lucide-clock"
+                square
                 @click="viewMode = 'timeline'"
               />
-            </UButtonGroup>
+            </UFieldGroup>
 
             <!-- Upload button -->
             <UButton
