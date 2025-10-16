@@ -442,8 +442,8 @@ class DiscoveryService:
             logger.info(f"Downloading discovery item {item_id} from MinIO: {item.file_path}")
             content = minio_client.download_file(item.file_path)
 
-            # Get content type from metadata or determine from filename
-            content_type = item.item_metadata.get("content_type", "application/octet-stream")
+            metadata = item.item_metadata or {}
+            content_type = metadata.get("content_type", "application/octet-stream")
 
             return content, item.original_filename, content_type
 

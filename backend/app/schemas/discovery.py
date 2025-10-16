@@ -1,7 +1,7 @@
 """Discovery item schemas for API requests and responses."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict
 from app.models.discovery_item import (
     DiscoveryItemType,
@@ -84,6 +84,22 @@ class DiscoveryItemResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     categories: Optional[List[CategoryResponse]] = Field(None, description="Associated categories")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DiscoveryItemPreviewResponse(BaseModel):
+    """Schema for discovery item file preview."""
+
+    preview_type: Literal['image', 'video', 'audio', 'text', 'table', 'binary', 'unsupported'] = Field(
+        ..., description="Type of preview representation"
+    )
+    content_type: str = Field(..., description="MIME type of the file")
+    size: int = Field(..., description="Size of the file in bytes")
+    text: Optional[str] = Field(None, description="Text preview (when applicable)")
+    truncated: bool = Field(False, description="Whether the preview was truncated for size limits")
+    headers: Optional[List[str]] = Field(None, description="Table headers for structured previews like CSV")
+    rows: Optional[List[List[str]]] = Field(None, description="Table rows for structured previews like CSV")
 
     model_config = ConfigDict(from_attributes=True)
 

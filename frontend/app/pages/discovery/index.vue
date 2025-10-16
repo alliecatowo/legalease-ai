@@ -47,9 +47,17 @@ const stats = ref({
 const selectedItems = ref<Set<number>>(new Set())
 const bulkActionOpen = ref(false)
 
+const POLL_INTERVAL = 15000
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
 // Fetch discovery items
-async function fetchItems() {
-  loading.value = true
+async function fetchItems(options: { silent?: boolean } = {}) {
+  const { silent = false } = options
+
+  if (!silent) {
+    loading.value = true
+  }
+
   try {
     const params = new URLSearchParams()
 
@@ -68,22 +76,20 @@ async function fetchItems() {
 
     const response = await $fetch(`/api/v1/discovery/items?${params.toString()}`)
 
-    items.value = response.items
+    const filteredItems = response.items
+      .filter(item => {
+        if (filters.categories.length > 0) {
+          return item.categories?.some(cat => filters.categories.includes(cat.id))
+        }
+        return true
+      })
+      .filter(item => {
+        if (filters.memeFilter === null) return true
+        return item.visual_content?.some(vc => vc.is_meme === filters.memeFilter)
+      })
+
+    items.value = filteredItems
     totalItems.value = response.total
-
-    // Filter by categories client-side if needed
-    if (filters.categories.length > 0) {
-      items.value = items.value.filter(item =>
-        item.categories?.some(cat => filters.categories.includes(cat.id))
-      )
-    }
-
-    // Filter by meme status if needed
-    if (filters.memeFilter !== null) {
-      items.value = items.value.filter(item =>
-        item.visual_content?.some(vc => vc.is_meme === filters.memeFilter)
-      )
-    }
   } catch (error) {
     console.error('Error fetching discovery items:', error)
     toast.add({
@@ -92,7 +98,9 @@ async function fetchItems() {
       color: 'red'
     })
   } finally {
-    loading.value = false
+    if (!silent) {
+      loading.value = false
+    }
   }
 }
 
@@ -116,16 +124,19 @@ onMounted(() => {
   fetchItems()
   fetchStats()
 
-  // Poll for processing updates every 5 seconds
-  const interval = setInterval(() => {
-    fetchStats()
-    // Refresh items if any are processing
-    if (items.value.some(item => !item.processed)) {
-      fetchItems()
+  pollTimer = setInterval(async () => {
+    await fetchStats()
+    if (!loading.value && items.value.some(item => !item.processed)) {
+      await fetchItems({ silent: true })
     }
-  }, 5000)
+  }, POLL_INTERVAL)
+})
 
-  onUnmounted(() => clearInterval(interval))
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 
 // Bulk selection
@@ -144,6 +155,76 @@ function selectAll() {
 function clearSelection() {
   selectedItems.value.clear()
   bulkActionOpen.value = false
+}
+
+function extractFilenameFromDisposition(disposition: string | null | undefined, fallback: string) {
+  if (!disposition) return fallback
+
+  const encodedMatch = disposition.match(/filename\*=(?:UTF-8'')?"?([^";]+)/i)
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1].replace(/"/g, ''))
+    } catch (error) {
+      console.warn('Failed to decode filename from header:', error)
+    }
+  }
+
+  const simpleMatch = disposition.match(/filename="?([^";]+)/i)
+  if (simpleMatch?.[1]) {
+    return simpleMatch[1].replace(/"/g, '')
+  }
+
+  return fallback
+}
+
+async function bulkDownload() {
+  if (selectedItems.value.size === 0) return
+  if (typeof window === 'undefined') return
+
+  const ids = Array.from(selectedItems.value)
+
+  toast.add({
+    title: 'Preparing downloads',
+    description: `Starting download for ${ids.length} item${ids.length === 1 ? '' : 's'}`,
+    color: 'primary'
+  })
+
+  for (const id of ids) {
+    const fallbackName = items.value.find(item => item.id === id)?.original_filename || `discovery-item-${id}`
+
+    try {
+      const response = await fetch(`/api/v1/discovery/items/${id}/download`)
+      if (!response.ok) {
+        throw new Error(`Download request failed with status ${response.status}`)
+      }
+
+      const blob = await response.blob()
+      const filename = extractFilenameFromDisposition(response.headers.get('Content-Disposition'), fallbackName)
+
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Bulk download error:', error)
+      toast.add({
+        title: 'Download failed',
+        description: `Unable to download ${fallbackName}`,
+        color: 'red'
+      })
+      return
+    }
+  }
+
+  toast.add({
+    title: 'Downloads started',
+    description: 'Files are downloading in your browser',
+    color: 'green'
+  })
 }
 
 // Bulk actions
@@ -492,6 +573,14 @@ function toggleProcessedOnly() {
             />
           </div>
           <div class="flex items-center gap-2">
+            <UButton
+              label="Download"
+              icon="i-lucide-download"
+              size="xs"
+              variant="soft"
+              color="primary"
+              @click="bulkDownload"
+            />
             <UButton
               label="Add Category"
               icon="i-lucide-tag"

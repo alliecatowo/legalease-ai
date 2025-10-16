@@ -197,3 +197,22 @@ export interface ImportanceScoreExplanation {
     contribution: number
   }>
 }
+
+export type DiscoveryItemPreviewType =
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'text'
+  | 'table'
+  | 'binary'
+  | 'unsupported'
+
+export interface DiscoveryItemPreview {
+  preview_type: DiscoveryItemPreviewType
+  content_type: string
+  size: number
+  text?: string | null
+  truncated: boolean
+  headers?: string[] | null
+  rows?: string[][] | null
+}
