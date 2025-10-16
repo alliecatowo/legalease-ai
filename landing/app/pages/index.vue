@@ -49,8 +49,8 @@ useSeoMeta({
           class="rounded-2xl overflow-hidden"
         >
           <img
-            :src="index === 0 ? '/search_page_no_sidebar.png' : '/analytics_page.png'"
-            :alt="index === 0 ? 'Search Interface' : 'Analytics Dashboard'"
+            :src="section.image"
+            :alt="section.imageAlt"
             class="rounded-xl w-full shadow-lg"
           >
         </UPageCard>
