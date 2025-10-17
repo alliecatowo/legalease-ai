@@ -826,6 +826,6 @@ function getStatusColor(status: string) {
 
   <!-- Create Case Modal -->
   <ClientOnly>
-    <CreateCaseModal v-model:open="showCreateCaseModal" @created="handleCaseCreated" />
+    <ModalsCreateCaseModal v-model:open="showCreateCaseModal" @created="handleCaseCreated" />
   </ClientOnly>
 </template>
