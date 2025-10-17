@@ -223,7 +223,7 @@ def main():
     # Create default data (will be done after migrations)
     # Migrations need to run first to create tables
     print("Note: Default data will be created after running migrations")
-    print("Run migrations with: mise run db-migrate")
+    print("Run migrations with: make migrate")
     print("Then run this script again to create default data")
 
     print()
