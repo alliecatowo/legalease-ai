@@ -478,6 +478,8 @@ class HybridSearchEngine:
 
         Pipeline:
         1. Hybrid search with Query API (BM25 + Dense + Fusion)
+           - If no chunk_types filter: Do separate document + transcript searches and merge
+           - If chunk_types specified: Single search with filter
         2. Score normalization and boosting
         3. Score threshold filtering
         4. Cross-encoder reranking (optional)
@@ -494,7 +496,48 @@ class HybridSearchEngine:
 
         try:
             # Stage 1: Hybrid search with score normalization
-            search_results = self.search_with_query_api(request)
+            # If no chunk_types filter specified, do separate searches for documents and transcripts
+            # to ensure both appear in results (transcripts score lower and get excluded otherwise)
+            if not request.chunk_types or len(request.chunk_types) == 0:
+                logger.info("No chunk_types filter - performing separate document and transcript searches")
+
+                # Search documents (summary, section, microblock) - get top 40
+                doc_request = HybridSearchRequest(
+                    query=request.query,
+                    use_bm25=request.use_bm25,
+                    use_dense=request.use_dense,
+                    fusion_method=request.fusion_method,
+                    top_k=40,  # Reserve 40 slots for documents
+                    score_threshold=request.score_threshold,
+                    chunk_types=["summary", "section", "microblock"],
+                    case_ids=request.case_ids,
+                    document_ids=request.document_ids,
+                )
+                doc_results = self.search_with_query_api(doc_request)
+                logger.info(f"Document search returned {len(doc_results)} results")
+
+                # Search transcripts - get top 10
+                transcript_request = HybridSearchRequest(
+                    query=request.query,
+                    use_bm25=request.use_bm25,
+                    use_dense=request.use_dense,
+                    fusion_method=request.fusion_method,
+                    top_k=10,  # Reserve 10 slots for transcripts
+                    score_threshold=request.score_threshold,
+                    chunk_types=["transcript_segment"],
+                    case_ids=request.case_ids,
+                    document_ids=request.document_ids,
+                )
+                transcript_results = self.search_with_query_api(transcript_request)
+                logger.info(f"Transcript search returned {len(transcript_results)} results")
+
+                # Merge results and re-sort by score
+                search_results = doc_results + transcript_results
+                search_results.sort(key=lambda x: x["score"], reverse=True)
+                logger.info(f"Merged search: {len(search_results)} total results ({len(doc_results)} docs + {len(transcript_results)} transcripts)")
+            else:
+                # Normal single search with chunk_types filter
+                search_results = self.search_with_query_api(request)
 
             # Stage 2: Apply score threshold filtering
             score_threshold = request.score_threshold if request.score_threshold is not None else 0.3
