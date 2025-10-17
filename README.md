@@ -1,5 +1,32 @@
 # LegalEase
 
+<p align="center">
+  <img src="landing/public/demo.gif" alt="LegalEase Demo" width="800"/>
+</p>
+
+<p align="center">
+  <a href="https://github.com/alliecatowo/legalease-ai/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"/>
+  </a>
+  <a href="https://github.com/alliecatowo/legalease-ai/stargazers">
+    <img src="https://img.shields.io/github/stars/alliecatowo/legalease-ai?style=social" alt="GitHub stars"/>
+  </a>
+  <a href="https://github.com/alliecatowo/legalease-ai/network/members">
+    <img src="https://img.shields.io/github/forks/alliecatowo/legalease-ai?style=social" alt="GitHub forks"/>
+  </a>
+  <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/>
+  <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/Nuxt-4-00DC82.svg" alt="Nuxt 4"/>
+  <img src="https://img.shields.io/badge/Vue.js-3-4FC08D.svg" alt="Vue.js 3"/>
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6.svg" alt="TypeScript"/>
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED.svg" alt="Docker"/>
+  <a href="https://github.com/alliecatowo/legalease-ai/commits/main">
+    <img src="https://img.shields.io/github/last-commit/alliecatowo/legalease-ai" alt="Last commit"/>
+  </a>
+</p>
+
+---
+
 LegalEase is a self-hosted workspace for legal teams to organise case material, process documents, and run fast hybrid search without sending data to external services. The platform couples a FastAPI + Celery backend with a Nuxt 4 dashboard and ships sensible defaults for MinIO, PostgreSQL, Qdrant, Redis, Neo4j, and Ollama in Docker.
 
 - Case-centric document intake with Docling-based parsing, OCR, and hierarchical chunking
