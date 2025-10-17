@@ -63,12 +63,12 @@ const selectedCase = ref<number | null>(null)
 const selectedStatus = ref<string | null>(null)
 const sortBy = ref<string>('recent')
 
-// Fetch cases for filter
-const { data: casesData } = await useAsyncData(
-  'cases-forensic-exports',
-  () => api.cases.list(),
-  { default: () => ({ cases: [], total: 0, page: 1, page_size: 50 }) }
-)
+// Use shared data cache for cases and forensic exports
+const { cases: casesCache, forensicExports: forensicExportsCache } = useSharedData()
+await casesCache.get()
+await forensicExportsCache.get()
+
+const casesData = computed(() => casesCache.data.value || { cases: [], total: 0 })
 
 const caseOptions = computed(() => [
   { label: 'All Cases', value: null },
@@ -78,30 +78,10 @@ const caseOptions = computed(() => [
   }))
 ])
 
-// Fetch all forensic exports
-const { data: exportsData, pending: loadingExports, refresh: refreshExports } = await useAsyncData(
-  'all-forensic-exports',
-  async () => {
-    try {
-      const response = await api.forensicExports.listAll()
-
-      // Enrich with case names
-      const enriched = (response.exports || []).map((exp: any) => {
-        const caseItem = casesData.value?.cases?.find((c: any) => c.id === exp.case_id)
-        return {
-          ...exp,
-          case_name: caseItem?.name || `Case ${exp.case_id}`
-        }
-      })
-
-      return enriched
-    } catch (error) {
-      console.error('Error fetching forensic exports:', error)
-      return []
-    }
-  },
-  { default: () => [] }
-)
+// Access forensic exports from shared cache
+const exportsData = computed(() => forensicExportsCache.data.value || [])
+const loadingExports = forensicExportsCache.loading
+const refreshExports = forensicExportsCache.refresh
 
 // Filtered and sorted exports
 const filteredExports = computed(() => {
