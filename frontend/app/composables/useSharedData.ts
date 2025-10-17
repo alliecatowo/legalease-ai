@@ -138,44 +138,49 @@ export interface CacheState<T> {
 }
 
 // ============================================================================
-// Singleton State Management
-// ============================================================================
-
-/**
- * Global shared state for cases
- * Using useState ensures this is shared across all components and pages
- */
-const casesData = useState<CaseListResponse | null>('shared-cases-data', () => null)
-const casesLoading = useState<boolean>('shared-cases-loading', () => false)
-const casesError = useState<Error | null>('shared-cases-error', () => null)
-const casesLastUpdated = useState<number | null>('shared-cases-last-updated', () => null)
-
-/**
- * Global shared state for documents
- */
-const documentsData = useState<DocumentListResponse | null>('shared-documents-data', () => null)
-const documentsLoading = useState<boolean>('shared-documents-loading', () => false)
-const documentsError = useState<Error | null>('shared-documents-error', () => null)
-const documentsLastUpdated = useState<number | null>('shared-documents-last-updated', () => null)
-
-/**
- * Global shared state for transcriptions
- */
-const transcriptionsData = useState<TranscriptionListResponse | null>('shared-transcriptions-data', () => null)
-const transcriptionsLoading = useState<boolean>('shared-transcriptions-loading', () => false)
-const transcriptionsError = useState<Error | null>('shared-transcriptions-error', () => null)
-const transcriptionsLastUpdated = useState<number | null>('shared-transcriptions-last-updated', () => null)
-
-// ============================================================================
 // Main Composable
 // ============================================================================
 
 /**
  * Shared data cache composable
  * Provides centralized access to cases, documents, and transcriptions
+ *
+ * NOTE: useState calls are inside the function for SSR safety.
+ * useState automatically creates singletons based on the key,
+ * so the state is still shared across all components and pages.
  */
 export function useSharedData() {
   const api = useApi()
+
+  // ==========================================================================
+  // Singleton State Management (SSR-Safe)
+  // ==========================================================================
+  // These useState calls create singleton state shared across all components.
+  // They must be inside the function to work with SSR.
+
+  /**
+   * Global shared state for cases
+   */
+  const casesData = useState<CaseListResponse | null>('shared-cases-data', () => null)
+  const casesLoading = useState<boolean>('shared-cases-loading', () => false)
+  const casesError = useState<Error | null>('shared-cases-error', () => null)
+  const casesLastUpdated = useState<number | null>('shared-cases-last-updated', () => null)
+
+  /**
+   * Global shared state for documents
+   */
+  const documentsData = useState<DocumentListResponse | null>('shared-documents-data', () => null)
+  const documentsLoading = useState<boolean>('shared-documents-loading', () => false)
+  const documentsError = useState<Error | null>('shared-documents-error', () => null)
+  const documentsLastUpdated = useState<number | null>('shared-documents-last-updated', () => null)
+
+  /**
+   * Global shared state for transcriptions
+   */
+  const transcriptionsData = useState<TranscriptionListResponse | null>('shared-transcriptions-data', () => null)
+  const transcriptionsLoading = useState<boolean>('shared-transcriptions-loading', () => false)
+  const transcriptionsError = useState<Error | null>('shared-transcriptions-error', () => null)
+  const transcriptionsLastUpdated = useState<number | null>('shared-transcriptions-last-updated', () => null)
 
   // Default cache duration: 5 minutes
   const DEFAULT_CACHE_DURATION = 5 * 60 * 1000

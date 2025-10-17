@@ -126,62 +126,52 @@ onMounted(async () => {
 
 <template>
   <UDashboardGroup unit="rem">
-    <ClientOnly>
-      <UDashboardSidebar
-        id="default"
-        v-model:open="open"
-        collapsible
-        resizable
-        class="bg-elevated/25"
-        :ui="{ footer: 'lg:border-t lg:border-default' }"
-      >
+    <UDashboardSidebar
+      id="default"
+      v-model:open="open"
+      collapsible
+      resizable
+      class="bg-elevated/25"
+      :ui="{ footer: 'lg:border-t lg:border-default' }"
+    >
       <template #header="{ collapsed }">
-        <ClientOnly>
-          <TeamsMenu :collapsed="collapsed" />
-        </ClientOnly>
+        <TeamsMenu :collapsed="collapsed" />
       </template>
 
       <template #default="{ collapsed }">
-        <ClientOnly>
-          <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
+        <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
+
+        <UNavigationMenu
+          :collapsed="collapsed"
+          :items="links[0]"
+          orientation="vertical"
+          tooltip
+          popover
+        />
+
+        <div class="mt-auto space-y-2">
+          <UDashboardSidebarCollapse
+            variant="subtle"
+            block
+            :icon="collapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-left'"
+            :label="collapsed ? undefined : 'Collapse sidebar'"
+          />
 
           <UNavigationMenu
             :collapsed="collapsed"
-            :items="links[0]"
+            :items="links[1]"
             orientation="vertical"
             tooltip
-            popover
           />
-
-          <div class="mt-auto space-y-2">
-            <UDashboardSidebarCollapse
-              variant="subtle"
-              block
-              :icon="collapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-left'"
-              :label="collapsed ? undefined : 'Collapse sidebar'"
-            />
-
-            <UNavigationMenu
-              :collapsed="collapsed"
-              :items="links[1]"
-              orientation="vertical"
-              tooltip
-            />
-          </div>
-        </ClientOnly>
+        </div>
       </template>
 
       <template #footer="{ collapsed }">
-        <ClientOnly>
-          <UserMenu :collapsed="collapsed" />
-        </ClientOnly>
+        <UserMenu :collapsed="collapsed" />
       </template>
     </UDashboardSidebar>
-    </ClientOnly>
 
-    <ClientOnly>
-      <UDashboardSearch :groups="groups" />
-    </ClientOnly>
+    <UDashboardSearch :groups="groups" />
 
     <!-- Error Boundary Content -->
     <UDashboardPanel v-if="error">

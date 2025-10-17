@@ -20,17 +20,11 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/api/**': {
+      cors: true,
       proxy: {
         to: `${process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000'}/api/**`
       }
-    },
-    '/documents/**': { ssr: false },
-    '/documents': { ssr: false },
-    '/cases/**': { ssr: false },
-    '/cases': { ssr: false },
-    '/search': { ssr: false },
-    '/transcripts/**': { ssr: false },
-    '/transcripts': { ssr: false }
+    }
   },
 
   compatibilityDate: '2024-07-11',
@@ -40,7 +34,6 @@ export default defineNuxtConfig({
       collections: ['lucide', 'simple-icons']
     },
     clientBundle: {
-      // Include all icons in client bundle to prevent loading issues
       scan: true,
       includeCustomCollections: true
     }
@@ -56,7 +49,7 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
-    preference: 'dark', // Default to dark mode
+    preference: 'dark',
     fallback: 'dark'
   }
 })

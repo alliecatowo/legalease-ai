@@ -657,7 +657,7 @@ onMounted(() => {
         <template v-else-if="transcript">
           <!-- Audio Player (if available) -->
           <div v-if="transcript.audioUrl" class="p-6 border-b border-default bg-default">
-            <WaveformPlayer
+            <LazyWaveformPlayer
               :audio-url="transcript.audioUrl"
               :current-time="currentTime"
               :segments="transcript.segments"

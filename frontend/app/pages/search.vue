@@ -23,12 +23,12 @@ const searchSettings = ref({
   case_ids: [] as number[] // Filter by case IDs
 })
 
-// Case filters - fetch available cases
-const { data: casesData } = await useAsyncData('search-cases', () => api.cases.list(), {
-  default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
-})
+// Case filters - use shared cache system
+const { cases } = useSharedData()
+await cases.get() // Load cases from cache or fetch if needed
+
 const availableCases = computed(() =>
-  (casesData.value?.cases || []).map((c: any) => ({
+  (cases.data.value?.cases || []).map((c: any) => ({
     id: Number(c.id),
     name: c.name,
     label: c.name,

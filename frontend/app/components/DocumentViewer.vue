@@ -1,30 +1,6 @@
 <script setup lang="ts">
-import PDFViewerWithHighlights from './document/PDFViewerWithHighlights.vue'
-
-interface BBox {
-  l?: number
-  t?: number
-  r?: number
-  b?: number
-  x0?: number
-  y0?: number
-  x1?: number
-  y1?: number
-}
-
-interface DocumentItem {
-  text: string
-  type: string
-  bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
-  chunk_id?: number
-}
-
-interface PageData {
-  page_number: number
-  text: string
-  items: DocumentItem[]
-  bboxes?: Array<BBox | { bbox?: BBox; x0?: number; y0?: number; x1?: number; y1?: number; text?: string }>
-}
+// Import types from composable to avoid duplication
+import type { BBox, DocumentContentItem, PageData } from '~/composables/useDocumentViewer'
 
 interface SearchResult {
   chunk_id: number
@@ -491,7 +467,7 @@ watch(() => props.documentId, () => {
 
       <!-- PDF with Overlay -->
       <div v-else class="pdf-wrapper">
-        <PDFViewerWithHighlights
+        <LazyDocumentPDFViewerWithHighlights
           ref="pdfViewerRef"
           :document-url="pdfUrl"
           :page="currentPage"

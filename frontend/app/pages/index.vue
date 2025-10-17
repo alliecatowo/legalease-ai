@@ -8,10 +8,12 @@ const showUploadAudioModal = ref(false)
 const showCreateCaseModal = ref(false)
 
 // Use shared data cache system
-const { cases, documents, transcriptions, refreshAll } = useSharedData()
+const { cases, documents, transcriptions } = useSharedData()
 
-// Initialize shared data on page mount
-await refreshAll()
+// Initialize shared data on page mount - only fetch if cache is stale
+await cases.get()
+await documents.get()
+await transcriptions.get()
 
 // Computed refs to match the old API structure
 const casesData = computed(() => cases.data.value || { cases: [], total: 0 })
@@ -20,7 +22,9 @@ const transcriptionsData = computed(() => transcriptions.data.value || { transcr
 
 // Refresh all dashboard data
 async function refreshDashboard() {
-  await refreshAll()
+  await cases.refresh()
+  await documents.refresh()
+  await transcriptions.refresh()
 }
 
 // Upload document modal state
@@ -816,6 +820,6 @@ function getStatusColor(status: string) {
 
   <!-- Create Case Modal -->
   <ClientOnly>
-    <ModalsCreateCaseModal v-model:open="showCreateCaseModal" @created="handleCaseCreated" />
+    <LazyModalsCreateCaseModal v-if="showCreateCaseModal" v-model:open="showCreateCaseModal" @created="handleCaseCreated" />
   </ClientOnly>
 </template>
