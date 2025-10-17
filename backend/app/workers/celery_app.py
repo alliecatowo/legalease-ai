@@ -32,14 +32,20 @@ celery_app.conf.update(
     result_extended=True,
 
     # Task execution settings
-    task_acks_late=True,
-    task_reject_on_worker_lost=True,
-    worker_prefetch_multiplier=1,
+    task_acks_late=True,  # Acknowledge tasks after completion (safer)
+    task_reject_on_worker_lost=True,  # Requeue tasks if worker crashes
+    worker_prefetch_multiplier=1,  # Only take 1 task at a time (important for heavy tasks)
+
+    # Resource management (prevents memory leaks and hangs)
+    worker_max_tasks_per_child=100,  # Restart worker after 100 tasks
+    worker_max_memory_per_child=settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD,  # Restart after 8GB
+    task_time_limit=settings.CELERY_TASK_TIME_LIMIT,  # Hard limit: 1 hour
+    task_soft_time_limit=settings.CELERY_TASK_SOFT_TIME_LIMIT,  # Soft limit: 50 minutes
 
     # Task queues
     task_queues=(
         Queue("documents", routing_key="documents"),
-        Queue("transcription", routing_key="transcription"),
+        Queue("transcription", routing_key="transcription", priority=5),  # Higher priority
         Queue("ai", routing_key="ai"),
     ),
 
@@ -52,7 +58,7 @@ celery_app.conf.update(
     task_routes={
         "process_document": {"queue": "documents"},
         "generate_document": {"queue": "documents"},
-        "transcribe_audio": {"queue": "transcription"},
+        "transcribe_audio": {"queue": "transcription", "priority": 5},
         "process_transcription": {"queue": "transcription"},
         "extract_entities": {"queue": "ai"},
         "analyze_document": {"queue": "ai"},
@@ -62,7 +68,6 @@ celery_app.conf.update(
     beat_schedule={},
 
     # Worker settings
-    worker_max_tasks_per_child=1000,  # Restart worker after 1000 tasks to prevent memory leaks
     worker_disable_rate_limits=False,
 
     # Monitoring
