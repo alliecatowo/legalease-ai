@@ -50,28 +50,20 @@ const caseOptions = computed(() => [
   }))
 ])
 
-// Fetch all transcriptions across all cases
+// Fetch all transcriptions using paginated endpoint (no N+1 problem)
 const { data: transcriptionsData, pending: loadingTranscriptions, refresh: refreshTranscriptions } = await useAsyncData(
   'all-transcriptions',
   async () => {
-    const allCases = casesData.value?.cases || []
-    const allTranscriptions = []
-
-    for (const case_ of allCases) {
-      try {
-        const response = await api.transcriptions.listForCase(case_.id)
-        const transcriptionsWithCase = response.transcriptions.map((t: any) => ({
-          ...t,
-          case_name: case_.name,
-          case_id: case_.id
-        }))
-        allTranscriptions.push(...transcriptionsWithCase)
-      } catch (error) {
-        console.error(`Error fetching transcriptions for case ${case_.id}:`, error)
-      }
+    try {
+      // Fetch all transcriptions in one query (defaults to page 1, 50 items per page)
+      // We fetch a large page size to get all transcriptions at once
+      // For very large datasets, this could be enhanced with infinite scroll
+      const response = await api.transcriptions.listAll({ page: 1, page_size: 100 })
+      return response.transcriptions || []
+    } catch (error) {
+      console.error('Error fetching transcriptions:', error)
+      return []
     }
-
-    return allTranscriptions
   },
   { default: () => [] }
 )

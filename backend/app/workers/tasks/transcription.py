@@ -12,9 +12,15 @@ import subprocess
 import uuid
 import re
 import httpx
+import warnings
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from io import BytesIO
+
+# Suppress torchaudio deprecation warnings from pyannote
+warnings.filterwarnings("ignore", message=".*torchaudio.*deprecated.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*AudioMetaData.*deprecated.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*pkg_resources.*deprecated.*", category=UserWarning)
 
 from app.workers.celery_app import celery_app
 from app.core.database import SessionLocal
