@@ -34,12 +34,24 @@ const localCases = computed({
 
 const localDocTypes = computed({
   get: () => props.selectedDocumentTypes,
-  set: (value) => emit('update:selectedDocumentTypes', value)
+  set: (value) => {
+    // Ensure we only store string values, not objects
+    const stringValues = Array.isArray(value)
+      ? value.map(v => typeof v === 'object' ? v.value : v)
+      : []
+    emit('update:selectedDocumentTypes', stringValues)
+  }
 })
 
 const localChunkTypes = computed({
   get: () => props.selectedChunkTypes || [],
-  set: (value) => emit('update:selectedChunkTypes', value)
+  set: (value) => {
+    // Ensure we only store string values, not objects
+    const stringValues = Array.isArray(value)
+      ? value.map(v => typeof v === 'object' ? v.value : v)
+      : []
+    emit('update:selectedChunkTypes', stringValues)
+  }
 })
 
 const documentTypeOptions = [

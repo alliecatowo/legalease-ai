@@ -35,7 +35,8 @@ const emit = defineEmits<{
 // PDF state
 const { pdf, pages, info } = usePDF(props.documentUrl)
 const currentPage = ref(props.page)
-const scale = ref(props.zoom)
+// Initialize scale to 1.0 to ensure natural page size (100% zoom)
+const scale = ref(1.0)
 const isLoading = computed(() => !pdf.value)
 const error = ref<string | null>(null)
 
@@ -216,7 +217,9 @@ function zoomOut() {
 }
 
 function resetZoom() {
-  scale.value = 1.5
+  // Reset to 1.0 which represents the natural page size (100% zoom)
+  // This ensures the PDF is displayed at its original dimensions
+  scale.value = 1.0
 }
 
 // Handle bounding box interactions
@@ -274,11 +277,17 @@ const handleMouseDown = (e: MouseEvent) => {
 const handleMouseMove = (e: MouseEvent) => {
   if (!isPanning.value || !containerRef.value) return
 
+  const container = containerRef.value
   const dx = e.clientX - panStart.value.x
   const dy = e.clientY - panStart.value.y
 
-  containerRef.value.scrollLeft = scrollStart.value.left - dx
-  containerRef.value.scrollTop = scrollStart.value.top - dy
+  // Calculate maximum scroll boundaries
+  const maxScrollLeft = container.scrollWidth - container.clientWidth
+  const maxScrollTop = container.scrollHeight - container.clientHeight
+
+  // Apply boundaries to prevent scrolling past edges
+  container.scrollLeft = Math.max(0, Math.min(scrollStart.value.left - dx, maxScrollLeft))
+  container.scrollTop = Math.max(0, Math.min(scrollStart.value.top - dy, maxScrollTop))
 
   e.preventDefault()
 }
@@ -336,10 +345,10 @@ defineExpose({
           <p class="text-error font-medium mb-2">{{ error }}</p>
         </div>
 
-        <div v-else class="relative p-20">
-          <!-- PDF Renderer -->
-          <div class="relative shadow-2xl mx-auto" style="width: fit-content;">
-            <div class="relative">
+        <div v-else class="relative flex items-center justify-center min-h-full p-4">
+          <!-- PDF Renderer - Centered -->
+          <div class="relative shadow-2xl" style="width: fit-content;">
+            <div class="relative bg-white dark:bg-gray-800">
               <VuePDF
                 :pdf="pdf"
                 :page="currentPage"

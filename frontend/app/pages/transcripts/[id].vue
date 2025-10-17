@@ -76,28 +76,15 @@ async function performSmartSearch() {
     })
 
     // Extract segment indices from search results
-    // NOTE: Backend stores segment_index in metadata (the array index from segments)
-    // Frontend segments have UUID ids, but we need to match by array index
     const segmentIndices = new Set<number>()
-    response.results?.forEach((result: any, idx: number) => {
-      // The segment_index is stored in metadata.segment_index by the backend
-      const segmentIndex = result.metadata?.segment_index
-
-      if (idx < 3) {
-        console.log(`[DEBUG] Result ${idx}:`, {
-          id: result.id,
-          metadata: result.metadata,
-          extractedSegmentIndex: segmentIndex
-        })
-      }
+    response.results?.forEach((result: any) => {
+      // Backend stores segment index in metadata.position
+      const segmentIndex = result.metadata?.position
 
       if (segmentIndex !== undefined && segmentIndex !== null) {
         segmentIndices.add(segmentIndex)
       }
     })
-
-    console.log('[DEBUG] Extracted segment indices:', Array.from(segmentIndices))
-    console.log('[DEBUG] Sample transcript segments (first 3):', transcript.value.segments.slice(0, 3).map((s, i) => ({ index: i, id: s.id })))
 
     searchResults.value = segmentIndices
   } catch (err: any) {
@@ -497,7 +484,10 @@ async function loadTranscript() {
 
   try {
     const response = await api.transcriptions.get(transcriptId.value)
-    transcript.value = response
+    transcript.value = {
+      ...response,
+      audioUrl: response.audio_url || null  // Map backend field to frontend field
+    }
   } catch (err: any) {
     error.value = err.message || 'Failed to load transcript'
     console.error('Error loading transcript:', err)
@@ -564,6 +554,25 @@ onMounted(() => {
             <UDropdownMenu
               :items="[
                 [
+                  {
+                    label: 'Download Original Audio',
+                    icon: 'i-lucide-music',
+                    click: async () => {
+                      const audioUrl = transcript?.audioUrl
+                      if (audioUrl) {
+                        const link = document.createElement('a')
+                        link.href = audioUrl
+                        link.download = `${transcript.title}.mp3`
+                        link.click()
+                      } else {
+                        toast.add({
+                          title: 'Audio not available',
+                          description: 'No audio file found for this transcript',
+                          color: 'warning'
+                        })
+                      }
+                    }
+                  },
                   { label: 'Export as DOCX', icon: 'i-lucide-file-text', click: () => exportTranscript('docx') },
                   { label: 'Export as SRT', icon: 'i-lucide-captions', click: () => exportTranscript('srt') },
                   { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
@@ -779,10 +788,10 @@ onMounted(() => {
               <div
                 v-for="segment in filteredSegments"
                 :key="segment.id"
-                class="p-4 rounded-lg transition-all cursor-pointer"
+                class="p-4 rounded-lg transition-all duration-200 cursor-pointer"
                 :class="[
                   isActiveSegment(segment)
-                    ? 'bg-primary/10 ring-2 ring-primary shadow-sm'
+                    ? 'bg-primary/20 ring-3 ring-primary shadow-lg scale-[1.01] border-2 border-primary/50'
                     : selectedSegment?.id === segment.id
                       ? 'bg-muted/30 ring-1 ring-default'
                       : 'bg-default hover:bg-muted/10'

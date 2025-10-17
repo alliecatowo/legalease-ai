@@ -118,9 +118,13 @@ async def list_cases(
         limit=page_size,
     )
 
-    # Convert to list items with document count
+    # Convert to list items with document and transcript counts
     case_items = []
     for case in cases:
+        # Count documents and transcripts separately (true decoupling)
+        document_count = len(case.documents) if case.documents else 0
+        transcript_count = len(case.transcriptions) if hasattr(case, 'transcriptions') and case.transcriptions else 0
+
         case_item = CaseListItem(
             id=case.id,
             name=case.name,
@@ -131,7 +135,8 @@ async def list_cases(
             created_at=case.created_at,
             updated_at=case.updated_at,
             archived_at=case.archived_at,
-            document_count=len(case.documents) if case.documents else 0,
+            document_count=document_count,
+            transcript_count=transcript_count,
         )
         case_items.append(case_item)
 
