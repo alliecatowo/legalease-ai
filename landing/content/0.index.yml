@@ -1,15 +1,15 @@
-title: Search Legal Documents with [AI]{class="text-primary"}
-description: AI-powered legal document search and analysis platform. Self-hosted, privacy-first, and fully local. Hybrid search, transcription, entity extraction, and knowledge graphs.
+title: Organise Legal Knowledge Locally
+description: LegalEase is an open-source legal research workstation that keeps documents, transcripts, and evidence on your own infrastructure.
 seo:
-  title: LegalEase AI - AI-Powered Legal Document Search
-  description: World-class AI-powered legal document search and analysis platform. Self-hosted, privacy-first, fully local AI with hybrid search, case management, AI transcription, and more.
+  title: LegalEase – Local Legal Document Search
+  description: Self-hosted case management, hybrid document search, and transcription for legal teams. Built on FastAPI, Nuxt, Qdrant, and Ollama.
 navigation: false
 hero:
   links:
     - label: Get Started
       icon: i-lucide-arrow-right
       trailing: true
-      to: https://github.com/AlliecatOwO/legalease-ai#-quick-start
+      to: https://github.com/AlliecatOwO/legalease-ai#quick-start-docker-compose
       target: _blank
       size: xl
     - label: View on GitHub
@@ -20,66 +20,66 @@ hero:
       to: https://github.com/AlliecatOwO/legalease-ai
       target: _blank
 sections:
-  - title: AI-Powered Legal Intelligence
-    description: World-class AI-powered legal document search and analysis platform. Self-hosted, privacy-first, with no external APIs. All data processing happens locally on your infrastructure.
+  - title: Built for Private Case Work
+    description: LegalEase ingests documents, transcripts, and forensic exports, then makes them searchable without leaving your environment.
     id: features
     orientation: horizontal
     image: /transcription_speaker_diarization.png
-    imageAlt: AI Transcription with Speaker Diarization
+    imageAlt: Transcript review page
     features:
       - name: Hybrid Search Engine
-        description: Lightning-fast hybrid search combining BM25 keyword matching with semantic vector search. Sub-100ms latency for instant results with PDF highlighting.
+        description: Combine BM25 keyword ranking with dense embeddings stored in Qdrant. Jump straight to highlighted passages in the PDF viewer.
         icon: i-lucide-search
-      - name: Smart Case Management
-        description: Organize documents into cases with load/unload capabilities. Bulk upload with drag-and-drop and real-time status tracking.
+      - name: Case-Centric Workflow
+        description: Group material by case, control what is loaded into search, and keep upload status in sync with Celery workers.
         icon: i-lucide-folder
-      - name: AI Transcription
-        description: 70x real-time transcription with speaker diarization and word-level timestamps. Process 1 hour of audio in approximately 50 seconds.
+      - name: Local Transcription
+        description: Run WhisperX on your GPU or fall back to the bundled Whisper integration. Summaries and key moments stay on-box via Ollama.
         icon: i-lucide-mic
-  - title: Enterprise-Grade Features
-    description: Built with modern technologies and best practices for performance, security, and scalability. Everything you need for legal document analysis.
+  - title: What You Get Out of the Box
+    description: The dockerised stack includes every service needed to go from raw PDFs to a working search and review workspace.
     orientation: horizontal
     reverse: true
     image: /document_with_overlay.png
-    imageAlt: Document Viewer with Search Highlights
+    imageAlt: Document viewer with search highlights
     features:
-      - name: Entity Extraction
-        description: Identify parties, dates, amounts, and citations using GLiNER and LexNLP. Auto-tag documents with intelligent categorization.
-        icon: i-lucide-tag
-      - name: Knowledge Graphs
-        description: Visualize entity relationships and citation networks with Neo4j. Discover connections across your case documents.
-        icon: i-lucide-network
-      - name: Privacy First
-        description: 100% local processing with no external APIs. All data stays on your infrastructure using local Ollama models.
+      - name: Document Pipeline
+        description: Docling parses PDFs, applies OCR when required, and produces hierarchical chunks with bounding boxes for Qdrant indexing.
+        icon: i-lucide-layers
+      - name: Transcript Insights
+        description: Identify speakers, mark key moments, export caption files, and generate executive summaries from long-form recordings.
+        icon: i-lucide-waveform
+      - name: Self-Hosted by Design
+        description: PostgreSQL, MinIO, Redis, Qdrant, and Ollama run alongside the app. Disconnect from the network once images and models are downloaded.
         icon: i-lucide-shield
 features:
-  title: Everything You Need for Legal Analysis
-  description: Stop building from scratch. LegalEase AI provides all the tools you need for modern legal document search and analysis, fully self-hosted and privacy-first.
+  title: Why LegalEase?
+  description: A practical foundation for legal knowledge management teams who need control over their tooling.
   items:
     - title: Modern UI
-      description: Built with Nuxt 4 and Nuxt UI 4. Native PDF viewer with search highlighting, responsive design, and dark/light modes.
-      icon: i-lucide-palette
-    - title: Fast Performance
-      description: Sub-100ms search latency, 70x real-time transcription speed, and smooth 60fps UI for a seamless user experience.
+      description: Nuxt 4 dashboard with search, PDF preview, transcript review, and shared data caches for snappy navigation.
+      icon: i-lucide-monitor
+    - title: Hybrid Retrieval
+      description: Tune BM25 and dense vector weighting, filter by case or chunk type, and inspect debug metadata for every result.
       icon: i-lucide-zap
-    - title: Self-Hosted
-      description: Complete control over your data with PostgreSQL, MinIO, Qdrant, and Neo4j. No cloud dependencies or external API calls.
-      icon: i-lucide-server
+    - title: Transcript Workflow
+      description: Upload audio or video, monitor Celery progress, and export results in DOCX/SRT/VTT/TXT formats.
+      icon: i-lucide-headphones
+    - title: Evidence Intake
+      description: Scan Cellebrite/AXIOM exports straight from mounted storage and browse recovered items in the UI.
+      icon: i-lucide-hard-drive
+    - title: Local-first AI
+      description: Default Ollama prompts ship with the repository; swap in your own models or disable them entirely.
+      icon: i-lucide-cpu
     - title: Open Source
-      description: MIT licensed and fully open source. Contribute, customize, and deploy freely on your own infrastructure.
+      description: MIT licensed. Extend the pipelines, wire in additional analytics, or integrate with firm-specific tooling.
       icon: i-lucide-code-2
-    - title: Scalable Architecture
-      description: Built with FastAPI, Celery, and modern cloud-native technologies. Scale from single documents to massive case repositories.
-      icon: i-lucide-trending-up
-    - title: Developer Friendly
-      description: Comprehensive API documentation, mise-based development workflow, and extensive tooling for easy deployment and customization.
-      icon: i-lucide-terminal
 cta:
-  title: Ready to Transform Your Legal Workflow?
-  description: Get started with LegalEase AI today. Self-hosted, privacy-first, and fully open source. Join the future of legal document analysis.
+  title: Ready to run LegalEase?
+  description: Clone the repository, copy the environment files, and launch the Docker stack. Documentation and API schemas live alongside the code.
   links:
     - label: Quick Start Guide
-      to: 'https://github.com/AlliecatOwO/legalease-ai#-quick-start'
+      to: 'https://github.com/AlliecatOwO/legalease-ai#quick-start-docker-compose'
       target: _blank
       trailingIcon: i-lucide-arrow-right
     - label: View on GitHub

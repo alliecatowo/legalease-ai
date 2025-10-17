@@ -80,7 +80,7 @@ useSeoMeta({
           <img src="/transcription_speaker_diarization.png" alt="AI Transcription" class="rounded-xl w-full">
           <div class="p-4">
             <h3 class="font-semibold">AI Transcription</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">70x real-time transcription with speaker diarization</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Self-hosted transcription with speaker diarization and summaries</p>
           </div>
         </UPageCard>
         <UPageCard variant="subtle" class="rounded-2xl overflow-hidden">
