@@ -837,6 +837,7 @@ function getRelativeTime(dateStr: string): string {
       <UModal
         v-model:open="showAddDocumentModal"
         title="Add Documents to Case"
+        :ui="{ content: 'max-w-2xl' }"
       >
       <template #body>
         <div class="space-y-4">
