@@ -39,7 +39,27 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL_SUMMARIZATION: str = "llama3.1:7b"
     OLLAMA_MODEL_TAGGING: str = "llama3.1:7b"
+    OLLAMA_MODEL_SPEAKER_INFERENCE: str = "llama3.1:latest"  # Model for speaker name inference
     OLLAMA_REQUEST_TIMEOUT: int = 300  # 5 minutes for large models
+
+    # Transcription Settings
+    WHISPER_MODEL: str = "auto"  # auto, tiny, base, small, medium, large
+    WHISPER_BATCH_SIZE: int = 0  # 0 = auto-calculate based on VRAM
+    ENABLE_DIARIZATION: bool = True
+    DIARIZATION_MIN_SPEAKERS: int = 2
+    DIARIZATION_MAX_SPEAKERS: int = 5  # Reduced from 10 for faster diarization
+    PYANNOTE_MODEL: str = "pyannote/speaker-diarization-3.1"
+
+    # Speaker Name Inference Settings
+    ENABLE_SPEAKER_NAME_INFERENCE: bool = True  # Use LLM to infer speaker names
+    OLLAMA_MAX_CONCURRENT_REQUESTS: int = 1  # Limit concurrent Ollama requests (prevents RAM exhaustion)
+
+    # Worker Settings
+    CELERY_WORKER_CONCURRENCY: str = "auto"  # auto, or explicit number
+    CELERY_WORKER_AUTOSCALE: str = "4,1"  # max,min - adapts to load
+    CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 8_000_000  # 8GB (in KB), restart worker after
+    CELERY_TASK_TIME_LIMIT: int = 3600  # 1 hour hard limit
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 3000  # 50 min soft limit
 
     # Neo4j (Knowledge Graph)
     NEO4J_URI: str = "bolt://localhost:7687"

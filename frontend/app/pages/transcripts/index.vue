@@ -54,8 +54,15 @@ const caseOptions = computed(() => [
 // Loading state from shared cache
 const loadingTranscriptions = computed(() => transcriptions.loading.value)
 
-// Transcriptions data from shared cache
-const transcriptionsData = computed(() => transcriptions.data.value?.transcriptions || [])
+// Transcriptions data from shared cache (normalize status to lowercase)
+const transcriptionsData = computed(() => {
+  const data = transcriptions.data.value?.transcriptions || []
+  // Backend sends uppercase status (COMPLETED, PROCESSING), normalize to lowercase
+  return data.map((t: any) => ({
+    ...t,
+    status: t.status?.toLowerCase() || 'unknown'
+  }))
+})
 
 // Refresh function that uses shared cache
 const refreshTranscriptions = async () => {

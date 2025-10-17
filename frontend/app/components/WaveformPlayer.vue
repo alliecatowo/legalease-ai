@@ -6,9 +6,11 @@ import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps<{
   audioUrl: string
+  transcriptionId?: number  // Optional transcription ID for fetching pre-computed waveform
   currentTime?: number
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
+  keyMoments?: TranscriptSegment[]
 }>()
 
 const emit = defineEmits<{
@@ -16,6 +18,7 @@ const emit = defineEmits<{
   'update:isPlaying': [playing: boolean]
   'ready': [duration: number]
   'segment-click': [segment: TranscriptSegment]
+  'waveform-click': [time: number]
 }>()
 
 const waveformRef = ref<HTMLDivElement | null>(null)
@@ -29,9 +32,32 @@ const isPlaying = ref(false)
 const volume = ref(1)
 const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
+const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+// Fetch pre-computed waveform data from API
+async function fetchWaveformData(): Promise<{ peaks: number[], duration: number } | null> {
+  if (!props.transcriptionId) {
+    return null
+  }
+
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${props.transcriptionId}/waveform`)
+    if (response.ok) {
+      const data = await response.json()
+      console.log('Fetched pre-computed waveform data:', data.peaks.length, 'peaks')
+      return { peaks: data.peaks, duration: data.duration }
+    } else {
+      console.warn('Pre-computed waveform not available, will load audio file')
+      return null
+    }
+  } catch (error) {
+    console.warn('Failed to fetch waveform data:', error)
+    return null
+  }
+}
 
 // Initialize WaveSurfer
 async function initializeWaveSurfer() {
@@ -83,6 +109,7 @@ async function initializeWaveSurfer() {
     duration.value = wavesurfer.value!.getDuration()
     emit('ready', duration.value)
     drawSegmentMarkers()
+    drawKeyMomentsOverlay()
   })
 
   // Throttle audioprocess to 100ms instead of 60fps for better performance
@@ -119,20 +146,110 @@ async function initializeWaveSurfer() {
     isReady.value = false
   })
 
-  // Load audio with progressive loading - don't await, let it load in background
-  wavesurfer.value.load(props.audioUrl).catch((error) => {
-    console.error('Failed to load audio:', error)
-    isLoading.value = false
-    isAudioReady.value = false
-  })
+  // Try to fetch pre-computed waveform data first
+  const waveformData = await fetchWaveformData()
+
+  if (waveformData && waveformData.peaks && waveformData.duration) {
+    // Use pre-computed waveform data for instant rendering
+    console.log('Using pre-computed waveform data - instant rendering!')
+
+    // WaveSurfer v7 expects an array of channels (even for mono)
+    // Backend returns a single array of peaks, so we wrap it in an array
+    const peaksArray = [waveformData.peaks]
+
+    // Load audio URL for playback and set the peaks manually
+    wavesurfer.value.load(props.audioUrl, peaksArray, waveformData.duration).catch((error) => {
+      console.error('Failed to load audio with pre-computed waveform:', error)
+      isLoading.value = false
+      isAudioReady.value = false
+    })
+  } else {
+    // Fallback: Load audio and generate waveform on client (old behavior)
+    console.log('Falling back to client-side waveform generation')
+    wavesurfer.value.load(props.audioUrl).catch((error) => {
+      console.error('Failed to load audio:', error)
+      isLoading.value = false
+      isAudioReady.value = false
+    })
+  }
 }
 
 // Draw segment markers on waveform
 function drawSegmentMarkers() {
   if (!wavesurfer.value || !props.segments) return
 
-  // TODO: Add visual markers for segments on waveform
-  // This would require a WaveSurfer plugin or custom overlay
+  // Segment markers are now handled by the timeline canvas below
+  // This function is kept for future enhancements
+}
+
+// Draw key moments overlay on waveform
+function drawKeyMomentsOverlay() {
+  if (!keyMomentsCanvasRef.value || !props.keyMoments || !duration.value) return
+
+  const canvas = keyMomentsCanvasRef.value
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // Set canvas dimensions to match waveform container
+  const waveformContainer = waveformRef.value
+  if (!waveformContainer) return
+
+  const rect = waveformContainer.getBoundingClientRect()
+  canvas.width = rect.width * window.devicePixelRatio
+  canvas.height = rect.height * window.devicePixelRatio
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+
+  // Clear canvas
+  ctx.clearRect(0, 0, rect.width, rect.height)
+
+  // Draw key moment markers
+  props.keyMoments.forEach((moment) => {
+    const x = (moment.start / duration.value) * rect.width
+
+    // Draw vertical line
+    ctx.strokeStyle = '#F59E0B' // Warning color
+    ctx.lineWidth = 2
+    ctx.globalAlpha = 0.8
+
+    // Draw a dotted line
+    ctx.setLineDash([4, 4])
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, rect.height)
+    ctx.stroke()
+
+    // Draw star icon at top
+    ctx.globalAlpha = 1.0
+    ctx.fillStyle = '#F59E0B'
+    ctx.setLineDash([]) // Reset to solid line
+    const starSize = 6
+    const starY = 8
+
+    // Simple star shape (triangle for performance)
+    ctx.beginPath()
+    ctx.moveTo(x, starY)
+    ctx.lineTo(x - starSize / 2, starY + starSize)
+    ctx.lineTo(x + starSize / 2, starY + starSize)
+    ctx.closePath()
+    ctx.fill()
+  })
+
+  ctx.globalAlpha = 1.0
+}
+
+// Handle waveform click - emit time and find segment
+function handleWaveformClick(event: MouseEvent) {
+  if (!waveformRef.value || !duration.value) return
+
+  const rect = waveformRef.value.getBoundingClientRect()
+  const clickX = event.clientX - rect.left
+  const clickTime = (clickX / rect.width) * duration.value
+
+  // Emit waveform click event with time
+  emit('waveform-click', clickTime)
+
+  // Also seek to that time
+  seekTo(clickTime)
 }
 
 // Draw segment timeline on canvas
@@ -227,6 +344,11 @@ watch([() => props.segments, () => props.selectedSegmentId, duration], () => {
   drawSegmentTimeline()
 }, { deep: true })
 
+// Watch for changes that require redrawing key moments
+watch([() => props.keyMoments, duration], () => {
+  drawKeyMomentsOverlay()
+}, { deep: true })
+
 // Handle canvas click
 function handleTimelineClick(event: MouseEvent) {
   if (!timelineCanvasRef.value || !props.segments || !duration.value) return
@@ -254,6 +376,20 @@ defineExpose({
 
 onMounted(() => {
   initializeWaveSurfer()
+
+  // Add resize observer to redraw canvases on window resize
+  if (waveformRef.value) {
+    const resizeObserver = new ResizeObserver(() => {
+      drawSegmentTimeline()
+      drawKeyMomentsOverlay()
+    })
+    resizeObserver.observe(waveformRef.value)
+
+    // Store observer for cleanup
+    onBeforeUnmount(() => {
+      resizeObserver.disconnect()
+    })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -269,16 +405,21 @@ onBeforeUnmount(() => {
         <UIcon name="i-lucide-loader-circle" class="size-8 text-primary animate-spin mx-auto" />
         <div class="space-y-2">
           <p class="text-sm text-muted">Loading waveform...</p>
-          <p class="text-xs text-success">
-            <UIcon name="i-lucide-check-circle" class="inline size-3" />
-            Audio ready - you can play while waveform loads
-          </p>
         </div>
       </div>
     </div>
 
     <!-- Waveform Container -->
-    <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg" :class="{ 'hidden': !isReady }" />
+    <div class="relative w-full">
+      <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg cursor-pointer" :class="{ 'hidden': !isReady }" @click="handleWaveformClick" />
+      <!-- Key Moments Overlay Canvas -->
+      <canvas
+        v-if="keyMoments && keyMoments.length > 0 && isReady"
+        ref="keyMomentsCanvasRef"
+        class="absolute top-0 left-0 w-full h-full pointer-events-none"
+        :class="{ 'hidden': !isReady }"
+      />
+    </div>
 
     <!-- Controls -->
     <div class="flex items-center justify-between gap-4">
