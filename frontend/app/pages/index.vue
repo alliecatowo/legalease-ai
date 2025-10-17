@@ -7,30 +7,20 @@ const showUploadDocModal = ref(false)
 const showUploadAudioModal = ref(false)
 const showCreateCaseModal = ref(false)
 
-// Fetch all data in parallel for better performance
-const [
-  { data: casesData, refresh: refreshCases },
-  { data: documentsData, refresh: refreshDocuments },
-  { data: transcriptionsData, refresh: refreshTranscriptions }
-] = await Promise.all([
-  useAsyncData('dashboard-cases', () => api.cases.list(), {
-    default: () => ({ cases: [], total: 0 })
-  }),
-  useAsyncData('dashboard-documents', () => api.documents.listAll(), {
-    default: () => ({ documents: [], total: 0 })
-  }),
-  useAsyncData('dashboard-transcriptions', () => api.transcriptions.listAll(), {
-    default: () => ({ transcriptions: [], total: 0 })
-  })
-])
+// Use shared data cache system
+const { cases, documents, transcriptions, refreshAll } = useSharedData()
+
+// Initialize shared data on page mount
+await refreshAll()
+
+// Computed refs to match the old API structure
+const casesData = computed(() => cases.data.value || { cases: [], total: 0 })
+const documentsData = computed(() => documents.data.value || { documents: [], total: 0 })
+const transcriptionsData = computed(() => transcriptions.data.value || { transcriptions: [], total: 0 })
 
 // Refresh all dashboard data
 async function refreshDashboard() {
-  await Promise.all([
-    refreshCases(),
-    refreshDocuments(),
-    refreshTranscriptions()
-  ])
+  await refreshAll()
 }
 
 // Upload document modal state
