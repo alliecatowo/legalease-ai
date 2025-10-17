@@ -290,9 +290,6 @@ function getStatusColor(status: string) {
   <UDashboardPanel id="home">
     <template #header>
       <UDashboardNavbar title="Dashboard">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
 
         <template #right>
           <UDropdownMenu :items="quickActions">

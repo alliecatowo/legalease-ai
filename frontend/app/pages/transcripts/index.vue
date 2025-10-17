@@ -290,9 +290,6 @@ async function uploadTranscript() {
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Transcriptions">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UFieldGroup>
             <UButton

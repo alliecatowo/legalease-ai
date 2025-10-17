@@ -276,9 +276,6 @@ const documentTypeIcons: Record<string, string> = {
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Documents">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UButton
             label="Upload"
