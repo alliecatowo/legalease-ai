@@ -43,6 +43,20 @@ class DocumentSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TranscriptionSummary(BaseModel):
+    """Minimal transcription information for case responses."""
+
+    id: int
+    filename: str
+    mime_type: Optional[str]
+    size: int
+    duration: Optional[float]
+    status: str
+    uploaded_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CaseResponse(CaseBase):
     """Schema for case responses with all fields."""
 
@@ -52,6 +66,7 @@ class CaseResponse(CaseBase):
     updated_at: datetime
     archived_at: Optional[datetime] = None
     documents: List[DocumentSummary] = []
+    transcriptions: List[TranscriptionSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,6 +84,7 @@ class CaseListItem(BaseModel):
     updated_at: datetime
     archived_at: Optional[datetime] = None
     document_count: int = Field(0, description="Number of documents in the case")
+    transcript_count: int = Field(0, description="Number of transcriptions in the case")
 
     model_config = ConfigDict(from_attributes=True)
 

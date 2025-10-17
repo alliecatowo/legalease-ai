@@ -2,10 +2,11 @@
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON, Boolean
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON, Boolean, BigInteger, Enum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
+from app.models.document import DocumentStatus
 import uuid
 
 
@@ -21,7 +22,7 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    transcription_id = Column(
+    transcript_id = Column(
         Integer,
         ForeignKey("transcriptions.id", ondelete="CASCADE"),
         nullable=False,
@@ -37,7 +38,7 @@ class TranscriptSegment(Base):
     transcription = relationship("Transcription", back_populates="segment_metadata")
 
     def __repr__(self) -> str:
-        return f"<TranscriptSegment(id={self.id}, transcription_id={self.transcription_id}, segment_id='{self.segment_id}', is_key_moment={self.is_key_moment})>"
+        return f"<TranscriptSegment(id={self.id}, transcript_id={self.transcript_id}, segment_id='{self.segment_id}', is_key_moment={self.is_key_moment})>"
 
 
 class Transcription(Base):
@@ -52,13 +53,36 @@ class Transcription(Base):
     __tablename__ = "transcriptions"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # New decoupled fields - direct relationship to Case
+    case_id = Column(
+        Integer,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    filename = Column(String(255), nullable=False)
+    file_path = Column(String(512), nullable=False)
+    mime_type = Column(String(100), nullable=True)
+    size = Column(BigInteger, nullable=False)  # File size in bytes
+    status = Column(
+        Enum(DocumentStatus, native_enum=True, create_constraint=True),
+        nullable=False,
+        default=DocumentStatus.PENDING,
+        index=True
+    )
+    uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    # Legacy field - will be dropped in future migration
     document_id = Column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,  # Now nullable for backward compatibility
         unique=True,  # One-to-one relationship with Document
         index=True
     )
+
+    # Transcription-specific fields
     format = Column(String(50), nullable=True)  # e.g., 'mp3', 'wav', 'mp4'
     duration = Column(Float, nullable=True)  # Duration in seconds
     speakers = Column(JSON, nullable=True)  # Speaker identification data
@@ -76,7 +100,8 @@ class Transcription(Base):
     summary_generated_at = Column(DateTime, nullable=True)  # When summary was generated
 
     # Relationships
-    document = relationship("Document", back_populates="transcription")
+    case = relationship("Case", back_populates="transcriptions")
+    document = relationship("Document", back_populates="transcription")  # Legacy - to be removed
     segment_metadata = relationship(
         "TranscriptSegment",
         back_populates="transcription",

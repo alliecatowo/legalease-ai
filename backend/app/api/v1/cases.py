@@ -118,16 +118,12 @@ async def list_cases(
         limit=page_size,
     )
 
-    # Convert to list items with document count
+    # Convert to list items with document and transcript counts
     case_items = []
     for case in cases:
-        # Filter out audio/video files - they are transcriptions, not documents
-        document_count = 0
-        if case.documents:
-            document_count = sum(
-                1 for doc in case.documents
-                if doc.mime_type and not doc.mime_type.startswith(('audio/', 'video/'))
-            )
+        # Count documents and transcripts separately (true decoupling)
+        document_count = len(case.documents) if case.documents else 0
+        transcript_count = len(case.transcriptions) if hasattr(case, 'transcriptions') and case.transcriptions else 0
 
         case_item = CaseListItem(
             id=case.id,
@@ -140,6 +136,7 @@ async def list_cases(
             updated_at=case.updated_at,
             archived_at=case.archived_at,
             document_count=document_count,
+            transcript_count=transcript_count,
         )
         case_items.append(case_item)
 

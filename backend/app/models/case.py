@@ -55,6 +55,12 @@ class Case(Base):
         cascade="all, delete-orphan",
         lazy="selectin"
     )
+    transcriptions = relationship(
+        "Transcription",
+        back_populates="case",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
 
     def __repr__(self) -> str:
         return f"<Case(id={self.id}, case_number='{self.case_number}', name='{self.name}', status='{self.status.value}')>"
