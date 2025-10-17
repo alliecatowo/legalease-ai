@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 import uuid
 
@@ -28,6 +29,7 @@ class TranscriptSegment(Base):
     )
     segment_id = Column(String(36), nullable=False, unique=True, index=True)  # UUID from JSON
     is_key_moment = Column(Boolean, nullable=False, default=False)
+    highlights: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)  # Array of {start: int, end: int, text: str, type: str}
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
