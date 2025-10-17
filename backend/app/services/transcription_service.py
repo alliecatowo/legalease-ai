@@ -239,7 +239,7 @@ class TranscriptionService:
         # Get key moment metadata for segments
         key_moment_metadata = (
             db.query(TranscriptSegment)
-            .filter(TranscriptSegment.transcription_id == transcription_id)
+            .filter(TranscriptSegment.transcript_id == transcription_id)
             .all()
         )
 
@@ -507,7 +507,7 @@ class TranscriptionService:
         segment_metadata = (
             db.query(TranscriptSegment)
             .filter(
-                TranscriptSegment.transcription_id == transcription_id,
+                TranscriptSegment.transcript_id == transcription_id,
                 TranscriptSegment.segment_id == segment_id,
             )
             .first()
@@ -522,7 +522,7 @@ class TranscriptionService:
         else:
             # Create new metadata
             segment_metadata = TranscriptSegment(
-                transcription_id=transcription_id,
+                transcript_id=transcription_id,
                 segment_id=segment_id,
                 is_key_moment=is_key_moment,
             )
@@ -562,7 +562,7 @@ class TranscriptionService:
         key_moment_metadata = (
             db.query(TranscriptSegment)
             .filter(
-                TranscriptSegment.transcription_id == transcription_id,
+                TranscriptSegment.transcript_id == transcription_id,
                 TranscriptSegment.is_key_moment == True,
             )
             .all()

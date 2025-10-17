@@ -21,7 +21,6 @@ from app.core.qdrant import (
 )
 from app.core.config import settings
 from app.models.transcription import Transcription
-from app.models.document import Document
 from app.models.case import Case
 
 logger = logging.getLogger(__name__)
@@ -134,7 +133,6 @@ class TranscriptIndexingService:
         segment: Dict[str, Any],
         segment_index: int,
         transcription_id: int,
-        document_id: int,
         case_id: int,
         embeddings: Optional[Dict[str, List[float]]] = None,
         audio_filename: Optional[str] = None,
@@ -146,7 +144,6 @@ class TranscriptIndexingService:
             segment: Segment dictionary from transcription
             segment_index: Index of this segment in the transcript
             transcription_id: Associated transcription ID
-            document_id: Associated document ID
             case_id: Associated case ID
             embeddings: Pre-computed embeddings (will generate if None)
             audio_filename: Optional audio filename for searchability
@@ -186,7 +183,6 @@ class TranscriptIndexingService:
         # Build payload with metadata
         payload = {
             "transcription_id": transcription_id,
-            "document_id": document_id,
             "case_id": case_id,
             "text": text,
             "chunk_type": "transcript_segment",  # Distinguish from document chunks
@@ -265,14 +261,6 @@ class TranscriptIndexingService:
             if not transcription:
                 raise ValueError(f"Transcription {transcription_id} not found")
 
-            # Get document and case info
-            document = db.query(Document).filter(
-                Document.id == transcription.document_id
-            ).first()
-
-            if not document:
-                raise ValueError(f"Document {transcription.document_id} not found for transcription {transcription_id}")
-
             # Get segments
             segments = transcription.segments
 
@@ -285,8 +273,8 @@ class TranscriptIndexingService:
                     "message": "No segments to index",
                 }
 
-            # Get audio filename from document for searchability
-            audio_filename = document.filename
+            # Get audio filename from transcription for searchability
+            audio_filename = transcription.filename
 
             # Create points for all segments
             points = []
@@ -298,8 +286,7 @@ class TranscriptIndexingService:
                         segment=segment,
                         segment_index=idx,
                         transcription_id=transcription.id,
-                        document_id=document.id,
-                        case_id=document.case_id,
+                        case_id=transcription.case_id,
                         audio_filename=audio_filename,
                     )
                     points.append(point)
@@ -317,8 +304,7 @@ class TranscriptIndexingService:
 
             result = {
                 "transcription_id": transcription_id,
-                "document_id": document.id,
-                "case_id": document.case_id,
+                "case_id": transcription.case_id,
                 "indexed_count": len(points),
                 "failed_count": len(failed_segments),
                 "total_segments": len(segments),
@@ -525,15 +511,9 @@ class TranscriptIndexingService:
             if not case:
                 raise ValueError(f"Case {case_id} not found")
 
-            # Get all documents for the case
-            documents = db.query(Document).filter(
-                Document.case_id == case_id
-            ).all()
-
-            # Get all transcriptions for these documents
-            document_ids = [doc.id for doc in documents]
+            # Get all transcriptions for the case directly
             transcriptions = db.query(Transcription).filter(
-                Transcription.document_id.in_(document_ids)
+                Transcription.case_id == case_id
             ).all()
 
             transcription_ids = [trans.id for trans in transcriptions]
