@@ -999,7 +999,7 @@ onMounted(async () => {
             :icon="metadataSidebarCollapsed ? 'i-lucide-info' : 'i-lucide-x'"
             color="neutral"
             variant="ghost"
-            size="sm"
+            size="md"
             @click="metadataSidebarCollapsed = !metadataSidebarCollapsed"
           />
         </UTooltip>
