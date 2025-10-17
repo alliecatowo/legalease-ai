@@ -6,7 +6,7 @@
  * where each page was fetching the same data independently with different cache keys.
  *
  * Benefits:
- * - Single source of truth for cases, documents, and transcriptions
+ * - Single source of truth for cases, documents, transcriptions, and forensic exports
  * - Reduces redundant API calls
  * - Faster navigation between pages
  * - Consistent data across the application
@@ -14,7 +14,7 @@
  *
  * Usage:
  * ```ts
- * const { cases, documents, transcriptions } = useSharedData()
+ * const { cases, documents, transcriptions, forensicExports } = useSharedData()
  *
  * // Access data
  * console.log(cases.data.value)
@@ -118,6 +118,31 @@ export interface TranscriptionItem {
 }
 
 /**
+ * API Response for forensic exports list
+ */
+export interface ForensicExportListResponse {
+  exports: ForensicExportItem[]
+  total: number
+}
+
+/**
+ * Individual forensic export item from API
+ */
+export interface ForensicExportItem {
+  id: number
+  folder_name: string
+  export_uuid?: string
+  case_id: number
+  case_name?: string
+  total_records?: number
+  num_attachments?: number
+  size_bytes?: number
+  export_status?: string
+  discovered_at?: string
+  [key: string]: any
+}
+
+/**
  * Generic cache state for a data type
  */
 export interface CacheState<T> {
@@ -143,7 +168,7 @@ export interface CacheState<T> {
 
 /**
  * Shared data cache composable
- * Provides centralized access to cases, documents, and transcriptions
+ * Provides centralized access to cases, documents, transcriptions, and forensic exports
  *
  * NOTE: useState calls are inside the function for SSR safety.
  * useState automatically creates singletons based on the key,
@@ -181,6 +206,14 @@ export function useSharedData() {
   const transcriptionsLoading = useState<boolean>('shared-transcriptions-loading', () => false)
   const transcriptionsError = useState<Error | null>('shared-transcriptions-error', () => null)
   const transcriptionsLastUpdated = useState<number | null>('shared-transcriptions-last-updated', () => null)
+
+  /**
+   * Global shared state for forensic exports
+   */
+  const forensicExportsData = useState<ForensicExportItem[] | null>('shared-forensic-exports-data', () => null)
+  const forensicExportsLoading = useState<boolean>('shared-forensic-exports-loading', () => false)
+  const forensicExportsError = useState<Error | null>('shared-forensic-exports-error', () => null)
+  const forensicExportsLastUpdated = useState<number | null>('shared-forensic-exports-last-updated', () => null)
 
   // Default cache duration: 5 minutes
   const DEFAULT_CACHE_DURATION = 5 * 60 * 1000
@@ -367,6 +400,76 @@ export function useSharedData() {
   }
 
   // ==========================================================================
+  // Forensic Exports
+  // ==========================================================================
+
+  /**
+   * Fetch forensic exports from API and update cache
+   */
+  const fetchForensicExports = async (): Promise<void> => {
+    // Skip if already loading
+    if (forensicExportsLoading.value) return
+
+    forensicExportsLoading.value = true
+    forensicExportsError.value = null
+
+    try {
+      const response = await api.forensicExports.listAll()
+
+      // Enrich exports with case names from the cases cache
+      const enriched = (response.exports || []).map((exp: any) => {
+        const caseItem = casesData.value?.cases?.find((c: any) => c.id === exp.case_id)
+        return {
+          ...exp,
+          case_name: caseItem?.name || `Case ${exp.case_id}`
+        }
+      })
+
+      forensicExportsData.value = enriched
+      forensicExportsLastUpdated.value = Date.now()
+    } catch (err) {
+      forensicExportsError.value = err instanceof Error ? err : new Error('Failed to fetch forensic exports')
+      console.error('Error fetching forensic exports:', err)
+    } finally {
+      forensicExportsLoading.value = false
+    }
+  }
+
+  /**
+   * Invalidate forensic exports cache without fetching
+   */
+  const invalidateForensicExports = (): void => {
+    forensicExportsData.value = null
+    forensicExportsLastUpdated.value = null
+    forensicExportsError.value = null
+  }
+
+  /**
+   * Check if forensic exports cache is stale
+   */
+  const isForensicExportsStale = (maxAge: number = DEFAULT_CACHE_DURATION): boolean => {
+    if (!forensicExportsLastUpdated.value) return true
+    return Date.now() - forensicExportsLastUpdated.value > maxAge
+  }
+
+  /**
+   * Refresh forensic exports data - always fetches fresh data
+   */
+  const refreshForensicExports = async (): Promise<void> => {
+    await fetchForensicExports()
+  }
+
+  /**
+   * Get forensic exports with automatic caching
+   * Fetches only if cache is empty or stale
+   */
+  const getForensicExports = async (forceRefresh: boolean = false): Promise<void> => {
+    if (forceRefresh || !forensicExportsData.value || isForensicExportsStale()) {
+      await fetchForensicExports()
+    }
+  }
+
+  // ==========================================================================
   // Utility Functions
   // ==========================================================================
 
@@ -377,6 +480,7 @@ export function useSharedData() {
     invalidateCases()
     invalidateDocuments()
     invalidateTranscriptions()
+    invalidateForensicExports()
   }
 
   /**
@@ -386,7 +490,8 @@ export function useSharedData() {
     await Promise.all([
       fetchCases(),
       fetchDocuments(),
-      fetchTranscriptions()
+      fetchTranscriptions(),
+      fetchForensicExports()
     ])
   }
 
@@ -406,6 +511,9 @@ export function useSharedData() {
     if (!transcriptionsData.value) {
       promises.push(getTranscriptions())
     }
+    if (!forensicExportsData.value) {
+      promises.push(getForensicExports())
+    }
 
     if (promises.length > 0) {
       await Promise.all(promises)
@@ -416,14 +524,14 @@ export function useSharedData() {
    * Get overall loading state
    */
   const isAnyLoading = computed(() => {
-    return casesLoading.value || documentsLoading.value || transcriptionsLoading.value
+    return casesLoading.value || documentsLoading.value || transcriptionsLoading.value || forensicExportsLoading.value
   })
 
   /**
    * Get overall error state
    */
   const hasAnyError = computed(() => {
-    return !!(casesError.value || documentsError.value || transcriptionsError.value)
+    return !!(casesError.value || documentsError.value || transcriptionsError.value || forensicExportsError.value)
   })
 
   /**
@@ -433,7 +541,8 @@ export function useSharedData() {
     return {
       cases: casesError.value,
       documents: documentsError.value,
-      transcriptions: transcriptionsError.value
+      transcriptions: transcriptionsError.value,
+      forensicExports: forensicExportsError.value
     }
   })
 
@@ -483,6 +592,20 @@ export function useSharedData() {
       isStale: isTranscriptionsStale,
       get: getTranscriptions
     } as CacheState<TranscriptionListResponse> & { get: (forceRefresh?: boolean) => Promise<void> },
+
+    /**
+     * Forensic Exports cache state and operations
+     */
+    forensicExports: {
+      data: forensicExportsData,
+      loading: forensicExportsLoading,
+      error: forensicExportsError,
+      lastUpdated: forensicExportsLastUpdated,
+      refresh: refreshForensicExports,
+      invalidate: invalidateForensicExports,
+      isStale: isForensicExportsStale,
+      get: getForensicExports
+    } as CacheState<ForensicExportItem[]> & { get: (forceRefresh?: boolean) => Promise<void> },
 
     /**
      * Utility functions
