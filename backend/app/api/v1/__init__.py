@@ -42,3 +42,9 @@ try:
     api_router.include_router(indexing.router, prefix="/indexing", tags=["indexing"])
 except ImportError as e:
     print(f"Warning: Could not import indexing router: {e}")
+
+try:
+    from app.api.v1 import forensic_exports
+    api_router.include_router(forensic_exports.router, tags=["forensic-exports"])
+except ImportError as e:
+    print(f"Warning: Could not import forensic_exports router: {e}")
