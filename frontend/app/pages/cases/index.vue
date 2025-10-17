@@ -5,19 +5,20 @@ definePageMeta({
   layout: 'default'
 })
 
-const api = useApi()
 const showCreateModal = ref(false)
 const viewMode = ref<'grid' | 'list'>('grid')
 const searchQuery = ref('')
 const selectedStatus = ref('all')
 const selectedType = ref('all')
-const loading = ref(true)
-const error = ref<string | null>(null)
 
-// Fetch cases from API
-const { data: casesData, refresh } = await useAsyncData('cases', () => api.cases.list(), {
-  default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
-})
+// Use shared data cache system
+const { cases: casesCache } = useSharedData()
+
+// Initialize shared data on page mount - only fetch if cache is stale
+await casesCache.get()
+
+// Access the cached cases data
+const casesData = computed(() => casesCache.data.value || { cases: [], total: 0 })
 
 // Transform backend data to frontend format
 const cases = computed(() => {
@@ -39,8 +40,6 @@ const cases = computed(() => {
     progress: c.status === 'ACTIVE' ? 50 : c.status === 'STAGING' ? 25 : c.status === 'UNLOADED' ? 100 : 0
   }))
 })
-
-loading.value = false
 
 const statusOptions = [
   { label: 'All Status', value: 'all' },
@@ -87,7 +86,7 @@ const statusColors: Record<string, string> = {
 
 async function onCaseCreated(caseData: any) {
   console.log('Case created:', caseData)
-  await refresh() // Refresh the cases list
+  await casesCache.refresh() // Refresh the cached cases list
   showCreateModal.value = false
 }
 </script>
@@ -358,7 +357,7 @@ async function onCaseCreated(caseData: any) {
         </div>
 
         <!-- Create Case Modal -->
-        <ModalsCreateCaseModal v-model:open="showCreateModal" @created="onCaseCreated" />
+        <LazyModalsCreateCaseModal v-if="showCreateModal" v-model:open="showCreateModal" @created="onCaseCreated" />
       </div>
     </template>
   </UDashboardPanel>
