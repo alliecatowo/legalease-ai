@@ -11,6 +11,10 @@ const toast = useToast()
 // View mode
 const viewMode = ref<'list' | 'table'>('list')
 
+// Multi-select state
+const selectedExports = ref<number[]>([])
+const isDeletingBulk = ref(false)
+
 // Scan modal state
 const showScanModal = ref(false)
 const selectedCaseForScan = ref<number | null>(null)
@@ -292,6 +296,73 @@ const statusColors: Record<string, string> = {
   'Failed': 'error',
   'In Progress': 'info'
 }
+
+// Multi-select functions
+const allSelected = computed(() =>
+  filteredExports.value.length > 0 &&
+  selectedExports.value.length === filteredExports.value.length
+)
+
+const someSelected = computed(() =>
+  selectedExports.value.length > 0 &&
+  selectedExports.value.length < filteredExports.value.length
+)
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedExports.value = []
+  } else {
+    selectedExports.value = filteredExports.value.map((exp: any) => exp.id)
+  }
+}
+
+function toggleSelect(id: number) {
+  const index = selectedExports.value.indexOf(id)
+  if (index > -1) {
+    selectedExports.value.splice(index, 1)
+  } else {
+    selectedExports.value.push(id)
+  }
+}
+
+function isSelected(id: number) {
+  return selectedExports.value.includes(id)
+}
+
+async function deleteBulk() {
+  if (selectedExports.value.length === 0) return
+
+  const count = selectedExports.value.length
+  if (!confirm(`Delete ${count} export record${count > 1 ? 's' : ''}? (Files will remain on disk)`)) {
+    return
+  }
+
+  isDeletingBulk.value = true
+
+  try {
+    // Delete all selected exports
+    await Promise.all(
+      selectedExports.value.map(id => api.forensicExports.delete(id))
+    )
+
+    toast.add({
+      title: 'Success',
+      description: `${count} export record${count > 1 ? 's' : ''} deleted successfully`,
+      color: 'success'
+    })
+
+    selectedExports.value = []
+    await refreshExports()
+  } catch (error: any) {
+    toast.add({
+      title: 'Error',
+      description: error.message || 'Failed to delete exports',
+      color: 'error'
+    })
+  } finally {
+    isDeletingBulk.value = false
+  }
+}
 </script>
 
 <template>
@@ -381,6 +452,35 @@ const statusColors: Record<string, string> = {
               <p class="text-3xl font-bold text-info mb-1">{{ formatBytes(stats.totalSize) }}</p>
               <p class="text-sm font-medium text-muted">Total Size</p>
             </div>
+          </div>
+        </div>
+
+        <!-- Bulk Actions Toolbar -->
+        <div v-if="selectedExports.length > 0" class="bg-primary/10 border border-primary/20 rounded-xl p-4">
+          <div class="flex items-center justify-between gap-4 flex-wrap">
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-check-circle" class="size-5 text-primary" />
+              <span class="font-semibold text-highlighted">
+                {{ selectedExports.length }} export{{ selectedExports.length > 1 ? 's' : '' }} selected
+              </span>
+            </div>
+            <UFieldGroup>
+              <UButton
+                label="Deselect All"
+                icon="i-lucide-x"
+                color="neutral"
+                variant="outline"
+                @click="selectedExports = []"
+              />
+              <UButton
+                label="Delete Selected"
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="soft"
+                :loading="isDeletingBulk"
+                @click="deleteBulk"
+              />
+            </UFieldGroup>
           </div>
         </div>
 
@@ -475,9 +575,20 @@ const statusColors: Record<string, string> = {
               </UBadge>
             </div>
 
-            <!-- Results Count -->
-            <div class="text-sm text-muted">
-              Showing {{ filteredExports.length }} of {{ stats.total }} exports
+            <!-- Results Count & Select All -->
+            <div class="flex items-center justify-between">
+              <div class="text-sm text-muted">
+                Showing {{ filteredExports.length }} of {{ stats.total }} exports
+              </div>
+              <UButton
+                v-if="filteredExports.length > 0"
+                :label="allSelected ? 'Deselect All' : 'Select All'"
+                :icon="allSelected ? 'i-lucide-check-square' : (someSelected ? 'i-lucide-minus-square' : 'i-lucide-square')"
+                color="primary"
+                variant="ghost"
+                size="sm"
+                @click="toggleSelectAll"
+              />
             </div>
           </div>
         </UCard>
@@ -578,17 +689,34 @@ const statusColors: Record<string, string> = {
           <UCard
             v-for="exp in filteredExports"
             :key="exp.id"
-            class="hover:shadow-md transition-all cursor-pointer"
-            @click="navigateTo(`/forensic-exports/${exp.id}`)"
+            :class="[
+              'hover:shadow-md transition-all',
+              isSelected(exp.id) ? 'ring-2 ring-primary bg-primary/5' : ''
+            ]"
           >
             <div class="flex items-start gap-4">
+              <!-- Checkbox -->
+              <div class="flex-shrink-0 pt-3">
+                <UCheckbox
+                  :model-value="isSelected(exp.id)"
+                  @update:model-value="toggleSelect(exp.id)"
+                  @click.stop
+                />
+              </div>
+
               <!-- Icon -->
-              <div class="flex-shrink-0 p-3 bg-primary/10 rounded-lg">
+              <div
+                class="flex-shrink-0 p-3 bg-primary/10 rounded-lg cursor-pointer"
+                @click="navigateTo(`/forensic-exports/${exp.id}`)"
+              >
                 <UIcon name="i-lucide-database" class="size-6 text-primary" />
               </div>
 
               <!-- Content -->
-              <div class="flex-1 min-w-0">
+              <div
+                class="flex-1 min-w-0 cursor-pointer"
+                @click="navigateTo(`/forensic-exports/${exp.id}`)"
+              >
                 <div class="flex items-start justify-between gap-4">
                   <div class="flex-1 min-w-0">
                     <h3 class="font-semibold text-base truncate">
