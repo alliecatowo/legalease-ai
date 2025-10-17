@@ -132,8 +132,31 @@ const performSearch = async () => {
     // Use hybrid endpoint by default
     const response = await api.search.hybrid(request)
 
-    // Transform backend response to frontend format
-    let results = (response.results || []).map((result: any) => ({
+    // Pre-filter results BEFORE transformation to reduce unnecessary work
+    let rawResults = response.results || []
+
+    // Early filtering on raw results for better performance
+    if (selectedDocumentTypes.value.length > 0 || !includeTranscripts.value) {
+      rawResults = rawResults.filter((result: any) => {
+        const docType = determineDocumentType(result)
+        const chunkType = result.metadata?.chunk_type
+
+        // Filter transcripts if not included
+        if (!includeTranscripts.value && (docType === 'transcript' || chunkType === 'transcript_segment')) {
+          return false
+        }
+
+        // Filter by document type if selected
+        if (selectedDocumentTypes.value.length > 0 && !selectedDocumentTypes.value.includes(docType)) {
+          return false
+        }
+
+        return true
+      })
+    }
+
+    // Transform filtered results only (more efficient)
+    const results = rawResults.map((result: any) => ({
       id: result.id,
       title: extractTitle(result),
       excerpt: formatExcerpt(result),
@@ -141,25 +164,15 @@ const performSearch = async () => {
       date: result.metadata?.created_at || result.metadata?.uploaded_at || new Date().toISOString(),
       jurisdiction: result.metadata?.jurisdiction || null,
       relevanceScore: result.score,
-      entities: extractEntities(result.metadata), // Extract from metadata
+      entities: extractEntities(result.metadata),
       caseNumber: result.metadata?.case_id ? `Case #${result.metadata.case_id}` : null,
       metadata: result.metadata,
       highlights: result.highlights,
-      vectorType: result.vector_type, // Pass through for highlighting logic
+      vectorType: result.vector_type,
       chunkType: result.metadata?.chunk_type,
       pageNumber: result.metadata?.page_number,
       filename: result.metadata?.filename
     }))
-
-    // Client-side filter by document type if selected
-    if (selectedDocumentTypes.value.length > 0) {
-      results = results.filter(r => selectedDocumentTypes.value.includes(r.documentType))
-    }
-
-    // Filter transcripts if not included
-    if (!includeTranscripts.value) {
-      results = results.filter(r => r.documentType !== 'transcript' && r.chunkType !== 'transcript_segment')
-    }
 
     searchResults.value = results
   } catch (error) {
@@ -420,8 +433,8 @@ function highlightText(text: string, query: string, isKeywordMatch: boolean, isS
   return highlighted
 }
 
-// Debounced search - increased to 500ms for better UX
-const debouncedSearch = useDebounceFn(performSearch, 500)
+// Debounced search - 300ms for responsive feel
+const debouncedSearch = useDebounceFn(performSearch, 300)
 
 // Watch search query
 watch(searchQuery, () => {

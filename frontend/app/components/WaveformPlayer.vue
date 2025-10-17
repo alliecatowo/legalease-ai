@@ -21,6 +21,9 @@ const emit = defineEmits<{
 const waveformRef = ref<HTMLDivElement | null>(null)
 const wavesurfer = ref<WaveSurfer | null>(null)
 const isReady = ref(false)
+const isAudioReady = ref(false) // Audio can play before waveform is drawn
+const isLoading = ref(false)
+const loadingProgress = ref(0)
 const duration = ref(0)
 const isPlaying = ref(false)
 const volume = ref(1)
@@ -34,6 +37,14 @@ const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 async function initializeWaveSurfer() {
   if (!waveformRef.value) return
 
+  isLoading.value = true
+  loadingProgress.value = 0
+
+  // Create audio element with optimal streaming settings
+  const audio = document.createElement('audio')
+  audio.preload = 'metadata' // Load metadata quickly, stream rest on demand
+  audio.crossOrigin = 'anonymous'
+
   wavesurfer.value = WaveSurfer.create({
     container: waveformRef.value,
     waveColor: '#94A3B8',
@@ -46,12 +57,29 @@ async function initializeWaveSurfer() {
     normalize: true,
     backend: 'MediaElement',
     mediaControls: false,
-    interact: true
+    interact: true,
+    media: audio
   })
 
-  // Event listeners
+  // Enable play button immediately - browser will buffer on play
+  // This is how native audio works - no waiting!
+  setTimeout(() => {
+    isAudioReady.value = true
+  }, 100)
+
+  // Loading progress
+  wavesurfer.value.on('loading', (percent: number) => {
+    // Validate percent is a valid number
+    if (isFinite(percent) && percent >= 0 && percent <= 100) {
+      loadingProgress.value = percent
+    }
+  })
+
+  // Ready event - waveform fully loaded
   wavesurfer.value.on('ready', () => {
     isReady.value = true
+    isLoading.value = false
+    loadingProgress.value = 100
     duration.value = wavesurfer.value!.getDuration()
     emit('ready', duration.value)
     drawSegmentMarkers()
@@ -84,8 +112,19 @@ async function initializeWaveSurfer() {
     emit('update:isPlaying', false)
   })
 
-  // Load audio
-  await wavesurfer.value.load(props.audioUrl)
+  // Error handling
+  wavesurfer.value.on('error', (error: string) => {
+    console.error('WaveSurfer error:', error)
+    isLoading.value = false
+    isReady.value = false
+  })
+
+  // Load audio with progressive loading - don't await, let it load in background
+  wavesurfer.value.load(props.audioUrl).catch((error) => {
+    console.error('Failed to load audio:', error)
+    isLoading.value = false
+    isAudioReady.value = false
+  })
 }
 
 // Draw segment markers on waveform
@@ -224,11 +263,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-4">
-    <!-- Loading Skeleton -->
-    <div v-if="!isReady" class="w-full bg-muted/20 rounded-lg p-8 flex items-center justify-center">
-      <div class="text-center space-y-3">
+    <!-- Loading Skeleton with Progress -->
+    <div v-if="isLoading || !isReady" class="w-full bg-muted/20 rounded-lg p-8">
+      <div class="text-center space-y-4">
         <UIcon name="i-lucide-loader-circle" class="size-8 text-primary animate-spin mx-auto" />
-        <p class="text-sm text-muted">Loading waveform...</p>
+        <div class="space-y-2">
+          <p class="text-sm text-muted">Loading waveform...</p>
+          <p class="text-xs text-success">
+            <UIcon name="i-lucide-check-circle" class="inline size-3" />
+            Audio ready - you can play while waveform loads
+          </p>
+        </div>
       </div>
     </div>
 
@@ -246,7 +291,7 @@ onBeforeUnmount(() => {
             color="neutral"
             variant="ghost"
             size="sm"
-            :disabled="!isReady"
+            :disabled="!isAudioReady"
             @click="skip(-10)"
           />
         </UTooltip>
@@ -256,7 +301,7 @@ onBeforeUnmount(() => {
           :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
           color="primary"
           size="lg"
-          :disabled="!isReady"
+          :disabled="!isAudioReady"
           @click="togglePlayPause"
         />
 
@@ -267,7 +312,7 @@ onBeforeUnmount(() => {
             color="neutral"
             variant="ghost"
             size="sm"
-            :disabled="!isReady"
+            :disabled="!isAudioReady"
             @click="skip(10)"
           />
         </UTooltip>
