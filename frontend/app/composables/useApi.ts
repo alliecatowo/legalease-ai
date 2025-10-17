@@ -188,6 +188,19 @@ export const useApi = () => {
       getAudio: (id: number) => api(`/api/v1/transcriptions/${id}/audio`)
     },
 
+    // Forensic Exports
+    forensicExports: {
+      listForCase: (caseId: number) => api(`/api/v1/cases/${caseId}/forensic-exports`),
+      listAll: () => api('/api/v1/forensic-exports'),
+      get: (id: number) => api(`/api/v1/forensic-exports/${id}`),
+      scan: (caseId: number, path: string) => api(`/api/v1/cases/${caseId}/forensic-exports/scan`, {
+        method: 'POST',
+        body: { path }
+      }),
+      verify: (id: number) => api(`/api/v1/forensic-exports/${id}/verify`, { method: 'POST' }),
+      delete: (id: number) => api(`/api/v1/forensic-exports/${id}`, { method: 'DELETE' })
+    },
+
     // Stats & Analytics
     stats: {
       dashboard: () => api('/api/v1/stats/dashboard'),
