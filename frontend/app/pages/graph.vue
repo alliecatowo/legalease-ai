@@ -90,9 +90,6 @@ const selectedRelationshipTypes = computed({
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Knowledge Graph">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UFieldGroup>
             <UTooltip text="Filters">

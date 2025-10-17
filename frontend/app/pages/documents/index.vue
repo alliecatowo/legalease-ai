@@ -3,72 +3,35 @@ import { ref, computed } from 'vue'
 
 const api = useApi()
 
-// Fetch all cases first
-const { data: casesData, refresh: refreshCases } = await useAsyncData(
-  'all-cases',
-  () => api.cases.list(),
-  {
-    default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
-  }
-)
+// Use shared data cache
+const { documents: documentsCache, cases: casesCache } = useSharedData()
 
-// State for documents
-const allDocuments = ref<any[]>([])
-const loadingDocuments = ref(false)
+// Initialize data on mount
+await documentsCache.get()
+await casesCache.get()
 
-// Fetch documents for all cases
-async function fetchAllDocuments() {
-  if (!casesData.value?.cases || casesData.value.cases.length === 0) {
-    allDocuments.value = []
-    return
-  }
+// Computed documents with proper normalization
+const documents = computed(() => {
+  if (!documentsCache.data.value?.documents) return []
 
-  loadingDocuments.value = true
-  const fetchedDocs: any[] = []
+  // Normalize documents to match expected format
+  return documentsCache.data.value.documents.map((d: any) => ({
+    ...d,
+    document_type: d.meta_data?.document_type || d.document_type || 'general',
+    title: d.meta_data?.title || d.title || d.filename,
+    summary: d.meta_data?.summary || d.summary,
+    file_size: d.size || d.file_size,
+    created_at: d.uploaded_at || d.created_at,
+    updated_at: d.uploaded_at || d.updated_at
+  }))
+})
 
-  try {
-    // Fetch documents for each case in parallel
-    const docPromises = casesData.value.cases.map(async (case_: any) => {
-      try {
-        const docsData = await api.documents.listByCase(case_.id)
-        if (docsData?.documents) {
-          return docsData.documents.map((d: any) => ({
-            ...d,
-            case_name: case_.name,
-            case_id: case_.id,
-            document_type: d.meta_data?.document_type || 'general',
-            title: d.meta_data?.title || d.filename,
-            summary: d.meta_data?.summary,
-            file_size: d.size,
-            created_at: d.uploaded_at,
-            updated_at: d.uploaded_at
-          }))
-        }
-        return []
-      } catch (e) {
-        console.error(`Failed to fetch documents for case ${case_.id}:`, e)
-        return []
-      }
-    })
+// Loading state from cache
+const loadingDocuments = computed(() => documentsCache.loading.value)
 
-    const results = await Promise.all(docPromises)
-    results.forEach(docs => fetchedDocs.push(...docs))
-    allDocuments.value = fetchedDocs
-  } finally {
-    loadingDocuments.value = false
-  }
-}
-
-// Fetch documents when component mounts or cases change
-watch(() => casesData.value?.cases, () => {
-  fetchAllDocuments()
-}, { immediate: true })
-
-const documents = computed(() => allDocuments.value)
-
+// Refresh function using shared cache
 async function refresh() {
-  await refreshCases()
-  await fetchAllDocuments()
+  await documentsCache.refresh()
 }
 
 const searchQuery = ref('')
@@ -187,7 +150,7 @@ async function uploadDocuments() {
   if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
 
   // Get the first available case ID (or show error if no cases exist)
-  if (!casesData.value?.cases || casesData.value.cases.length === 0) {
+  if (!casesCache.data.value?.cases || casesCache.data.value.cases.length === 0) {
     if (import.meta.client) {
       const toast = useToast()
       toast.add({
@@ -199,7 +162,7 @@ async function uploadDocuments() {
     return
   }
 
-  const caseId = casesData.value.cases[0].id
+  const caseId = casesCache.data.value.cases[0].id
   uploadProgress.value = 0
 
   const formData = new FormData()
@@ -313,9 +276,6 @@ const documentTypeIcons: Record<string, string> = {
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Documents">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UButton
             label="Upload"

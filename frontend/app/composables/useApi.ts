@@ -62,40 +62,9 @@ export const useApi = () => {
     // Documents
     documents: {
       listByCase: (caseId: string | number) => api(`/api/v1/cases/${caseId}/documents`),
-      listAll: (params?: any) => {
-        // List all documents across all cases by fetching each case's documents
-        return api<any>('/api/v1/cases')
-          .then(async (casesResponse: any) => {
-            const cases = casesResponse.cases || []
-            const allDocuments: any[] = []
-
-            // Fetch documents for each case
-            for (const caseItem of cases) {
-              try {
-                const docsResponse = await api<any>(`/api/v1/cases/${caseItem.id}/documents`)
-                const docs = docsResponse.documents || []
-                // Add case info to each document
-                docs.forEach((doc: any) => {
-                  allDocuments.push({
-                    ...doc,
-                    case_name: caseItem.name,
-                    case_number: caseItem.case_number
-                  })
-                })
-              } catch (err) {
-                console.error(`Failed to fetch documents for case ${caseItem.id}:`, err)
-              }
-            }
-
-            // Sort by upload date (newest first)
-            allDocuments.sort((a, b) => {
-              const dateA = new Date(a.uploaded_at || 0).getTime()
-              const dateB = new Date(b.uploaded_at || 0).getTime()
-              return dateB - dateA
-            })
-
-            return { documents: allDocuments, total: allDocuments.length }
-          })
+      listAll: (params?: { page?: number; page_size?: number; case_id?: number }) => {
+        // Use the new efficient endpoint that includes case info in a single query
+        return api<any>('/api/v1/documents', { params })
       },
       get: (id: string) => api(`/api/v1/documents/${id}`),
       upload: (caseId: string | number, formData: FormData) => api(`/api/v1/cases/${caseId}/documents`, { method: 'POST', body: formData }),
@@ -115,40 +84,9 @@ export const useApi = () => {
     // Transcriptions
     transcriptions: {
       listForCase: (caseId: number) => api(`/api/v1/cases/${caseId}/transcriptions`),
-      listAll: (params?: any) => {
-        // List all transcriptions across all cases
-        return api<any>('/api/v1/cases')
-          .then(async (casesResponse: any) => {
-            const cases = casesResponse.cases || []
-            const allTranscriptions: any[] = []
-
-            // Fetch transcriptions for each case
-            for (const caseItem of cases) {
-              try {
-                const transResponse = await api<any>(`/api/v1/cases/${caseItem.id}/transcriptions`)
-                const transcriptions = transResponse.transcriptions || []
-                // Add case info to each transcription
-                transcriptions.forEach((trans: any) => {
-                  allTranscriptions.push({
-                    ...trans,
-                    case_name: caseItem.name,
-                    case_number: caseItem.case_number
-                  })
-                })
-              } catch (err) {
-                console.error(`Failed to fetch transcriptions for case ${caseItem.id}:`, err)
-              }
-            }
-
-            // Sort by created date (newest first)
-            allTranscriptions.sort((a, b) => {
-              const dateA = new Date(a.created_at || 0).getTime()
-              const dateB = new Date(b.created_at || 0).getTime()
-              return dateB - dateA
-            })
-
-            return { transcriptions: allTranscriptions, total: allTranscriptions.length }
-          })
+      listAll: (params?: { page?: number; page_size?: number; case_id?: number }) => {
+        // Use the new paginated endpoint
+        return api<any>('/api/v1/transcriptions', { params })
       },
       get: (id: number) => api(`/api/v1/transcriptions/${id}`),
       upload: (caseId: number, formData: FormData) =>

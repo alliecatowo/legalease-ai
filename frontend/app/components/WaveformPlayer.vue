@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 import type { TranscriptSegment } from '~/composables/useTranscription'
+import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps<{
   audioUrl: string
@@ -20,10 +21,14 @@ const emit = defineEmits<{
 const waveformRef = ref<HTMLDivElement | null>(null)
 const wavesurfer = ref<WaveSurfer | null>(null)
 const isReady = ref(false)
+const isAudioReady = ref(false) // Audio can play before waveform is drawn
+const isLoading = ref(false)
+const loadingProgress = ref(0)
 const duration = ref(0)
 const isPlaying = ref(false)
 const volume = ref(1)
 const playbackRate = ref(1)
+const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -32,31 +37,60 @@ const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 async function initializeWaveSurfer() {
   if (!waveformRef.value) return
 
+  isLoading.value = true
+  loadingProgress.value = 0
+
+  // Create audio element with optimal streaming settings
+  const audio = document.createElement('audio')
+  audio.preload = 'metadata' // Load metadata quickly, stream rest on demand
+  audio.crossOrigin = 'anonymous'
+
   wavesurfer.value = WaveSurfer.create({
     container: waveformRef.value,
     waveColor: '#94A3B8',
     progressColor: '#3B82F6',
     cursorColor: '#3B82F6',
-    barWidth: 2,
+    barWidth: 3,
     barGap: 1,
     barRadius: 2,
-    height: 100,
+    height: 80,
     normalize: true,
-    backend: 'WebAudio',
-    interact: true
+    backend: 'MediaElement',
+    mediaControls: false,
+    interact: true,
+    media: audio
   })
 
-  // Event listeners
+  // Enable play button immediately - browser will buffer on play
+  // This is how native audio works - no waiting!
+  setTimeout(() => {
+    isAudioReady.value = true
+  }, 100)
+
+  // Loading progress
+  wavesurfer.value.on('loading', (percent: number) => {
+    // Validate percent is a valid number
+    if (isFinite(percent) && percent >= 0 && percent <= 100) {
+      loadingProgress.value = percent
+    }
+  })
+
+  // Ready event - waveform fully loaded
   wavesurfer.value.on('ready', () => {
     isReady.value = true
+    isLoading.value = false
+    loadingProgress.value = 100
     duration.value = wavesurfer.value!.getDuration()
     emit('ready', duration.value)
     drawSegmentMarkers()
   })
 
-  wavesurfer.value.on('audioprocess', (time) => {
+  // Throttle audioprocess to 100ms instead of 60fps for better performance
+  const throttledAudioProcess = useThrottleFn((time: number) => {
     emit('update:currentTime', time)
-  })
+  }, 100)
+
+  wavesurfer.value.on('audioprocess', throttledAudioProcess)
 
   wavesurfer.value.on('seek', (progress) => {
     const time = progress * duration.value
@@ -78,8 +112,19 @@ async function initializeWaveSurfer() {
     emit('update:isPlaying', false)
   })
 
-  // Load audio
-  await wavesurfer.value.load(props.audioUrl)
+  // Error handling
+  wavesurfer.value.on('error', (error: string) => {
+    console.error('WaveSurfer error:', error)
+    isLoading.value = false
+    isReady.value = false
+  })
+
+  // Load audio with progressive loading - don't await, let it load in background
+  wavesurfer.value.load(props.audioUrl).catch((error) => {
+    console.error('Failed to load audio:', error)
+    isLoading.value = false
+    isAudioReady.value = false
+  })
 }
 
 // Draw segment markers on waveform
@@ -88,6 +133,41 @@ function drawSegmentMarkers() {
 
   // TODO: Add visual markers for segments on waveform
   // This would require a WaveSurfer plugin or custom overlay
+}
+
+// Draw segment timeline on canvas
+function drawSegmentTimeline() {
+  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
+
+  const canvas = timelineCanvasRef.value
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // Set canvas dimensions to match display size
+  const rect = canvas.getBoundingClientRect()
+  canvas.width = rect.width * window.devicePixelRatio
+  canvas.height = rect.height * window.devicePixelRatio
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+
+  // Clear canvas
+  ctx.clearRect(0, 0, rect.width, rect.height)
+
+  // Draw each segment
+  props.segments.forEach((segment) => {
+    const left = (segment.start / duration.value) * rect.width
+    const width = ((segment.end - segment.start) / duration.value) * rect.width
+
+    // Set color based on segment type and selection
+    const isSelected = segment.id === props.selectedSegmentId
+    const baseColor = segment.isKeyMoment ? '#F59E0B' : '#3B82F6'
+    const opacity = isSelected ? 1.0 : 0.6
+
+    ctx.fillStyle = baseColor
+    ctx.globalAlpha = opacity
+    ctx.fillRect(left, 0, width, rect.height)
+  })
+
+  ctx.globalAlpha = 1.0
 }
 
 // Play/pause
@@ -142,6 +222,26 @@ watch(() => props.currentTime, (newTime) => {
   }
 })
 
+// Watch for changes that require redrawing the timeline
+watch([() => props.segments, () => props.selectedSegmentId, duration], () => {
+  drawSegmentTimeline()
+}, { deep: true })
+
+// Handle canvas click
+function handleTimelineClick(event: MouseEvent) {
+  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
+
+  const rect = timelineCanvasRef.value.getBoundingClientRect()
+  const clickX = event.clientX - rect.left
+  const clickTime = (clickX / rect.width) * duration.value
+
+  // Find the segment at this time
+  const segment = props.segments.find(s => clickTime >= s.start && clickTime <= s.end)
+  if (segment) {
+    emit('segment-click', segment)
+  }
+}
+
 // Expose methods
 defineExpose({
   play: () => wavesurfer.value?.play(),
@@ -163,8 +263,22 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-4">
+    <!-- Loading Skeleton with Progress -->
+    <div v-if="isLoading || !isReady" class="w-full bg-muted/20 rounded-lg p-8">
+      <div class="text-center space-y-4">
+        <UIcon name="i-lucide-loader-circle" class="size-8 text-primary animate-spin mx-auto" />
+        <div class="space-y-2">
+          <p class="text-sm text-muted">Loading waveform...</p>
+          <p class="text-xs text-success">
+            <UIcon name="i-lucide-check-circle" class="inline size-3" />
+            Audio ready - you can play while waveform loads
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Waveform Container -->
-    <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg" />
+    <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg" :class="{ 'hidden': !isReady }" />
 
     <!-- Controls -->
     <div class="flex items-center justify-between gap-4">
@@ -177,7 +291,7 @@ onBeforeUnmount(() => {
             color="neutral"
             variant="ghost"
             size="sm"
-            :disabled="!isReady"
+            :disabled="!isAudioReady"
             @click="skip(-10)"
           />
         </UTooltip>
@@ -187,7 +301,7 @@ onBeforeUnmount(() => {
           :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
           color="primary"
           size="lg"
-          :disabled="!isReady"
+          :disabled="!isAudioReady"
           @click="togglePlayPause"
         />
 
@@ -198,7 +312,7 @@ onBeforeUnmount(() => {
             color="neutral"
             variant="ghost"
             size="sm"
-            :disabled="!isReady"
+            :disabled="!isAudioReady"
             @click="skip(10)"
           />
         </UTooltip>
@@ -245,20 +359,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Segment Timeline (optional visual representation) -->
-    <div v-if="segments && segments.length > 0" class="relative h-2 bg-muted/20 rounded-full overflow-hidden">
-      <div
-        v-for="segment in segments"
-        :key="segment.id"
-        class="absolute h-full cursor-pointer transition-opacity hover:opacity-80"
-        :class="segment.id === selectedSegmentId ? 'opacity-100' : 'opacity-60'"
-        :style="{
-          left: `${(segment.start / duration) * 100}%`,
-          width: `${((segment.end - segment.start) / duration) * 100}%`,
-          backgroundColor: segment.isKeyMoment ? '#F59E0B' : '#3B82F6'
-        }"
-        @click="emit('segment-click', segment)"
-      />
-    </div>
+    <!-- Segment Timeline (Canvas-based for better performance) -->
+    <canvas
+      v-if="segments && segments.length > 0"
+      ref="timelineCanvasRef"
+      class="w-full h-2 bg-muted/20 rounded-full cursor-pointer"
+      @click="handleTimelineClick"
+    />
   </div>
 </template>

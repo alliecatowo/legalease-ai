@@ -151,11 +151,30 @@ const filteredSegments = computed(() => {
   return segments
 })
 
+// Virtual scrolling for better performance with large segment lists
+const { list: virtualList, containerProps, wrapperProps } = useVirtualList(
+  filteredSegments,
+  {
+    itemHeight: 140, // Estimated height per segment
+    overscan: 5 // Pre-render 5 extra items for smooth scrolling
+  }
+)
+
 const currentSegment = computed(() => {
   if (!transcript.value) return null
   return transcript.value.segments.find(segment =>
     currentTime.value >= segment.start && currentTime.value <= segment.end
   ) || null
+})
+
+// Computed property for active segment ID - optimized for template rendering
+// This reduces 200-300 function calls/sec down to 1 computed property update per 100ms
+const activeSegmentId = computed(() => {
+  if (!transcript.value) return null
+  const segment = transcript.value.segments.find(segment =>
+    currentTime.value >= segment.start && currentTime.value <= segment.end
+  )
+  return segment?.id || null
 })
 
 const keyMoments = computed(() => {
@@ -638,7 +657,7 @@ onMounted(() => {
         <template v-else-if="transcript">
           <!-- Audio Player (if available) -->
           <div v-if="transcript.audioUrl" class="p-6 border-b border-default bg-default">
-            <WaveformPlayer
+            <LazyWaveformPlayer
               :audio-url="transcript.audioUrl"
               :current-time="currentTime"
               :segments="transcript.segments"
@@ -782,15 +801,15 @@ onMounted(() => {
           </div>
 
           <!-- Transcript Segments -->
-          <div class="flex-1 overflow-y-auto p-6">
-            <div class="max-w-5xl mx-auto space-y-3">
-              <!-- Segments -->
+          <div v-bind="containerProps" class="flex-1 overflow-y-auto p-6">
+            <div v-bind="wrapperProps" class="max-w-5xl mx-auto">
+              <!-- Virtualized Segments -->
               <div
-                v-for="segment in filteredSegments"
+                v-for="{ data: segment, index } in virtualList"
                 :key="segment.id"
-                class="p-4 rounded-lg transition-all duration-200 cursor-pointer"
+                class="p-4 rounded-lg transition-all duration-200 cursor-pointer mb-3"
                 :class="[
-                  isActiveSegment(segment)
+                  segment.id === activeSegmentId
                     ? 'bg-primary/20 ring-3 ring-primary shadow-lg scale-[1.01] border-2 border-primary/50'
                     : selectedSegment?.id === segment.id
                       ? 'bg-muted/30 ring-1 ring-default'
