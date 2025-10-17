@@ -71,8 +71,8 @@ test = "docker compose exec backend pytest"
 
 # === Seed & Setup ===
 setup = "docker compose up -d postgres redis qdrant minio neo4j ollama && sleep 5 && docker compose exec ollama ollama pull llama3.1 && docker compose exec ollama ollama pull nomic-embed-text && docker compose exec backend alembic upgrade head"
-seed = "docker compose exec backend python -m seed.seed"
-"seed:clear" = "docker compose exec backend python -m seed.seed --clear-db"
+seed = "docker compose exec backend uv run python -m seed.seed"
+"seed:clear" = "docker compose exec backend uv run python -m seed.seed --clear-db"
 
 # === Cleanup ===
 clean = "docker compose down"
