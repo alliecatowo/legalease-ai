@@ -12,14 +12,31 @@ const toast = useToast()
 
 const documentId = computed(() => route.params.id as string)
 
-// Fetch document details
-const { data: document, pending: loadingDocument, error: documentError, refresh: refreshDocument } = await useAsyncData(
-  `document-${documentId.value}`,
-  () => api.documents.get(documentId.value),
-  {
-    default: () => null
+// Use shared documents cache
+const { documents: documentsCache } = useSharedData()
+
+// Initialize shared data on page mount - only fetch if cache is stale
+await documentsCache.get()
+
+// Find this document in the cached list
+const document = computed(() => {
+  if (!documentsCache.data.value?.documents) return null
+  return documentsCache.data.value.documents.find(d => String(d.id) === String(documentId.value)) || null
+})
+
+const loadingDocument = documentsCache.loading
+const documentError = computed(() => {
+  // If we loaded successfully but document not found, show error
+  if (!documentsCache.loading.value && documentsCache.data.value && !document.value) {
+    return new Error('Document not found')
   }
-)
+  return documentsCache.error.value
+})
+
+// Refresh function for the document
+async function refreshDocument() {
+  await documentsCache.refresh()
+}
 
 // Fetch document content
 const { data: content, pending: loadingContent, error: contentError } = await useAsyncData(
@@ -614,7 +631,7 @@ const tabItems = computed(() => [
 
                 <!-- Document Viewer with PDF and bbox highlighting -->
                 <div v-if="isViewable && fileExtension.toLowerCase() === 'pdf'" class="min-h-[600px]">
-                  <DocumentViewer
+                  <LazyDocumentViewer
                     :document-id="documentId"
                     :search-query="searchWithinQuery"
                     :bm25-results="bm25Results"
