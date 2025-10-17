@@ -58,7 +58,8 @@ const chunkTypeOptions = [
   { value: 'section', label: 'Sections', description: 'Major document sections' },
   { value: 'microblock', label: 'Microblocks', description: 'Detailed paragraphs' },
   { value: 'paragraph', label: 'Paragraphs', description: 'Individual paragraphs' },
-  { value: 'page', label: 'Pages', description: 'Full pages' }
+  { value: 'page', label: 'Pages', description: 'Full pages' },
+  { value: 'transcript_segment', label: 'Transcript Segments', description: 'Audio/video transcript snippets' }
 ]
 
 // Watch search mode and update settings
@@ -89,6 +90,18 @@ const performSearch = async () => {
     // Filter out null/undefined values and convert to integers
     const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
 
+    // Build chunk_types from both selectedChunkTypes and selectedDocumentTypes
+    const chunkTypes = [...selectedChunkTypes.value]
+
+    // Map document types to chunk types
+    if (selectedDocumentTypes.value.includes('transcript')) {
+      if (!chunkTypes.includes('transcript_segment')) {
+        chunkTypes.push('transcript_segment')
+      }
+    }
+    // Add other document type mappings if needed in the future
+    // e.g., if (selectedDocumentTypes.value.includes('contract')) { ... }
+
     // Build search request with filters
     const request = {
       query: searchQuery.value,
@@ -97,7 +110,7 @@ const performSearch = async () => {
       fusion_method: searchSettings.value.fusion_method,
       top_k: searchSettings.value.top_k,
       score_threshold: searchSettings.value.score_threshold > 0 ? searchSettings.value.score_threshold : undefined,
-      chunk_types: selectedChunkTypes.value.length > 0 ? selectedChunkTypes.value : undefined,
+      chunk_types: chunkTypes.length > 0 ? chunkTypes : undefined,
       case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
       document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
     }
@@ -152,7 +165,14 @@ const performSearch = async () => {
 
 // Determine document type from metadata
 function determineDocumentType(result: any): string {
-  // Priority: explicit document_type > inferred from filename > chunk_type > default
+  // Priority: chunk_type for transcripts > explicit document_type > inferred from filename > default
+
+  // Handle transcript segments specifically
+  if (result.metadata?.chunk_type === 'transcript_segment') {
+    return 'transcript'
+  }
+
+  // Explicit document type from metadata
   if (result.metadata?.document_type) {
     return result.metadata.document_type
   }
@@ -204,6 +224,13 @@ function extractEntities(metadata: any): Array<{ type: string; text: string }> {
 // Extract title from result with enhanced logic
 function extractTitle(result: any): string {
   const metadata = result.metadata || {}
+
+  // Handle transcript segments specifically
+  if (metadata.chunk_type === 'transcript_segment') {
+    const speaker = metadata.speaker || 'Unknown Speaker'
+    const transcriptTitle = metadata.title || metadata.filename || 'Transcript'
+    return `${speaker} - ${transcriptTitle}`
+  }
 
   // Priority 1: Explicit title from metadata
   if (metadata.title && metadata.title.length > 3) {
@@ -266,8 +293,36 @@ function extractTitle(result: any): string {
   return `${chunkType.charAt(0).toUpperCase() + chunkType.slice(1)} from Document #${docId}`
 }
 
+// Helper function to format timestamp for transcripts
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 // Format excerpt with highlights - dual color for keyword vs semantic
 function formatExcerpt(result: any): string {
+  const metadata = result.metadata || {}
+
+  // Handle transcript segments specifically
+  if (metadata.chunk_type === 'transcript_segment') {
+    const text = result.text || result.highlights?.[0] || ''
+    const timePrefix = metadata.start_time !== undefined ? `[${formatTime(metadata.start_time)}] ` : ''
+    const excerpt = text.length > 300 ? text.substring(0, 300) + '...' : text
+
+    // Apply highlighting to transcript text
+    const isKeywordMatch = result.vector_type === 'bm25' || searchMode.value === 'keyword'
+    const isSemanticMatch = result.vector_type !== 'bm25' || searchMode.value === 'semantic'
+    const highlightedText = highlightText(excerpt, searchQuery.value, isKeywordMatch, isSemanticMatch)
+
+    return timePrefix + highlightedText
+  }
+
   const isKeywordMatch = result.vector_type === 'bm25' || searchMode.value === 'keyword'
   const isSemanticMatch = result.vector_type !== 'bm25' || searchMode.value === 'semantic'
 
