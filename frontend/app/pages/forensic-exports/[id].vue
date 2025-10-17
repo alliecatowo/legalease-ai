@@ -154,8 +154,8 @@ const hasProblems = computed(() => {
 })
 
 const exportOptionsTableColumns = [
-  { key: 'name', label: 'Option', id: 'name' },
-  { key: 'value', label: 'Value', id: 'value' }
+  { accessorKey: 'name', header: 'Option' },
+  { accessorKey: 'value', header: 'Value' }
 ]
 
 onMounted(() => {
@@ -384,7 +384,7 @@ onMounted(() => {
 
                 <UTable
                   :columns="exportOptionsTableColumns"
-                  :rows="exportData.export_options_json"
+                  :data="exportData.export_options_json"
                   :ui="{
                     td: { base: 'max-w-0 truncate' }
                   }"

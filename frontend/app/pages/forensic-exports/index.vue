@@ -275,14 +275,14 @@ async function verifyExport(id: number) {
 
 // Table columns for UTable
 const columns = [
-  { key: 'folder_name', label: 'Folder Name', id: 'folder_name' },
-  { key: 'case_name', label: 'Case', id: 'case_name' },
-  { key: 'total_records', label: 'Total Records', id: 'total_records' },
-  { key: 'num_attachments', label: 'Attachments', id: 'num_attachments' },
-  { key: 'size_bytes', label: 'Size', id: 'size_bytes' },
-  { key: 'export_status', label: 'Status', id: 'export_status' },
-  { key: 'discovered_at', label: 'Discovered', id: 'discovered_at' },
-  { key: 'actions', label: 'Actions', id: 'actions' }
+  { accessorKey: 'folder_name', header: 'Folder Name' },
+  { accessorKey: 'case_name', header: 'Case' },
+  { accessorKey: 'total_records', header: 'Total Records' },
+  { accessorKey: 'num_attachments', header: 'Attachments' },
+  { accessorKey: 'size_bytes', header: 'Size' },
+  { accessorKey: 'export_status', header: 'Status' },
+  { accessorKey: 'discovered_at', header: 'Discovered' },
+  { accessorKey: 'actions', header: 'Actions' }
 ]
 
 // Status badge colors
@@ -485,7 +485,7 @@ const statusColors: Record<string, string> = {
         <!-- Table View -->
         <div v-if="viewMode === 'table' && filteredExports.length > 0">
           <UTable
-            :rows="filteredExports"
+            :data="filteredExports"
             :columns="columns"
             class="w-full"
             @select="(row: any) => navigateTo(`/forensic-exports/${row.id}`)"
