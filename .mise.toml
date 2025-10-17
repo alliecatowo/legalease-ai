@@ -11,50 +11,83 @@ QDRANT_URL = "http://localhost:6333"
 MINIO_ENDPOINT = "localhost:9000"
 NEO4J_URI = "bolt://localhost:7687"
 OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_MODEL_SUMMARIZATION = "llama3.1"
 
 [tasks]
 # === Development ===
-dev-frontend = "cd frontend && pnpm dev"
-dev-backend = "cd backend && uv run uvicorn app.main:app --reload"
-dev-worker = "cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info"
+dev = "docker compose up"
+"dev:frontend" = "cd frontend && pnpm dev"
+"dev:backend" = "cd backend && uv run uvicorn app.main:app --reload"
+"dev:worker" = "cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info"
 
-# === Docker Services ===
+# === Docker Compose Commands ===
 up = "docker compose up -d"
 down = "docker compose down"
+"down-v" = "docker compose down -v"
 restart = "docker compose restart"
-rebuild = "docker compose up -d --build"
-clean = "docker compose down -v"
+rebuild = "docker compose build --no-cache"
+"up-build" = "docker compose up -d --build"
 ps = "docker compose ps"
+stats = "docker stats"
+health = "docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'"
 
-# === Database ===
-# Migrations
-migrate = "docker compose exec backend bash -c 'cd /app && uv run alembic upgrade head'"
-"migrate:down" = "docker compose exec backend bash -c 'cd /app && uv run alembic downgrade -1'"
-"migrate:create" = "docker compose exec backend bash -c 'cd /app && uv run alembic revision --autogenerate -m \"${DESCRIPTION}\"'"
-"migrate:current" = "docker compose exec backend bash -c 'cd /app && uv run alembic current'"
-"migrate:history" = "docker compose exec backend bash -c 'cd /app && uv run alembic history'"
-
-# Data seeding
-seed = "docker compose exec backend bash -c 'cd /app && uv run python scripts/seed_with_real_pdfs.py'"
-"seed:clear" = "docker compose exec backend bash -c 'cd /app && uv run python scripts/seed_with_real_pdfs.py --clear-db'"
-
-# Database access
-psql = "docker compose exec postgres psql -U legalease -d legalease"
+# === Service-Specific Commands ===
+"up:infra" = "docker compose up -d postgres redis qdrant minio neo4j ollama"
+"up:backend" = "docker compose up -d backend worker beat"
+"up:frontend" = "docker compose up -d frontend"
 
 # === Logs ===
 logs = "docker compose logs -f"
 "logs:backend" = "docker compose logs -f backend"
 "logs:worker" = "docker compose logs -f worker"
 "logs:frontend" = "docker compose logs -f frontend"
+"logs:tail" = "docker compose logs --tail=100"
+"logs:all" = "docker compose logs -f --tail=50"
 
 # === Shell Access ===
 shell = "docker compose exec backend bash"
 "shell:frontend" = "docker compose exec frontend sh"
+"shell:worker" = "docker compose exec worker bash"
+"shell:postgres" = "docker compose exec postgres psql -U legalease -d legalease"
+"shell:redis" = "docker compose exec redis redis-cli"
+"shell:neo4j" = "docker compose exec neo4j cypher-shell -u neo4j -p legalease_dev"
 
-# === Setup ===
-setup = "docker compose up -d && docker compose exec ollama ollama pull llama3.1 && docker compose exec ollama ollama pull nomic-embed-text && docker compose exec backend alembic upgrade head"
-"setup:models" = "./scripts/download_models.sh"
+# === Database Management ===
+migrate = "docker compose exec backend alembic upgrade head"
+"migrate:down" = "docker compose exec backend alembic downgrade -1"
+"migrate:create" = "docker compose exec backend alembic revision --autogenerate -m \"${DESCRIPTION}\""
+"migrate:history" = "docker compose exec backend alembic history"
+psql = "docker compose exec postgres psql -U legalease -d legalease"
 
 # === Testing ===
-test = "docker compose exec backend pytest -v"
-"test:cov" = "docker compose exec backend pytest -v --cov=app"
+test = "docker compose exec backend pytest"
+"test:v" = "docker compose exec backend pytest -v"
+"test:cov" = "docker compose exec backend pytest --cov=app --cov-report=html"
+"test:frontend" = "docker compose exec frontend pnpm test"
+
+# === Ollama Management ===
+"ollama:pull" = "docker compose exec ollama ollama pull llama3.1 && docker compose exec ollama ollama pull nomic-embed-text"
+"ollama:list" = "docker compose exec ollama ollama list"
+
+# === Seed & Setup ===
+setup = "docker compose up -d postgres redis qdrant minio neo4j ollama && sleep 5 && docker compose exec ollama ollama pull llama3.1 && docker compose exec ollama ollama pull nomic-embed-text && docker compose exec backend alembic upgrade head"
+seed = "docker compose exec backend uv run python -m seed.seed"
+"seed:clear" = "docker compose exec backend uv run python -m seed.seed --clear-db"
+
+# === Cleanup ===
+clean = "docker compose down"
+"clean:all" = "docker compose down -v --rmi all"
+"clean:cache" = "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
+prune = "docker system prune -af --volumes"
+
+# === Backup & Restore ===
+"backup:db" = "mkdir -p backups && docker compose exec -T postgres pg_dump -U legalease legalease > backups/legalease_$(date +%Y%m%d_%H%M%S).sql"
+"restore:db" = "docker compose exec -T postgres psql -U legalease -d legalease < ${FILE}"
+
+# === Production ===
+"prod:build" = "docker compose -f docker-compose.yml -f docker-compose.prod.yml build"
+"prod:up" = "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
+"prod:down" = "docker compose -f docker-compose.yml -f docker-compose.prod.yml down"
+
+# === Monitoring ===
+watch = "watch -n 2 docker compose ps"

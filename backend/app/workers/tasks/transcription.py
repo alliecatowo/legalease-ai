@@ -13,6 +13,7 @@ import uuid
 import re
 import httpx
 import warnings
+import time
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -21,6 +22,8 @@ from io import BytesIO
 warnings.filterwarnings("ignore", message=".*torchaudio.*deprecated.*", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*AudioMetaData.*deprecated.*", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*pkg_resources.*deprecated.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*torchaudio.load_with_torchcodec.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*TorchCodec.*", category=UserWarning)
 
 from app.workers.celery_app import celery_app
 from app.core.database import SessionLocal
@@ -38,6 +41,85 @@ class TranscriptionError(Exception):
 
 class AudioProcessor:
     """Handles audio preprocessing with FFmpeg."""
+
+    @staticmethod
+    def extract_waveform_data(wav_path: str, num_samples: int = 800) -> Optional[Dict[str, Any]]:
+        """
+        Extract waveform peak data from WAV file for visualization.
+
+        Args:
+            wav_path: Path to WAV file
+            num_samples: Number of data points to extract (default: 800 for smooth visualization)
+
+        Returns:
+            Dict containing peaks array, duration, and sample_rate, or None if failed
+        """
+        try:
+            import wave
+            import struct
+            import array
+
+            with wave.open(wav_path, 'rb') as wav_file:
+                # Get WAV file properties
+                num_channels = wav_file.getnchannels()
+                sample_width = wav_file.getsampwidth()
+                framerate = wav_file.getframerate()
+                num_frames = wav_file.getnframes()
+                duration = num_frames / float(framerate)
+
+                # Read all frames
+                raw_data = wav_file.readframes(num_frames)
+
+                # Convert bytes to samples based on sample width
+                if sample_width == 1:
+                    # 8-bit unsigned
+                    samples = array.array('B', raw_data)
+                    samples = [(s - 128) / 128.0 for s in samples]  # Normalize to -1 to 1
+                elif sample_width == 2:
+                    # 16-bit signed
+                    samples = array.array('h', raw_data)
+                    samples = [s / 32768.0 for s in samples]  # Normalize to -1 to 1
+                elif sample_width == 4:
+                    # 32-bit signed
+                    samples = array.array('i', raw_data)
+                    samples = [s / 2147483648.0 for s in samples]  # Normalize to -1 to 1
+                else:
+                    logger.warning(f"Unsupported sample width: {sample_width}")
+                    return None
+
+                # If stereo, convert to mono by averaging channels
+                if num_channels == 2:
+                    samples = [(samples[i] + samples[i+1]) / 2 for i in range(0, len(samples), 2)]
+
+                # Downsample to num_samples peaks for efficient rendering
+                samples_per_peak = max(1, len(samples) // num_samples)
+                peaks = []
+
+                for i in range(0, len(samples), samples_per_peak):
+                    chunk = samples[i:i + samples_per_peak]
+                    if chunk:
+                        # Get peak (max absolute value) for this chunk
+                        peak = max(abs(min(chunk)), abs(max(chunk)))
+                        peaks.append(round(peak, 4))  # Round to 4 decimals to reduce size
+
+                # Ensure we have exactly num_samples points
+                if len(peaks) > num_samples:
+                    peaks = peaks[:num_samples]
+                elif len(peaks) < num_samples:
+                    # Pad with zeros if needed
+                    peaks.extend([0.0] * (num_samples - len(peaks)))
+
+                logger.info(f"Extracted {len(peaks)} waveform peaks from {duration:.1f}s audio")
+
+                return {
+                    'peaks': peaks,
+                    'duration': round(duration, 2),
+                    'sample_rate': framerate
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to extract waveform data: {e}")
+            return None
 
     @staticmethod
     def preprocess_audio(input_path: str, output_path: str) -> Tuple[bool, str]:
@@ -433,6 +515,9 @@ class SpeakerNameInferencer:
         """
         Use LLM to infer speaker names from conversation context.
 
+        Uses Redis-based semaphore to prevent concurrent Ollama requests,
+        which can cause RAM/VRAM exhaustion and timeouts.
+
         Args:
             segments: List of transcription segments
             speakers: List of unique speaker IDs
@@ -443,6 +528,11 @@ class SpeakerNameInferencer:
             Dict mapping speaker IDs to inferred names with confidence scores
         """
         try:
+            from app.services.ollama_semaphore import get_ollama_semaphore
+
+            # Get semaphore for Ollama access control
+            semaphore = get_ollama_semaphore()
+
             # Prepare conversation context (first ~10 segments)
             context_segments = segments[:min(10, len(segments))]
             conversation_text = "\n".join([
@@ -488,42 +578,62 @@ Speakers to identify: {', '.join(speakers)}
 
 Return JSON with speaker names and confidence scores:"""
 
-            # Call Ollama API
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{ollama_url}/api/generate",
-                    json={
-                        "model": "llama3.1:latest",
-                        "prompt": prompt,
-                        "system": system_prompt,
-                        "stream": False,
-                        "format": "json",
-                        "options": {
-                            "temperature": 0.1,  # Low temperature for consistent results
-                            "top_p": 0.9
-                        }
-                    }
-                )
+            # Acquire semaphore before calling Ollama (prevents concurrent requests)
+            try:
+                with semaphore.acquire(blocking=True, timeout=60):
+                    logger.info("Ollama semaphore acquired, calling LLM for speaker name inference")
 
-                if response.status_code == 200:
-                    result = response.json()
-                    response_text = result.get('response', '{}')
+                    # Call Ollama API with timeout
+                    from app.core.config import settings as app_settings
 
-                    # Parse JSON response
-                    try:
-                        inferred_names = json.loads(response_text)
-                        logger.info(f"LLM inference result: {inferred_names}")
-                        return inferred_names
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse LLM JSON response: {e}")
-                        logger.debug(f"Raw response: {response_text}")
-                        return {}
-                else:
-                    logger.error(f"Ollama API error: {response.status_code}")
-                    logger.error(f"Ollama API response body: {response.text}")
-                    logger.error(f"Ollama API response headers: {response.headers}")
-                    return {}
+                    async with httpx.AsyncClient(timeout=90.0) as client:
+                        response = await client.post(
+                            f"{ollama_url}/api/generate",
+                            json={
+                                "model": app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                                "prompt": prompt,
+                                "system": system_prompt,
+                                "stream": False,
+                                "format": "json",
+                                "options": {
+                                    "temperature": 0.1,  # Low temperature for consistent results
+                                    "top_p": 0.9
+                                }
+                            }
+                        )
 
+                        if response.status_code == 200:
+                            result = response.json()
+                            response_text = result.get('response', '{}')
+
+                            # Parse JSON response
+                            try:
+                                inferred_names = json.loads(response_text)
+                                logger.info(f"LLM inference result: {inferred_names}")
+                                return inferred_names
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse LLM JSON response: {e}")
+                                logger.debug(f"Raw response: {response_text}")
+                                return {}
+                        else:
+                            logger.error(f"Ollama API error: {response.status_code}")
+                            logger.error(f"Ollama API response body: {response.text}")
+                            logger.error(f"Ollama API response headers: {response.headers}")
+                            return {}
+
+            except TimeoutError as e:
+                logger.warning(f"Ollama semaphore timeout: {e}")
+                logger.info("Skipping speaker name inference due to high system load")
+                return {}
+
+        except httpx.ReadTimeout:
+            logger.warning("Ollama API timeout - likely due to RAM/VRAM exhaustion")
+            logger.info("Using default speaker names instead")
+            return {}
+        except httpx.ConnectError:
+            logger.warning("Cannot connect to Ollama - service may be unavailable")
+            logger.info("Using default speaker names instead")
+            return {}
         except Exception as e:
             logger.error(f"LLM name inference failed: {e}", exc_info=True)
             return {}
@@ -932,6 +1042,14 @@ def transcribe_audio(
         duration = processor.get_audio_duration(processed_wav)
         logger.info(f"Audio duration: {duration} seconds")
 
+        # Step 3.5: Extract waveform data for visualization
+        logger.info("Extracting waveform data for instant visualization")
+        waveform_data = processor.extract_waveform_data(processed_wav)
+        if waveform_data:
+            logger.info(f"Successfully extracted waveform with {len(waveform_data['peaks'])} peaks")
+        else:
+            logger.warning("Failed to extract waveform data, will fallback to client-side generation")
+
         # Step 4: Transcribe with Whisper
         self.update_state(
             state='PROCESSING',
@@ -944,46 +1062,78 @@ def transcribe_audio(
         try:
             import torch
             from app.services.model_manager import get_pyannote_model_paths
-            from app.services.device_manager import get_device, get_compute_type
+            from app.services.device_manager import get_device_manager, get_device, get_compute_type
+            from app.services.model_selector import ModelSelector
+            from app.core.config import settings
 
             # Get device and compute type (supports both CUDA and ROCm)
+            device_manager = get_device_manager()
             device = get_device()
             compute_type = get_compute_type(prefer_fp16=True)
 
+            # Get VRAM and calculate optimal settings
+            vram_gb = device_manager._vram_gb or 0
+            if vram_gb == 0:
+                # Fallback for CPU or unknown device
+                logger.warning("Unable to detect VRAM, using conservative defaults")
+                vram_gb = 4.0  # Assume 4GB for conservative defaults
+
+            # Calculate optimal settings based on VRAM
+            optimal_settings = ModelSelector.calculate_optimal_settings(
+                vram_gb=vram_gb,
+                user_model=settings.WHISPER_MODEL,
+                enable_diarization=options.get("enable_diarization", settings.ENABLE_DIARIZATION),
+            )
+
+            # Extract settings
+            whisper_model = optimal_settings["model"]
+            batch_size = optimal_settings["batch_size"]
+            enable_diarization = optimal_settings["enable_diarization"]
+
             logger.info(f"Using device: {device} with compute type: {compute_type}")
+            logger.info(
+                f"Adaptive settings: model={whisper_model}, batch_size={batch_size}, "
+                f"diarization={enable_diarization}, VRAM={vram_gb:.1f}GB"
+            )
+            logger.info(f"Reason: {optimal_settings['reason']}")
 
             # Check if HF token is available for Pyannote diarization
+            # (enable_diarization may have been adjusted by ModelSelector)
             hf_token = os.getenv("HF_TOKEN")
             pyannote_available = hf_token is not None and enable_diarization
 
-            if pyannote_available:
+            if not enable_diarization:
+                logger.info("Speaker diarization disabled by adaptive model selector")
+            elif pyannote_available:
                 logger.info("HuggingFace token available - will use Pyannote for speaker diarization")
-            elif enable_diarization:
+            else:
                 logger.warning("No HF_TOKEN found - will use simple heuristic diarization")
 
             # Try WhisperX for transcription + alignment (faster, more accurate)
             try:
                 from app.workers.pipelines.whisperx_pipeline import WhisperXPipeline
 
-                min_speakers = options.get("min_speakers", 2)
-                max_speakers = options.get("max_speakers", 10)
+                min_speakers = options.get("min_speakers", settings.DIARIZATION_MIN_SPEAKERS)
+                max_speakers = options.get("max_speakers", settings.DIARIZATION_MAX_SPEAKERS)
 
-                # Initialize WhisperX WITHOUT diarization (we'll use Pyannote directly)
+                # Initialize WhisperX with adaptively selected model
                 pipeline = WhisperXPipeline(
-                    model_name="medium",  # Medium model (~5GB VRAM, good balance of speed/quality)
+                    model_name=whisper_model,  # Adaptive model selection
                     device=device,
                     compute_type=compute_type,
                     language=language if language and language != "auto" else None,
-                    hf_token=None  # No HF token needed!
+                    hf_token=None  # No HF token needed for transcription
                 )
 
                 # Transcribe with alignment only (no diarization yet)
+                whisperx_start = time.time()
                 result = pipeline.transcribe(
                     audio_path=processed_wav,
                     enable_alignment=True,
-                    enable_diarization=False,  # We'll do this separately
-                    batch_size=16
+                    enable_diarization=False,  # We'll do this separately with Pyannote
+                    batch_size=batch_size  # Adaptive batch size
                 )
+                whisperx_time = time.time() - whisperx_start
 
                 # Convert WhisperX result to our format and add UUIDs
                 segments = []
@@ -995,7 +1145,8 @@ def transcribe_audio(
                 full_text = result.get_full_text()
                 detected_language = result.language
 
-                logger.info(f"WhisperX transcription completed: {len(segments)} segments, language={detected_language}")
+                logger.info(f"WhisperX transcription completed in {whisperx_time:.1f}s: {len(segments)} segments, language={detected_language}")
+                logger.info(f"Performance: {duration/whisperx_time:.2f}x realtime (processed {duration:.0f}s audio in {whisperx_time:.1f}s)")
 
                 # Cleanup WhisperX models from memory
                 pipeline.cleanup()
@@ -1034,11 +1185,12 @@ def transcribe_audio(
                         from pyannote.audio import Pipeline
 
                         logger.info("Running Pyannote speaker diarization...")
+                        diarization_start = time.time()
 
                         # Check if exact speaker count is provided
                         num_speakers = options.get("num_speakers")
-                        min_speakers = options.get("min_speakers", 2)
-                        max_speakers = options.get("max_speakers", 5)
+                        min_speakers = options.get("min_speakers", settings.DIARIZATION_MIN_SPEAKERS)
+                        max_speakers = options.get("max_speakers", settings.DIARIZATION_MAX_SPEAKERS)
 
                         # Load diarization pipeline from HuggingFace
                         logger.info("Loading speaker-diarization-3.1 from HuggingFace...")
@@ -1066,6 +1218,8 @@ def transcribe_audio(
                                 min_speakers=min_speakers,
                                 max_speakers=max_speakers
                             )
+
+                        diarization_time = time.time() - diarization_start
 
                         # Assign speakers to segments
                         diarized_segments = []
@@ -1095,7 +1249,9 @@ def transcribe_audio(
 
                             diarized_segments.append(segment)
 
-                        logger.info(f"Diarization completed: {len(set(s['speaker'] for s in diarized_segments))} speakers detected")
+                        num_detected_speakers = len(set(s['speaker'] for s in diarized_segments))
+                        logger.info(f"Diarization completed in {diarization_time:.1f}s: {num_detected_speakers} speakers detected")
+                        logger.info(f"Diarization performance: {duration/diarization_time:.2f}x realtime")
 
                         # Apply post-processing smoothing to reduce rapid speaker changes
                         diarizer = SpeakerDiarizer()
@@ -1165,7 +1321,7 @@ def transcribe_audio(
 
         # Step 5.5: AI-powered speaker name inference (if enabled)
         inference_metadata = None
-        enable_name_inference = options.get("enable_name_inference", True)
+        enable_name_inference = options.get("enable_name_inference", settings.ENABLE_SPEAKER_NAME_INFERENCE)
 
         if enable_name_inference and len(speakers) > 0:
             try:
@@ -1188,6 +1344,8 @@ def transcribe_audio(
                     asyncio.set_event_loop(loop)
 
                 # Perform inference
+                logger.info("Starting AI-powered speaker name inference...")
+                inference_start = time.time()
                 inferencer = SpeakerNameInferencer()
                 speakers, inference_metadata = loop.run_until_complete(
                     inferencer.infer_speaker_names(
@@ -1197,8 +1355,10 @@ def transcribe_audio(
                         ollama_url=ollama_url
                     )
                 )
+                inference_time = time.time() - inference_start
 
-                logger.info(f"Speaker name inference completed with metadata: {inference_metadata}")
+                logger.info(f"Speaker name inference completed in {inference_time:.1f}s")
+                logger.info(f"Inference metadata: {inference_metadata}")
 
             except Exception as e:
                 logger.warning(f"Speaker name inference failed, using default names: {e}")
@@ -1298,11 +1458,25 @@ def transcribe_audio(
         transcription.duration = duration
         transcription.speakers = list(speakers.values())
         transcription.segments = diarized_segments
+        transcription.waveform_data = waveform_data  # Save pre-computed waveform
         transcription.status = DocumentStatus.COMPLETED
 
         db.commit()
 
+        # Calculate total processing time
+        total_time = time.time() - time.time()  # Will be updated below
+
         logger.info(f"Transcription completed successfully for transcription ID {transcription_id}")
+        logger.info("=" * 80)
+        logger.info("PERFORMANCE SUMMARY:")
+        logger.info(f"  Audio duration: {duration:.1f}s ({duration/60:.1f} minutes)")
+        if 'whisperx_time' in locals():
+            logger.info(f"  WhisperX time: {whisperx_time:.1f}s ({duration/whisperx_time:.2f}x realtime)")
+        if 'diarization_time' in locals():
+            logger.info(f"  Diarization time: {diarization_time:.1f}s ({duration/diarization_time:.2f}x realtime)")
+        if 'inference_time' in locals():
+            logger.info(f"  Speaker inference time: {inference_time:.1f}s")
+        logger.info("=" * 80)
 
         # Step 9: Queue transcript indexing for search
         try:

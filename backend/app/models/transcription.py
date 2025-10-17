@@ -99,6 +99,9 @@ class Transcription(Base):
     entities = Column(JSON, nullable=True)  # Parties, dates, legal terms, citations
     summary_generated_at = Column(DateTime, nullable=True)  # When summary was generated
 
+    # Waveform visualization data
+    waveform_data = Column(JSON, nullable=True)  # Pre-computed waveform peaks for instant rendering
+
     # Relationships
     case = relationship("Case", back_populates="transcriptions")
     document = relationship("Document", back_populates="transcription")  # Legacy - to be removed
