@@ -138,9 +138,18 @@ async function performHybridSearch(query: string) {
   }
 }
 
+// Debounced search to prevent flickering
+const debouncedSearch = useDebounceFn(performHybridSearch, 300)
+
 // Watch for search query changes
 watch(searchWithinQuery, (query) => {
-  performHybridSearch(query)
+  if (!query) {
+    // Clear results immediately when query is empty
+    bm25Results.value = []
+    fusionResults.value = []
+  } else {
+    debouncedSearch(query)
+  }
 }, { immediate: true })
 
 // Document type configuration
@@ -688,10 +697,13 @@ const tabItems = computed(() => [
 
               <!-- Activity Tab -->
               <div v-else-if="selectedTab === 'activity'" class="space-y-4">
-                <div class="text-center py-12">
-                  <UIcon name="i-lucide-activity" class="size-12 text-muted mx-auto mb-4 opacity-50" />
-                  <p class="text-muted">Activity history coming soon</p>
-                </div>
+                <UAlert
+                  color="info"
+                  variant="subtle"
+                  title="Activity Tracking Coming Soon"
+                  description="Document activity history and edit tracking will be available in a future update."
+                  icon="i-lucide-info"
+                />
               </div>
 
               <!-- Related Tab -->
