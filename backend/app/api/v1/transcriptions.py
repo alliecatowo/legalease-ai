@@ -3,7 +3,7 @@
 import logging
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Path, Form, Body
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Path, Form, Body, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -30,10 +30,20 @@ from app.workers.tasks.summarization import (
 )
 from app.workers.celery_app import celery_app
 from app.models.transcription import Transcription
+from app.models.case import Case
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Paginated list response model
+class PaginatedTranscriptionListResponse(BaseModel):
+    """Response model for paginated transcription lists."""
+    transcriptions: List[TranscriptionListItem]
+    total: int = Field(..., description="Total number of transcriptions")
+    page: int = Field(..., description="Current page number")
+    page_size: int = Field(..., description="Number of items per page")
 
 
 # Summarization request/response models
@@ -99,6 +109,78 @@ class KeyMomentsResponse(BaseModel):
     transcription_id: int = Field(..., description="Transcription ID")
     key_moments: List[KeyMomentSegment] = Field(..., description="List of key moments")
     total: int = Field(..., description="Total number of key moments")
+
+
+@router.get(
+    "/transcriptions",
+    response_model=PaginatedTranscriptionListResponse,
+    summary="List all transcriptions with pagination",
+    description="Get all transcriptions across all cases with pagination support. "
+    "This endpoint efficiently retrieves transcriptions in a single query to avoid N+1 query problems.",
+)
+def list_all_transcriptions(
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+    page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
+    case_id: Optional[int] = Query(None, description="Optional case ID to filter transcriptions"),
+    db: Session = Depends(get_db),
+):
+    """
+    List all transcriptions with pagination.
+
+    Args:
+        page: Page number (starting from 1)
+        page_size: Number of items per page (max 100)
+        case_id: Optional case ID to filter transcriptions
+        db: Database session
+
+    Returns:
+        PaginatedTranscriptionListResponse: Paginated list of transcriptions with metadata
+    """
+    logger.info(f"Listing all transcriptions: page={page}, page_size={page_size}, case_id={case_id}")
+
+    # Build base query with join to Case table to get case name
+    query = db.query(Transcription, Case.name.label('case_name')).join(
+        Case, Transcription.case_id == Case.id
+    )
+
+    # Apply case filter if provided
+    if case_id is not None:
+        query = query.filter(Transcription.case_id == case_id)
+
+    # Get total count before pagination
+    total = query.count()
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    results = query.order_by(Transcription.created_at.desc()).offset(offset).limit(page_size).all()
+
+    logger.info(f"Found {total} total transcriptions, returning {len(results)} for page {page}")
+
+    # Convert to list items with case_name
+    # Note: Using dict to avoid Pydantic validation issues with extra field case_name
+    transcription_items = [
+        {
+            "id": trans.id,
+            "case_id": trans.case_id,
+            "case_name": case_name,
+            "filename": trans.filename,
+            "format": trans.format,
+            "duration": trans.duration,
+            "segment_count": len(trans.segments) if trans.segments else 0,
+            "speaker_count": len(trans.speakers) if trans.speakers else 0,
+            "status": trans.status.value if trans.status else "unknown",
+            "created_at": trans.created_at,
+            "uploaded_at": trans.uploaded_at,
+        }
+        for trans, case_name in results
+    ]
+
+    return PaginatedTranscriptionListResponse(
+        transcriptions=transcription_items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(

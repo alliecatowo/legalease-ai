@@ -23,12 +23,12 @@ const searchSettings = ref({
   case_ids: [] as number[] // Filter by case IDs
 })
 
-// Case filters - fetch available cases
-const { data: casesData } = await useAsyncData('search-cases', () => api.cases.list(), {
-  default: () => ({ cases: [], total: 0, page: 1, page_size: 50 })
-})
+// Case filters - use shared cache system
+const { cases } = useSharedData()
+await cases.get() // Load cases from cache or fetch if needed
+
 const availableCases = computed(() =>
-  (casesData.value?.cases || []).map((c: any) => ({
+  (cases.data.value?.cases || []).map((c: any) => ({
     id: Number(c.id),
     name: c.name,
     label: c.name,
@@ -132,8 +132,31 @@ const performSearch = async () => {
     // Use hybrid endpoint by default
     const response = await api.search.hybrid(request)
 
-    // Transform backend response to frontend format
-    let results = (response.results || []).map((result: any) => ({
+    // Pre-filter results BEFORE transformation to reduce unnecessary work
+    let rawResults = response.results || []
+
+    // Early filtering on raw results for better performance
+    if (selectedDocumentTypes.value.length > 0 || !includeTranscripts.value) {
+      rawResults = rawResults.filter((result: any) => {
+        const docType = determineDocumentType(result)
+        const chunkType = result.metadata?.chunk_type
+
+        // Filter transcripts if not included
+        if (!includeTranscripts.value && (docType === 'transcript' || chunkType === 'transcript_segment')) {
+          return false
+        }
+
+        // Filter by document type if selected
+        if (selectedDocumentTypes.value.length > 0 && !selectedDocumentTypes.value.includes(docType)) {
+          return false
+        }
+
+        return true
+      })
+    }
+
+    // Transform filtered results only (more efficient)
+    const results = rawResults.map((result: any) => ({
       id: result.id,
       title: extractTitle(result),
       excerpt: formatExcerpt(result),
@@ -141,25 +164,15 @@ const performSearch = async () => {
       date: result.metadata?.created_at || result.metadata?.uploaded_at || new Date().toISOString(),
       jurisdiction: result.metadata?.jurisdiction || null,
       relevanceScore: result.score,
-      entities: extractEntities(result.metadata), // Extract from metadata
+      entities: extractEntities(result.metadata),
       caseNumber: result.metadata?.case_id ? `Case #${result.metadata.case_id}` : null,
       metadata: result.metadata,
       highlights: result.highlights,
-      vectorType: result.vector_type, // Pass through for highlighting logic
+      vectorType: result.vector_type,
       chunkType: result.metadata?.chunk_type,
       pageNumber: result.metadata?.page_number,
       filename: result.metadata?.filename
     }))
-
-    // Client-side filter by document type if selected
-    if (selectedDocumentTypes.value.length > 0) {
-      results = results.filter(r => selectedDocumentTypes.value.includes(r.documentType))
-    }
-
-    // Filter transcripts if not included
-    if (!includeTranscripts.value) {
-      results = results.filter(r => r.documentType !== 'transcript' && r.chunkType !== 'transcript_segment')
-    }
 
     searchResults.value = results
   } catch (error) {
@@ -420,8 +433,8 @@ function highlightText(text: string, query: string, isKeywordMatch: boolean, isS
   return highlighted
 }
 
-// Debounced search - increased to 500ms for better UX
-const debouncedSearch = useDebounceFn(performSearch, 500)
+// Debounced search - 300ms for responsive feel
+const debouncedSearch = useDebounceFn(performSearch, 300)
 
 // Watch search query
 watch(searchQuery, () => {
@@ -498,9 +511,6 @@ defineShortcuts({
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar :title="searchResults.length > 0 ? `Search Results (${searchResults.length})` : 'Search'">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <div class="flex items-center gap-2">
             <UTooltip text="Search Settings (⌘K)">
@@ -527,9 +537,9 @@ defineShortcuts({
           >
             <div class="w-full max-w-5xl mx-auto text-center space-y-12">
               <!-- Logo/Icon -->
-              <div class="flex items-center justify-center gap-5">
-                <UIcon name="i-lucide-scale" class="size-20 text-primary" />
-                <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
+              <div class="flex items-center justify-center gap-5 overflow-visible">
+                <UIcon name="i-lucide-scale" class="size-20 text-primary shrink-0" />
+                <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight leading-tight pb-2">
                   LegalEase AI
                 </h1>
               </div>

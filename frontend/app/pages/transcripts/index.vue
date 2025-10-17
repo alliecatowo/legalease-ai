@@ -8,6 +8,13 @@ definePageMeta({
 const api = useApi()
 const toast = useToast()
 
+// Initialize shared data cache
+const { cases, transcriptions } = useSharedData()
+
+// Load data on mount
+await cases.get()
+await transcriptions.get()
+
 // View mode
 const viewMode = ref<'grid' | 'list'>('grid')
 
@@ -35,46 +42,25 @@ const selectedCase = ref<number | null>(null)
 const selectedDateRange = ref<string>('all')
 const sortBy = ref<string>('recent')
 
-// Fetch cases for filter
-const { data: casesData } = await useAsyncData(
-  'cases-filter',
-  () => api.cases.list(),
-  { default: () => ({ cases: [], total: 0, page: 1, page_size: 50 }) }
-)
-
+// Case options for filter dropdown
 const caseOptions = computed(() => [
   { label: 'All Cases', value: null },
-  ...(casesData.value?.cases || []).map((c: any) => ({
+  ...(cases.data.value?.cases || []).map((c: any) => ({
     label: c.name,
     value: c.id
   }))
 ])
 
-// Fetch all transcriptions across all cases
-const { data: transcriptionsData, pending: loadingTranscriptions, refresh: refreshTranscriptions } = await useAsyncData(
-  'all-transcriptions',
-  async () => {
-    const allCases = casesData.value?.cases || []
-    const allTranscriptions = []
+// Loading state from shared cache
+const loadingTranscriptions = computed(() => transcriptions.loading.value)
 
-    for (const case_ of allCases) {
-      try {
-        const response = await api.transcriptions.listForCase(case_.id)
-        const transcriptionsWithCase = response.transcriptions.map((t: any) => ({
-          ...t,
-          case_name: case_.name,
-          case_id: case_.id
-        }))
-        allTranscriptions.push(...transcriptionsWithCase)
-      } catch (error) {
-        console.error(`Error fetching transcriptions for case ${case_.id}:`, error)
-      }
-    }
+// Transcriptions data from shared cache
+const transcriptionsData = computed(() => transcriptions.data.value?.transcriptions || [])
 
-    return allTranscriptions
-  },
-  { default: () => [] }
-)
+// Refresh function that uses shared cache
+const refreshTranscriptions = async () => {
+  await transcriptions.refresh()
+}
 
 // Filtered and sorted transcriptions
 const filteredTranscriptions = computed(() => {
@@ -135,12 +121,15 @@ const filteredTranscriptions = computed(() => {
 })
 
 // Statistics
-const stats = computed(() => ({
-  total: transcriptionsData.value?.length || 0,
-  completed: transcriptionsData.value?.filter((t: any) => t.status === 'completed').length || 0,
-  processing: transcriptionsData.value?.filter((t: any) => t.status === 'processing' || t.status === 'queued').length || 0,
-  totalDuration: transcriptionsData.value?.reduce((acc: number, t: any) => acc + (t.duration || 0), 0) || 0
-}))
+const stats = computed(() => {
+  const data = transcriptionsData.value || []
+  return {
+    total: data.length || 0,
+    completed: data.filter((t: any) => t.status === 'completed').length || 0,
+    processing: data.filter((t: any) => t.status === 'processing' || t.status === 'queued').length || 0,
+    totalDuration: data.reduce((acc: number, t: any) => acc + (t.duration || 0), 0) || 0
+  }
+})
 
 // Status colors
 const statusColors = {
@@ -151,9 +140,10 @@ const statusColors = {
 } as const
 
 // Real-time polling for processing transcriptions
-const processingTranscriptions = computed(() =>
-  (transcriptionsData.value || []).filter((t: any) => t.status === 'processing' || t.status === 'queued')
-)
+const processingTranscriptions = computed(() => {
+  const data = transcriptionsData.value || []
+  return data.filter((t: any) => t.status === 'processing' || t.status === 'queued')
+})
 
 let pollInterval: NodeJS.Timeout | null = null
 
@@ -300,9 +290,6 @@ async function uploadTranscript() {
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Transcriptions">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UFieldGroup>
             <UButton

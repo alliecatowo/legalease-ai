@@ -47,6 +47,22 @@ class DocumentListResponse(BaseModel):
     case_id: Optional[int] = Field(None, description="Case ID if filtered by case")
 
 
+class DocumentWithCaseInfo(DocumentResponse):
+    """Schema for document response with case information."""
+
+    case_name: str = Field(..., description="Name of the case")
+    case_number: str = Field(..., description="Case number")
+
+
+class PaginatedDocumentListResponse(BaseModel):
+    """Schema for paginated list of documents response."""
+
+    documents: List[DocumentWithCaseInfo] = Field(..., description="List of documents with case info")
+    total: int = Field(..., description="Total number of documents")
+    page: int = Field(..., description="Current page number")
+    page_size: int = Field(..., description="Number of items per page")
+
+
 class DocumentDeleteResponse(BaseModel):
     """Schema for document deletion response."""
 

@@ -21,7 +21,7 @@ export interface NormalizedBBox {
   height: number
 }
 
-export interface DocumentItem {
+export interface DocumentContentItem {
   text: string
   type: string
   bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
@@ -31,7 +31,7 @@ export interface DocumentItem {
 export interface PageData {
   page_number: number
   text: string
-  items: DocumentItem[]
+  items: DocumentContentItem[]
   image_url?: string
 }
 
@@ -107,10 +107,10 @@ export const useDocumentViewer = () => {
    * Filter items by search query
    */
   const filterItemsByQuery = (
-    items: DocumentItem[],
+    items: DocumentContentItem[],
     query: string,
     requireBbox = true
-  ): DocumentItem[] => {
+  ): DocumentContentItem[] => {
     if (!query) return []
 
     const lowerQuery = query.toLowerCase()
@@ -126,10 +126,10 @@ export const useDocumentViewer = () => {
    * Get page items that match specific bboxes
    */
   const getItemsWithBboxes = (
-    items: DocumentItem[],
+    items: DocumentContentItem[],
     targetBboxes: BBox[],
     overlapThreshold = 0.5
-  ): DocumentItem[] => {
+  ): DocumentContentItem[] => {
     if (!targetBboxes || targetBboxes.length === 0) return []
 
     return items.filter(item => {
@@ -252,8 +252,8 @@ export const useDocumentViewer = () => {
   /**
    * Group items by page
    */
-  const groupItemsByPage = (items: DocumentItem[]): Map<number, DocumentItem[]> => {
-    const grouped = new Map<number, DocumentItem[]>()
+  const groupItemsByPage = (items: DocumentContentItem[]): Map<number, DocumentContentItem[]> => {
+    const grouped = new Map<number, DocumentContentItem[]>()
 
     items.forEach(item => {
       const pageNum = (item as any).page_number || 1

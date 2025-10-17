@@ -22,8 +22,8 @@ export default defineAppConfig({
       external: 'i-lucide-external-link',
       plus: 'i-lucide-plus',
       minus: 'i-lucide-minus',
-      menu: 'i-lucide-square-menu',
-      panelClose: 'i-lucide-panel-left-close'
+      menu: 'i-lucide-menu',
+      panelClose: 'i-lucide-panel-left'
     }
   }
 })
