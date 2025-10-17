@@ -17,6 +17,7 @@ const searchSettings = ref({
   use_dense: true,
   fusion_method: 'rrf' as 'rrf' | 'weighted' | 'max',
   top_k: 50, // Increased from 20 to fetch more results
+  score_threshold: 0.0, // Minimum confidence score (0.0 = no filter)
   chunk_types: [] as string[], // Filter by chunk types
   document_ids: [] as number[], // Filter by document IDs
   case_ids: [] as number[] // Filter by case IDs
@@ -95,6 +96,7 @@ const performSearch = async () => {
       use_dense: searchSettings.value.use_dense,
       fusion_method: searchSettings.value.fusion_method,
       top_k: searchSettings.value.top_k,
+      score_threshold: searchSettings.value.score_threshold > 0 ? searchSettings.value.score_threshold : undefined,
       chunk_types: selectedChunkTypes.value.length > 0 ? selectedChunkTypes.value : undefined,
       case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
       document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
@@ -684,6 +686,36 @@ defineShortcuts({
               max="100"
               step="5"
             />
+          </UFormField>
+
+          <USeparator />
+
+          <!-- Confidence Score Threshold -->
+          <UFormField
+            label="Confidence Threshold"
+            help="Filter results below this score (0.0 = show all)"
+          >
+            <UInput
+              v-model.number="searchSettings.score_threshold"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              placeholder="0.0"
+            />
+            <template #help>
+              <div class="flex items-center justify-between mt-1">
+                <span class="text-xs text-muted">Current: {{ searchSettings.score_threshold?.toFixed(2) || '0.00' }}</span>
+                <UButton
+                  v-if="searchSettings.score_threshold > 0"
+                  label="Reset"
+                  size="2xs"
+                  color="neutral"
+                  variant="ghost"
+                  @click="searchSettings.score_threshold = 0.0"
+                />
+              </div>
+            </template>
           </UFormField>
 
           <USeparator />

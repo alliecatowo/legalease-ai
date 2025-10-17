@@ -216,7 +216,7 @@ function zoomOut() {
 }
 
 function resetZoom() {
-  scale.value = 1.5
+  scale.value = 1.0  // Better default for full-page viewing
 }
 
 // Handle bounding box interactions
@@ -336,10 +336,10 @@ defineExpose({
           <p class="text-error font-medium mb-2">{{ error }}</p>
         </div>
 
-        <div v-else class="relative p-20">
-          <!-- PDF Renderer -->
-          <div class="relative shadow-2xl mx-auto" style="width: fit-content;">
-            <div class="relative">
+        <div v-else class="relative flex items-center justify-center min-h-full p-4">
+          <!-- PDF Renderer - Centered -->
+          <div class="relative shadow-2xl" style="width: fit-content;">
+            <div class="relative bg-white dark:bg-gray-800">
               <VuePDF
                 :pdf="pdf"
                 :page="currentPage"
