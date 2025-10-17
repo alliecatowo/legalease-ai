@@ -198,7 +198,9 @@ export const useApi = () => {
         body: { path }
       }),
       verify: (id: number) => api(`/api/v1/forensic-exports/${id}/verify`, { method: 'POST' }),
-      delete: (id: number) => api(`/api/v1/forensic-exports/${id}`, { method: 'DELETE' })
+      delete: (id: number) => api(`/api/v1/forensic-exports/${id}`, { method: 'DELETE' }),
+      getReportUrl: (id: number) => `${baseURL}/api/v1/forensic-exports/${id}/report`,
+      listFiles: (id: number, subpath?: string) => api(`/api/v1/forensic-exports/${id}/files${subpath ? `?subpath=${encodeURIComponent(subpath)}` : ''}`)
     },
 
     // Stats & Analytics
