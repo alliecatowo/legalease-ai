@@ -991,13 +991,13 @@ onMounted(async () => {
     :default-size="25"
   >
     <template #header="{ collapsed }">
-      <div class="flex items-center" :class="collapsed ? 'justify-center' : 'justify-between'">
-        <h2 v-if="!collapsed" class="text-lg font-semibold">Metadata</h2>
+      <div class="flex items-center justify-center gap-3">
         <UDashboardSidebarCollapse
           side="right"
           variant="subtle"
           :icon="collapsed ? 'i-lucide-chevron-left' : 'i-lucide-chevron-right'"
         />
+        <h2 v-if="!collapsed" class="text-lg font-semibold">Metadata</h2>
       </div>
     </template>
 
