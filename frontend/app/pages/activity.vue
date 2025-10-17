@@ -8,9 +8,6 @@ definePageMeta({
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Activity">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
       </UDashboardNavbar>
     </template>
 

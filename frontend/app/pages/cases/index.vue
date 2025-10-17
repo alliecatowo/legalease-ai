@@ -95,9 +95,6 @@ async function onCaseCreated(caseData: any) {
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Cases">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UButton
             label="New Case"

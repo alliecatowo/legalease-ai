@@ -201,9 +201,6 @@ const pagination = ref({
   <UDashboardPanel id="customers">
     <template #header>
       <UDashboardNavbar title="Customers">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
 
         <template #right>
           <CustomersAddModal />

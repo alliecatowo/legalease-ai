@@ -14,6 +14,7 @@
     "@iconify-json/lucide": "^1.2.69",
     "@iconify-json/simple-icons": "^1.2.54",
     "@nuxt/ui": "^4.0.1",
+    "@tanstack/vue-virtual": "^3.13.12",
     "@tato30/vue-pdf": "^1.11.5",
     "@unovis/ts": "^1.6.1",
     "@unovis/vue": "^1.6.1",

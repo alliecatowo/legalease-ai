@@ -37,9 +37,6 @@ const topSearchTerms = [
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Analytics">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <USelectMenu v-model="timeRange" :items="timeRangeOptions" />
         </template>

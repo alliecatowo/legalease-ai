@@ -349,9 +349,6 @@ async function deleteBulk() {
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar title="Forensic Exports">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <UFieldGroup>
             <UButton

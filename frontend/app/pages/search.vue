@@ -511,9 +511,6 @@ defineShortcuts({
   <UDashboardPanel>
     <template #header>
       <UDashboardNavbar :title="searchResults.length > 0 ? `Search Results (${searchResults.length})` : 'Search'">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
         <template #trailing>
           <div class="flex items-center gap-2">
             <UTooltip text="Search Settings (⌘K)">
@@ -540,9 +537,9 @@ defineShortcuts({
           >
             <div class="w-full max-w-5xl mx-auto text-center space-y-12">
               <!-- Logo/Icon -->
-              <div class="flex items-center justify-center gap-5">
-                <UIcon name="i-lucide-scale" class="size-20 text-primary" />
-                <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
+              <div class="flex items-center justify-center gap-5 overflow-visible">
+                <UIcon name="i-lucide-scale" class="size-20 text-primary shrink-0" />
+                <h1 class="text-7xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight leading-tight pb-2">
                   LegalEase AI
                 </h1>
               </div>
