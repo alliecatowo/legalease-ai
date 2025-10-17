@@ -707,7 +707,7 @@ async function uploadTranscript() {
     v-model:open="showUploadModal"
     title="Upload Transcription"
     description="Upload audio or video files for AI transcription"
-    size="5xl"
+    :ui="{ content: 'max-w-5xl' }"
   >
       <template #body>
         <div class="space-y-6">
