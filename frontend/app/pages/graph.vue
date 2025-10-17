@@ -132,7 +132,7 @@ const selectedRelationshipTypes = computed({
               value-key="value"
             >
               <template #leading="{ item }">
-                <UIcon :name="item.icon" class="size-4" />
+                <UIcon v-if="item" :name="item.icon" class="size-4" />
               </template>
             </USelectMenu>
           </div>
