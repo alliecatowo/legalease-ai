@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL_SUMMARIZATION: str = "llama3.1:7b"
     OLLAMA_MODEL_TAGGING: str = "llama3.1:7b"
+    OLLAMA_MODEL_SPEAKER_INFERENCE: str = "llama3.1:latest"  # Model for speaker name inference
     OLLAMA_REQUEST_TIMEOUT: int = 300  # 5 minutes for large models
 
     # Transcription Settings
@@ -46,8 +47,12 @@ class Settings(BaseSettings):
     WHISPER_BATCH_SIZE: int = 0  # 0 = auto-calculate based on VRAM
     ENABLE_DIARIZATION: bool = True
     DIARIZATION_MIN_SPEAKERS: int = 2
-    DIARIZATION_MAX_SPEAKERS: int = 10
+    DIARIZATION_MAX_SPEAKERS: int = 5  # Reduced from 10 for faster diarization
     PYANNOTE_MODEL: str = "pyannote/speaker-diarization-3.1"
+
+    # Speaker Name Inference Settings
+    ENABLE_SPEAKER_NAME_INFERENCE: bool = True  # Use LLM to infer speaker names
+    OLLAMA_MAX_CONCURRENT_REQUESTS: int = 1  # Limit concurrent Ollama requests (prevents RAM exhaustion)
 
     # Worker Settings
     CELERY_WORKER_CONCURRENCY: str = "auto"  # auto, or explicit number

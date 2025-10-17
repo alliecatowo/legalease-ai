@@ -3,11 +3,12 @@
 import logging
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Path, Form, Body, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Path, Form, Body, Query, Header, Request
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 import io
+import re
 
 from app.core.database import get_db
 from app.schemas.transcription import (
@@ -310,10 +311,10 @@ def get_transcription_details(
 @router.get(
     "/transcriptions/{transcription_id}/audio",
     summary="Stream/download original audio file",
-    description="Download the original audio/video file from storage. Supports range requests for media players.",
+    description="Download the original audio/video file from storage. Supports HTTP Range requests for efficient seeking in media players.",
     responses={
         200: {
-            "description": "Audio/video file",
+            "description": "Full audio/video file",
             "content": {
                 "audio/mpeg": {},
                 "audio/wav": {},
@@ -321,39 +322,177 @@ def get_transcription_details(
                 "video/mp4": {},
                 "application/octet-stream": {},
             },
+        },
+        206: {
+            "description": "Partial audio/video content (range request)",
+            "content": {
+                "audio/mpeg": {},
+                "audio/wav": {},
+                "audio/mp4": {},
+                "video/mp4": {},
+                "application/octet-stream": {},
+            },
+        },
+        416: {
+            "description": "Range not satisfiable",
         }
     },
 )
 def download_audio(
     transcription_id: int = Path(..., description="ID of the transcription"),
+    range_header: Optional[str] = Header(None, alias="Range"),
     db: Session = Depends(get_db),
 ):
     """
-    Download the original audio/video file.
+    Download or stream the original audio/video file with HTTP Range support.
+
+    This endpoint supports HTTP Range requests (RFC 7233) for efficient audio/video
+    streaming and seeking. Media players can request specific byte ranges without
+    downloading the entire file.
+
+    Args:
+        transcription_id: ID of the transcription
+        range_header: Optional Range header (e.g., "bytes=0-1023")
+        db: Database session
+
+    Returns:
+        Response: Full file (200) or partial content (206) with proper headers
+    """
+    logger.info(f"Streaming audio for transcription {transcription_id}, range: {range_header}")
+
+    # Get file content and metadata
+    content, filename, content_type = TranscriptionService.download_audio(
+        transcription_id=transcription_id, db=db
+    )
+
+    file_size = len(content)
+
+    # Parse Range header if present
+    if range_header:
+        # Parse range header format: "bytes=start-end"
+        range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+
+        if not range_match:
+            # Invalid range format
+            return Response(
+                content="Invalid Range header format",
+                status_code=416,
+                headers={
+                    "Content-Range": f"bytes */{file_size}",
+                }
+            )
+
+        start = int(range_match.group(1))
+        end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+
+        # Validate range
+        if start >= file_size or start > end:
+            # Range not satisfiable
+            return Response(
+                content=f"Requested range not satisfiable (file size: {file_size} bytes)",
+                status_code=416,
+                headers={
+                    "Content-Range": f"bytes */{file_size}",
+                }
+            )
+
+        # Ensure end doesn't exceed file size
+        end = min(end, file_size - 1)
+
+        # Extract the requested byte range
+        chunk = content[start:end + 1]
+        chunk_size = len(chunk)
+
+        logger.info(f"Serving range {start}-{end}/{file_size} ({chunk_size} bytes)")
+
+        # Return 206 Partial Content
+        return Response(
+            content=chunk,
+            status_code=206,
+            media_type=content_type,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Content-Length": str(chunk_size),
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f'inline; filename="{filename}"',
+            }
+        )
+
+    # No range requested - return full file with 200 OK
+    logger.info(f"Serving full file ({file_size} bytes)")
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Length": str(file_size),
+            "Accept-Ranges": "bytes",
+        },
+    )
+
+
+@router.get(
+    "/transcriptions/{transcription_id}/waveform",
+    summary="Get pre-computed waveform data",
+    description="Get pre-computed waveform visualization data for instant rendering. "
+    "Returns normalized peak values that can be directly used by WaveSurfer or other waveform visualizers. "
+    "Falls back to 404 if waveform data is not available (e.g., for old transcriptions).",
+    responses={
+        200: {
+            "description": "Waveform data with peaks array",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "peaks": [0.5, 0.8, 0.3, 0.6],
+                        "duration": 120.5,
+                        "sample_rate": 16000
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Waveform data not available"
+        }
+    },
+)
+def get_waveform_data(
+    transcription_id: int = Path(..., description="ID of the transcription"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get pre-computed waveform data for instant visualization.
 
     Args:
         transcription_id: ID of the transcription
         db: Database session
 
     Returns:
-        StreamingResponse: Audio/video file content
+        Dict containing waveform peaks, duration, and sample_rate
+
+    Raises:
+        HTTPException: 404 if transcription not found or waveform data not available
     """
-    logger.info(f"Downloading audio for transcription {transcription_id}")
+    logger.info(f"Getting waveform data for transcription {transcription_id}")
 
-    content, filename, content_type = TranscriptionService.download_audio(
-        transcription_id=transcription_id, db=db
-    )
+    # Get transcription
+    transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
 
-    # Return as streaming response with proper headers
-    return StreamingResponse(
-        io.BytesIO(content),
-        media_type=content_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{filename}"',
-            "Content-Length": str(len(content)),
-            "Accept-Ranges": "bytes",
-        },
-    )
+    if not transcription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcription {transcription_id} not found"
+        )
+
+    # Check if waveform data is available
+    if not transcription.waveform_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Waveform data not available for this transcription. "
+            "This may be an older transcription created before waveform pre-computation was implemented."
+        )
+
+    return transcription.waveform_data
 
 
 @router.get(

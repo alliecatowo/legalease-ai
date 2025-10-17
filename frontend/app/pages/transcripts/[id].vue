@@ -42,6 +42,7 @@ const editSpeakerName = ref('')
 const editSpeakerRole = ref('')
 const autoScrollEnabled = ref(true)
 const flashSegmentId = ref<string | null>(null)
+// Metadata sidebar defaults: visible and expanded
 const metadataSidebarOpen = ref(true)
 const metadataSidebarCollapsed = ref(false)
 

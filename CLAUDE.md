@@ -1,0 +1,1 @@
+- always use mise to run scripts. treat mise like make. do everything through mise and or uv

@@ -211,12 +211,12 @@ class ModelSelector:
         Returns:
             Optimal batch size
         """
-        # Base batch sizes per model
+        # Base batch sizes per model (optimized for performance)
         base_batch_sizes = {
-            "tiny": 32,
-            "base": 24,
-            "small": 16,
-            "medium": 12,
+            "tiny": 48,   # Increased from 32
+            "base": 32,   # Increased from 24
+            "small": 24,  # Increased from 16
+            "medium": 16, # Increased from 12
             "large": 8,
         }
 
@@ -230,7 +230,7 @@ class ModelSelector:
         elif vram_gb < 10:
             return base_batch
         else:
-            return min(32, base_batch * 2)
+            return min(64, base_batch * 2)  # Increased max from 32 to 64
 
     @staticmethod
     def get_recommended_worker_count(
