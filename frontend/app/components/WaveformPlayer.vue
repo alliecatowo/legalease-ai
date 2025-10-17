@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 import type { TranscriptSegment } from '~/composables/useTranscription'
+import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps<{
   audioUrl: string
@@ -24,6 +25,7 @@ const duration = ref(0)
 const isPlaying = ref(false)
 const volume = ref(1)
 const playbackRate = ref(1)
+const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -37,12 +39,13 @@ async function initializeWaveSurfer() {
     waveColor: '#94A3B8',
     progressColor: '#3B82F6',
     cursorColor: '#3B82F6',
-    barWidth: 2,
+    barWidth: 3,
     barGap: 1,
     barRadius: 2,
-    height: 100,
+    height: 80,
     normalize: true,
-    backend: 'WebAudio',
+    backend: 'MediaElement',
+    mediaControls: false,
     interact: true
   })
 
@@ -54,9 +57,12 @@ async function initializeWaveSurfer() {
     drawSegmentMarkers()
   })
 
-  wavesurfer.value.on('audioprocess', (time) => {
+  // Throttle audioprocess to 100ms instead of 60fps for better performance
+  const throttledAudioProcess = useThrottleFn((time: number) => {
     emit('update:currentTime', time)
-  })
+  }, 100)
+
+  wavesurfer.value.on('audioprocess', throttledAudioProcess)
 
   wavesurfer.value.on('seek', (progress) => {
     const time = progress * duration.value
@@ -88,6 +94,41 @@ function drawSegmentMarkers() {
 
   // TODO: Add visual markers for segments on waveform
   // This would require a WaveSurfer plugin or custom overlay
+}
+
+// Draw segment timeline on canvas
+function drawSegmentTimeline() {
+  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
+
+  const canvas = timelineCanvasRef.value
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // Set canvas dimensions to match display size
+  const rect = canvas.getBoundingClientRect()
+  canvas.width = rect.width * window.devicePixelRatio
+  canvas.height = rect.height * window.devicePixelRatio
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+
+  // Clear canvas
+  ctx.clearRect(0, 0, rect.width, rect.height)
+
+  // Draw each segment
+  props.segments.forEach((segment) => {
+    const left = (segment.start / duration.value) * rect.width
+    const width = ((segment.end - segment.start) / duration.value) * rect.width
+
+    // Set color based on segment type and selection
+    const isSelected = segment.id === props.selectedSegmentId
+    const baseColor = segment.isKeyMoment ? '#F59E0B' : '#3B82F6'
+    const opacity = isSelected ? 1.0 : 0.6
+
+    ctx.fillStyle = baseColor
+    ctx.globalAlpha = opacity
+    ctx.fillRect(left, 0, width, rect.height)
+  })
+
+  ctx.globalAlpha = 1.0
 }
 
 // Play/pause
@@ -142,6 +183,26 @@ watch(() => props.currentTime, (newTime) => {
   }
 })
 
+// Watch for changes that require redrawing the timeline
+watch([() => props.segments, () => props.selectedSegmentId, duration], () => {
+  drawSegmentTimeline()
+}, { deep: true })
+
+// Handle canvas click
+function handleTimelineClick(event: MouseEvent) {
+  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
+
+  const rect = timelineCanvasRef.value.getBoundingClientRect()
+  const clickX = event.clientX - rect.left
+  const clickTime = (clickX / rect.width) * duration.value
+
+  // Find the segment at this time
+  const segment = props.segments.find(s => clickTime >= s.start && clickTime <= s.end)
+  if (segment) {
+    emit('segment-click', segment)
+  }
+}
+
 // Expose methods
 defineExpose({
   play: () => wavesurfer.value?.play(),
@@ -163,8 +224,16 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-4">
+    <!-- Loading Skeleton -->
+    <div v-if="!isReady" class="w-full bg-muted/20 rounded-lg p-8 flex items-center justify-center">
+      <div class="text-center space-y-3">
+        <UIcon name="i-lucide-loader-circle" class="size-8 text-primary animate-spin mx-auto" />
+        <p class="text-sm text-muted">Loading waveform...</p>
+      </div>
+    </div>
+
     <!-- Waveform Container -->
-    <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg" />
+    <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg" :class="{ 'hidden': !isReady }" />
 
     <!-- Controls -->
     <div class="flex items-center justify-between gap-4">
@@ -245,20 +314,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Segment Timeline (optional visual representation) -->
-    <div v-if="segments && segments.length > 0" class="relative h-2 bg-muted/20 rounded-full overflow-hidden">
-      <div
-        v-for="segment in segments"
-        :key="segment.id"
-        class="absolute h-full cursor-pointer transition-opacity hover:opacity-80"
-        :class="segment.id === selectedSegmentId ? 'opacity-100' : 'opacity-60'"
-        :style="{
-          left: `${(segment.start / duration) * 100}%`,
-          width: `${((segment.end - segment.start) / duration) * 100}%`,
-          backgroundColor: segment.isKeyMoment ? '#F59E0B' : '#3B82F6'
-        }"
-        @click="emit('segment-click', segment)"
-      />
-    </div>
+    <!-- Segment Timeline (Canvas-based for better performance) -->
+    <canvas
+      v-if="segments && segments.length > 0"
+      ref="timelineCanvasRef"
+      class="w-full h-2 bg-muted/20 rounded-full cursor-pointer"
+      @click="handleTimelineClick"
+    />
   </div>
 </template>

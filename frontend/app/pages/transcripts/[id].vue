@@ -151,6 +151,15 @@ const filteredSegments = computed(() => {
   return segments
 })
 
+// Virtual scrolling for better performance with large segment lists
+const { list: virtualList, containerProps, wrapperProps } = useVirtualList(
+  filteredSegments,
+  {
+    itemHeight: 140, // Estimated height per segment
+    overscan: 5 // Pre-render 5 extra items for smooth scrolling
+  }
+)
+
 const currentSegment = computed(() => {
   if (!transcript.value) return null
   return transcript.value.segments.find(segment =>
@@ -782,13 +791,13 @@ onMounted(() => {
           </div>
 
           <!-- Transcript Segments -->
-          <div class="flex-1 overflow-y-auto p-6">
-            <div class="max-w-5xl mx-auto space-y-3">
-              <!-- Segments -->
+          <div v-bind="containerProps" class="flex-1 overflow-y-auto p-6">
+            <div v-bind="wrapperProps" class="max-w-5xl mx-auto">
+              <!-- Virtualized Segments -->
               <div
-                v-for="segment in filteredSegments"
+                v-for="{ data: segment, index } in virtualList"
                 :key="segment.id"
-                class="p-4 rounded-lg transition-all duration-200 cursor-pointer"
+                class="p-4 rounded-lg transition-all duration-200 cursor-pointer mb-3"
                 :class="[
                   isActiveSegment(segment)
                     ? 'bg-primary/20 ring-3 ring-primary shadow-lg scale-[1.01] border-2 border-primary/50'
