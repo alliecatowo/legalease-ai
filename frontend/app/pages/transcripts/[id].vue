@@ -76,28 +76,15 @@ async function performSmartSearch() {
     })
 
     // Extract segment indices from search results
-    // NOTE: Backend stores segment_index in metadata (the array index from segments)
-    // Frontend segments have UUID ids, but we need to match by array index
     const segmentIndices = new Set<number>()
-    response.results?.forEach((result: any, idx: number) => {
-      // The segment_index is stored in metadata.segment_index by the backend
-      const segmentIndex = result.metadata?.segment_index
-
-      if (idx < 3) {
-        console.log(`[DEBUG] Result ${idx}:`, {
-          id: result.id,
-          metadata: result.metadata,
-          extractedSegmentIndex: segmentIndex
-        })
-      }
+    response.results?.forEach((result: any) => {
+      // Backend stores segment_index at payload root (not in metadata)
+      const segmentIndex = result.segment_index
 
       if (segmentIndex !== undefined && segmentIndex !== null) {
         segmentIndices.add(segmentIndex)
       }
     })
-
-    console.log('[DEBUG] Extracted segment indices:', Array.from(segmentIndices))
-    console.log('[DEBUG] Sample transcript segments (first 3):', transcript.value.segments.slice(0, 3).map((s, i) => ({ index: i, id: s.id })))
 
     searchResults.value = segmentIndices
   } catch (err: any) {
