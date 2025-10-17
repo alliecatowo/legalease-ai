@@ -635,7 +635,7 @@ const documentTypeIcons: Record<string, string> = {
 
   <!-- Upload Modal -->
     <ClientOnly>
-      <UModal v-model:open="showUploadModal" title="Upload Documents">
+      <UModal v-model:open="showUploadModal" title="Upload Documents" :ui="{ content: 'max-w-2xl' }">
       <template #body>
         <div class="space-y-4">
           <!-- File Upload Component -->

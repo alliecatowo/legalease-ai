@@ -18,6 +18,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const showEditModal = ref(false)
 const showAddDocumentModal = ref(false)
+const showUploadAudioModal = ref(false)
 const showArchiveConfirm = ref(false)
 const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
@@ -73,7 +74,7 @@ const case_ = computed(() => {
     description: caseData.value.description || `${caseData.value.matter_type || 'Legal'} case for ${caseData.value.client}`,
     notes: caseData.value.notes,
     tags: caseData.value.tags || [],
-    documentCount: documentsData.value?.documents?.length || 0
+    documentCount: documents.value.length
   }
 })
 
@@ -97,6 +98,27 @@ const documents = computed(() => {
       status: d.status || 'indexed',
       summary: d.meta_data?.summary,
       pageCount: d.meta_data?.page_count
+    }))
+})
+
+// Transform transcriptions (audio/video files only)
+const transcriptions = computed(() => {
+  if (!documentsData.value?.documents) return []
+
+  return documentsData.value.documents
+    .filter((d: any) => {
+      // Include ONLY audio/video files
+      const mimeType = d.mime_type || ''
+      return mimeType.startsWith('audio/') || mimeType.startsWith('video/')
+    })
+    .map((d: any) => ({
+      id: String(d.id),
+      filename: d.filename,
+      size: d.size || 0,
+      uploadedAt: d.uploaded_at,
+      status: d.status || 'pending',
+      duration: d.meta_data?.duration,
+      speakerCount: d.meta_data?.speaker_count
     }))
 })
 
@@ -144,7 +166,7 @@ const documentTypeLabels: Record<string, string> = {
 
 // Stats computation
 const stats = computed(() => {
-  if (!case_.value) return { documents: 0, recentDocs: 0, totalSize: 0 }
+  if (!case_.value) return { documents: 0, recentDocs: 0, totalSize: 0, transcriptions: 0 }
 
   const now = new Date()
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -158,7 +180,8 @@ const stats = computed(() => {
   return {
     documents: documents.value.length,
     recentDocs,
-    totalSize
+    totalSize,
+    transcriptions: transcriptions.value.length
   }
 })
 
@@ -288,6 +311,7 @@ async function handleUploadDocuments() {
     uploadingFiles.value = null
     uploadProgress.value = 0
     showAddDocumentModal.value = false
+    showUploadAudioModal.value = false
 
     await refreshDocuments()
   } catch (err) {
@@ -358,6 +382,28 @@ function getRelativeTime(dateStr: string): string {
   if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
 
   return formatDate(dateStr)
+}
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+  return `${minutes}:${secs.toString().padStart(2, '0')}`
+}
+
+function getStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    pending: 'warning',
+    processing: 'info',
+    completed: 'success',
+    indexed: 'success',
+    failed: 'error'
+  }
+  return colors[status] || 'neutral'
 }
 </script>
 
@@ -737,6 +783,75 @@ function getRelativeTime(dateStr: string): string {
                   />
                 </div>
               </UCard>
+
+              <!-- Transcriptions Section -->
+              <UCard>
+                <template #header>
+                  <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-highlighted flex items-center gap-2">
+                      <UIcon name="i-lucide-mic" class="size-5" />
+                      Transcriptions
+                      <UBadge :label="String(transcriptions.length)" variant="soft" color="primary" />
+                    </h2>
+                    <UButton
+                      label="Upload Audio"
+                      icon="i-lucide-plus"
+                      color="primary"
+                      size="sm"
+                      @click="showUploadAudioModal = true"
+                    />
+                  </div>
+                </template>
+
+                <div v-if="transcriptions.length > 0" class="space-y-3">
+                  <div
+                    v-for="trans in transcriptions"
+                    :key="trans.id"
+                    class="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/5 transition-colors cursor-pointer group"
+                    @click="router.push(`/transcripts/${trans.id}`)"
+                  >
+                    <div class="p-2 bg-primary/10 rounded-lg">
+                      <UIcon name="i-lucide-mic" class="size-5 text-primary" />
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="flex-1 min-w-0">
+                          <h3 class="font-medium text-highlighted truncate">{{ trans.filename }}</h3>
+                          <div class="flex items-center gap-3 mt-1 text-sm text-muted flex-wrap">
+                            <span>{{ formatBytes(trans.size) }}</span>
+                            <span>•</span>
+                            <span>{{ formatDate(trans.uploadedAt) }}</span>
+                            <template v-if="trans.duration">
+                              <span>•</span>
+                              <span>{{ formatDuration(trans.duration) }}</span>
+                            </template>
+                            <UBadge
+                              :label="trans.status"
+                              :color="getStatusColor(trans.status)"
+                              variant="soft"
+                              size="xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="text-center py-12">
+                  <UIcon name="i-lucide-mic" class="size-12 text-muted mx-auto mb-4 opacity-30" />
+                  <h3 class="text-lg font-semibold mb-2">No transcriptions yet</h3>
+                  <p class="text-sm text-muted mb-4">Upload audio or video files to transcribe</p>
+                  <UButton
+                    label="Upload Audio"
+                    icon="i-lucide-plus"
+                    color="primary"
+                    size="sm"
+                    @click="showUploadAudioModal = true"
+                  />
+                </div>
+              </UCard>
             </div>
 
             <!-- Right Column - Activity Timeline -->
@@ -837,6 +952,7 @@ function getRelativeTime(dateStr: string): string {
       <UModal
         v-model:open="showAddDocumentModal"
         title="Add Documents to Case"
+        :ui="{ content: 'max-w-2xl' }"
       >
       <template #body>
         <div class="space-y-4">
@@ -869,6 +985,57 @@ function getRelativeTime(dateStr: string): string {
             color="neutral"
             variant="ghost"
             @click="showAddDocumentModal = false; uploadingFiles = null; uploadProgress = 0"
+          />
+          <UButton
+            label="Upload"
+            icon="i-lucide-upload"
+            color="primary"
+            :disabled="!uploadingFiles || uploadingFiles.length === 0 || uploadProgress > 0"
+            @click="handleUploadDocuments"
+          />
+        </div>
+      </template>
+    </UModal>
+  </ClientOnly>
+
+    <!-- Upload Audio Modal -->
+    <ClientOnly>
+      <UModal
+        v-model:open="showUploadAudioModal"
+        title="Upload Audio/Video Files"
+        :ui="{ content: 'max-w-2xl' }"
+      >
+      <template #body>
+        <div class="space-y-4">
+          <!-- File Upload Component -->
+          <UFileUpload
+            v-model="uploadingFiles"
+            multiple
+            accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.webm"
+            label="Drop your audio or video files here"
+            description="MP3, MP4, WAV, M4A, WebM (max 100MB each)"
+            icon="i-lucide-upload-cloud"
+            class="min-h-48"
+          />
+
+          <!-- Upload Progress -->
+          <div v-if="uploadProgress > 0 && uploadProgress < 100" class="space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted">Uploading...</span>
+              <span class="font-medium text-highlighted">{{ uploadProgress }}%</span>
+            </div>
+            <UProgress :model-value="uploadProgress" color="primary" />
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showUploadAudioModal = false; uploadingFiles = null; uploadProgress = 0"
           />
           <UButton
             label="Upload"

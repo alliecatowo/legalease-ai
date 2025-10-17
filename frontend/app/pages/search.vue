@@ -17,6 +17,7 @@ const searchSettings = ref({
   use_dense: true,
   fusion_method: 'rrf' as 'rrf' | 'weighted' | 'max',
   top_k: 50, // Increased from 20 to fetch more results
+  score_threshold: 0.0, // Minimum confidence score (0.0 = no filter)
   chunk_types: [] as string[], // Filter by chunk types
   document_ids: [] as number[], // Filter by document IDs
   case_ids: [] as number[] // Filter by case IDs
@@ -57,10 +58,11 @@ const chunkTypeOptions = [
   { value: 'section', label: 'Sections', description: 'Major document sections' },
   { value: 'microblock', label: 'Microblocks', description: 'Detailed paragraphs' },
   { value: 'paragraph', label: 'Paragraphs', description: 'Individual paragraphs' },
-  { value: 'page', label: 'Pages', description: 'Full pages' }
+  { value: 'page', label: 'Pages', description: 'Full pages' },
+  { value: 'transcript_segment', label: 'Transcript Segments', description: 'Audio/video transcript snippets' }
 ]
 
-// Watch search mode and update settings
+// Watch search mode and update settings + trigger re-search
 watch(searchMode, (mode) => {
   if (mode === 'hybrid') {
     searchSettings.value.use_bm25 = true
@@ -71,6 +73,11 @@ watch(searchMode, (mode) => {
   } else if (mode === 'keyword') {
     searchSettings.value.use_bm25 = true
     searchSettings.value.use_dense = false
+  }
+
+  // Trigger re-search if there's an active query
+  if (searchQuery.value.trim()) {
+    debouncedSearch()
   }
 })
 
@@ -88,6 +95,21 @@ const performSearch = async () => {
     // Filter out null/undefined values and convert to integers
     const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
 
+    // Build chunk_types from both selectedChunkTypes and selectedDocumentTypes
+    const chunkTypes = [...selectedChunkTypes.value]
+
+    // Map document types to chunk types
+    if (selectedDocumentTypes.value.includes('transcript')) {
+      if (!chunkTypes.includes('transcript_segment')) {
+        chunkTypes.push('transcript_segment')
+      }
+    }
+    // Add other document type mappings if needed in the future
+    // e.g., if (selectedDocumentTypes.value.includes('contract')) { ... }
+
+    // NOTE: When no chunk types are selected (chunkTypes.length === 0), we send undefined
+    // to the backend, which triggers separate document + transcript searches that are merged
+
     // Build search request with filters
     const request = {
       query: searchQuery.value,
@@ -95,7 +117,8 @@ const performSearch = async () => {
       use_dense: searchSettings.value.use_dense,
       fusion_method: searchSettings.value.fusion_method,
       top_k: searchSettings.value.top_k,
-      chunk_types: selectedChunkTypes.value.length > 0 ? selectedChunkTypes.value : undefined,
+      score_threshold: searchSettings.value.score_threshold > 0 ? searchSettings.value.score_threshold : undefined,
+      chunk_types: chunkTypes.length > 0 ? chunkTypes : undefined,
       case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
       document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
     }
@@ -150,7 +173,14 @@ const performSearch = async () => {
 
 // Determine document type from metadata
 function determineDocumentType(result: any): string {
-  // Priority: explicit document_type > inferred from filename > chunk_type > default
+  // Priority: chunk_type for transcripts > explicit document_type > inferred from filename > default
+
+  // Handle transcript segments specifically
+  if (result.metadata?.chunk_type === 'transcript_segment') {
+    return 'transcript'
+  }
+
+  // Explicit document type from metadata
   if (result.metadata?.document_type) {
     return result.metadata.document_type
   }
@@ -202,6 +232,13 @@ function extractEntities(metadata: any): Array<{ type: string; text: string }> {
 // Extract title from result with enhanced logic
 function extractTitle(result: any): string {
   const metadata = result.metadata || {}
+
+  // Handle transcript segments specifically
+  if (metadata.chunk_type === 'transcript_segment') {
+    const speaker = metadata.speaker || 'Unknown Speaker'
+    const transcriptTitle = metadata.title || metadata.filename || 'Transcript'
+    return `${speaker} - ${transcriptTitle}`
+  }
 
   // Priority 1: Explicit title from metadata
   if (metadata.title && metadata.title.length > 3) {
@@ -264,8 +301,36 @@ function extractTitle(result: any): string {
   return `${chunkType.charAt(0).toUpperCase() + chunkType.slice(1)} from Document #${docId}`
 }
 
+// Helper function to format timestamp for transcripts
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 // Format excerpt with highlights - dual color for keyword vs semantic
 function formatExcerpt(result: any): string {
+  const metadata = result.metadata || {}
+
+  // Handle transcript segments specifically
+  if (metadata.chunk_type === 'transcript_segment') {
+    const text = result.text || result.highlights?.[0] || ''
+    const timePrefix = metadata.start_time !== undefined ? `[${formatTime(metadata.start_time)}] ` : ''
+    const excerpt = text.length > 300 ? text.substring(0, 300) + '...' : text
+
+    // Apply highlighting to transcript text
+    const isKeywordMatch = result.vector_type === 'bm25' || searchMode.value === 'keyword'
+    const isSemanticMatch = result.vector_type !== 'bm25' || searchMode.value === 'semantic'
+    const highlightedText = highlightText(excerpt, searchQuery.value, isKeywordMatch, isSemanticMatch)
+
+    return timePrefix + highlightedText
+  }
+
   const isKeywordMatch = result.vector_type === 'bm25' || searchMode.value === 'keyword'
   const isSemanticMatch = result.vector_type !== 'bm25' || searchMode.value === 'semantic'
 
@@ -366,6 +431,27 @@ watch(searchQuery, () => {
   }
   debouncedSearch()
 })
+
+// Watch for filter changes and re-run search
+watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscripts], () => {
+  if (searchQuery.value.trim()) {
+    debouncedSearch()
+  }
+}, { deep: true })
+
+// Watch for search settings changes (confidence, fusion method, results limit) and re-run search
+watch(
+  () => [
+    searchSettings.value.score_threshold,
+    searchSettings.value.fusion_method,
+    searchSettings.value.top_k
+  ],
+  () => {
+    if (searchQuery.value.trim()) {
+      debouncedSearch()
+    }
+  }
+)
 
 // Keyboard shortcuts - manage two refs for hero and compact inputs
 const heroSearchInput = useTemplateRef('heroSearchInput')
@@ -677,6 +763,36 @@ defineShortcuts({
               max="100"
               step="5"
             />
+          </UFormField>
+
+          <USeparator />
+
+          <!-- Confidence Score Threshold -->
+          <UFormField
+            label="Confidence Threshold"
+            help="Filter results below this score (0.0 = show all)"
+          >
+            <UInput
+              v-model.number="searchSettings.score_threshold"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              placeholder="0.0"
+            />
+            <template #help>
+              <div class="flex items-center justify-between mt-1">
+                <span class="text-xs text-muted">Current: {{ (Number(searchSettings.score_threshold) || 0).toFixed(2) }}</span>
+                <UButton
+                  v-if="Number(searchSettings.score_threshold) > 0"
+                  label="Reset"
+                  size="2xs"
+                  color="neutral"
+                  variant="ghost"
+                  @click="searchSettings.score_threshold = 0.0"
+                />
+              </div>
+            </template>
           </UFormField>
 
           <USeparator />

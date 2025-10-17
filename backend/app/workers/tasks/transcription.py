@@ -827,7 +827,7 @@ class TranscriptionExporter:
 @celery_app.task(name="transcribe_audio", bind=True)
 def transcribe_audio(
     self,
-    document_id: int,
+    transcription_id: int,
     options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -844,7 +844,7 @@ def transcribe_audio(
     8. Handle errors gracefully with status updates
 
     Args:
-        document_id: ID of the document to transcribe
+        transcription_id: ID of the transcription to process
         options: Optional dict containing transcription configuration:
             - language: Language code or None for auto-detect
             - task: 'transcribe' or 'translate'
@@ -873,15 +873,15 @@ def transcribe_audio(
             meta={'status': 'Initializing transcription', 'progress': 0}
         )
 
-        # Step 1: Get document from database
-        logger.info(f"Starting transcription for document {document_id}")
-        document = db.query(Document).filter(Document.id == document_id).first()
+        # Step 1: Get transcription from database
+        logger.info(f"Starting transcription for transcription ID {transcription_id}")
+        transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
 
-        if not document:
-            raise TranscriptionError(f"Document {document_id} not found")
+        if not transcription:
+            raise TranscriptionError(f"Transcription {transcription_id} not found")
 
-        # Update document status
-        document.status = DocumentStatus.PROCESSING
+        # Update transcription status
+        transcription.status = DocumentStatus.PROCESSING
         db.commit()
 
         # Step 2: Download audio/video from MinIO
@@ -890,8 +890,8 @@ def transcribe_audio(
             meta={'status': 'Downloading audio from storage', 'progress': 10}
         )
 
-        logger.info(f"Downloading file from MinIO: {document.file_path}")
-        file_content = minio_client.download_file(document.file_path)
+        logger.info(f"Downloading file from MinIO: {transcription.file_path}")
+        file_content = minio_client.download_file(transcription.file_path)
 
         if not file_content:
             raise TranscriptionError("Failed to download file from MinIO")
@@ -901,7 +901,7 @@ def transcribe_audio(
         logger.info(f"Created temporary directory: {temp_dir}")
 
         # Get file extension
-        _, ext = os.path.splitext(document.filename)
+        _, ext = os.path.splitext(transcription.filename)
         original_file = os.path.join(temp_dir, f"original{ext}")
         processed_wav = os.path.join(temp_dir, "audio.wav")
 
@@ -1095,6 +1095,14 @@ def transcribe_audio(
                         diarizer = SpeakerDiarizer()
                         diarized_segments = diarizer.smooth_speaker_changes(diarized_segments)
 
+                        # Cleanup Pyannote pipeline to free GPU memory for speaker name inference
+                        del diarization_pipeline
+                        import gc
+                        gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            logger.info("Cleared CUDA cache after Pyannote diarization")
+
                     except Exception as e:
                         logger.error(f"Pyannote diarization failed: {e}", exc_info=True)
                         logger.warning("Falling back to simple heuristic diarization")
@@ -1179,7 +1187,7 @@ def transcribe_audio(
                     inferencer.infer_speaker_names(
                         segments=diarized_segments,
                         speakers=speakers,
-                        filename=document.filename,
+                        filename=transcription.filename,
                         ollama_url=ollama_url
                     )
                 )
@@ -1205,8 +1213,8 @@ def transcribe_audio(
 
         # Prepare metadata (include inference metadata if available)
         metadata = {
-            'document_id': document_id,
-            'filename': document.filename,
+            'transcription_id': transcription_id,
+            'filename': transcription.filename,
             'language': language,
             'duration': duration,
             'segments_count': len(diarized_segments),
@@ -1238,7 +1246,7 @@ def transcribe_audio(
         logger.info("Uploading exports to MinIO")
 
         # Generate MinIO paths
-        base_path = os.path.splitext(document.file_path)[0]
+        base_path = os.path.splitext(transcription.file_path)[0]
         export_paths = {}
 
         for format_name, local_path in [
@@ -1277,47 +1285,18 @@ def transcribe_audio(
 
         logger.info("Updating database with transcription results")
 
-        # Find existing transcription (should always exist now)
-        transcription = db.query(Transcription).filter(
-            Transcription.document_id == document_id
-        ).first()
-
-        if not transcription:
-            # This should not happen with new flow, but handle gracefully
-            logger.warning(f"Transcription not found for document {document_id}, creating new one")
-            transcription = Transcription(document_id=document_id)
-            db.add(transcription)
+        # Update transcription record with results (transcription already fetched at start)
 
         # Update transcription fields
         transcription.format = ext.lstrip('.') if ext else None
         transcription.duration = duration
         transcription.speakers = list(speakers.values())
         transcription.segments = diarized_segments
-
-        # Update document status and metadata
-        document.status = DocumentStatus.COMPLETED
-        document.meta_data = document.meta_data or {}
-
-        transcription_metadata = {
-            'completed_at': datetime.utcnow().isoformat(),
-            'duration': duration,
-            'segments_count': len(diarized_segments),
-            'speakers_count': len(speakers),
-            'language': language,
-            'export_formats': list(export_paths.keys())
-        }
-
-        # Add speaker name inference metadata if available
-        if inference_metadata:
-            transcription_metadata['speaker_name_inference'] = inference_metadata
-
-        document.meta_data.update({
-            'transcription': transcription_metadata
-        })
+        transcription.status = DocumentStatus.COMPLETED
 
         db.commit()
 
-        logger.info(f"Transcription completed successfully for document {document_id}")
+        logger.info(f"Transcription completed successfully for transcription ID {transcription_id}")
 
         # Step 9: Queue transcript indexing for search
         try:
@@ -1331,9 +1310,8 @@ def transcribe_audio(
         # Step 10: Return success result
         return {
             'status': 'completed',
-            'document_id': document_id,
             'transcription_id': transcription.id,
-            'filename': document.filename,
+            'filename': transcription.filename,
             'duration': duration,
             'segments_count': len(diarized_segments),
             'speakers_count': len(speakers),
@@ -1344,21 +1322,16 @@ def transcribe_audio(
         }
 
     except Exception as e:
-        logger.error(f"Transcription failed for document {document_id}: {str(e)}", exc_info=True)
+        logger.error(f"Transcription failed for transcription ID {transcription_id}: {str(e)}", exc_info=True)
 
-        # Update document status to FAILED
+        # Update transcription status to FAILED
         try:
-            document = db.query(Document).filter(Document.id == document_id).first()
-            if document:
-                document.status = DocumentStatus.FAILED
-                document.meta_data = document.meta_data or {}
-                document.meta_data['transcription_error'] = {
-                    'error': str(e),
-                    'failed_at': datetime.utcnow().isoformat()
-                }
+            transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+            if transcription:
+                transcription.status = DocumentStatus.FAILED
                 db.commit()
         except Exception as db_error:
-            logger.error(f"Failed to update document status: {str(db_error)}")
+            logger.error(f"Failed to update transcription status: {str(db_error)}")
 
         # Update task state
         self.update_state(
@@ -1369,7 +1342,7 @@ def transcribe_audio(
         return {
             'status': 'failed',
             'error': str(e),
-            'document_id': document_id,
+            'transcription_id': transcription_id,
             'task_id': self.request.id
         }
 

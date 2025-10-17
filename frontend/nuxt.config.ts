@@ -53,5 +53,10 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+
+  colorMode: {
+    preference: 'dark', // Default to dark mode
+    fallback: 'dark'
   }
 })

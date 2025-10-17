@@ -59,7 +59,7 @@ const config = useRuntimeConfig()
 const pdfUrl = ref<string>('')
 const currentPage = ref(props.initialPage)
 const totalPages = ref(0)
-const zoom = ref(1.5)
+const zoom = ref(1.0)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 const pdfViewerRef = useTemplateRef('pdfViewerRef')
@@ -336,7 +336,7 @@ const zoomOut = () => {
 }
 
 const resetZoom = () => {
-  zoom.value = 1.5
+  zoom.value = 1.0
 }
 
 // Print functionality

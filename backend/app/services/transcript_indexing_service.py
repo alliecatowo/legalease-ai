@@ -21,7 +21,6 @@ from app.core.qdrant import (
 )
 from app.core.config import settings
 from app.models.transcription import Transcription
-from app.models.document import Document
 from app.models.case import Case
 
 logger = logging.getLogger(__name__)
@@ -89,22 +88,28 @@ class TranscriptIndexingService:
             logger.error(f"Error generating embeddings: {e}")
             raise
 
-    def _create_bm25_vector(self, text: str) -> Dict[str, Any]:
+    def _create_bm25_vector(self, text: str, metadata_text: Optional[str] = None) -> Dict[str, Any]:
         """
-        Create BM25 sparse vector from text for keyword matching.
+        Create BM25 sparse vector from text and optional metadata for keyword matching.
 
         Args:
             text: Input text
+            metadata_text: Optional metadata text to include in search
 
         Returns:
             Dictionary with indices and values for sparse vector
         """
         import re
 
+        # Combine text and metadata for BM25 indexing
+        combined_text = text
+        if metadata_text:
+            combined_text = f"{metadata_text}\n{text}"
+
         # Simple tokenization
-        text = text.lower()
-        text = re.sub(r'[^\w\s]', ' ', text)
-        tokens = text.split()
+        combined_text = combined_text.lower()
+        combined_text = re.sub(r'[^\w\s]', ' ', combined_text)
+        tokens = combined_text.split()
 
         # Count token frequencies
         token_counts = defaultdict(int)
@@ -128,9 +133,9 @@ class TranscriptIndexingService:
         segment: Dict[str, Any],
         segment_index: int,
         transcription_id: int,
-        document_id: int,
         case_id: int,
         embeddings: Optional[Dict[str, List[float]]] = None,
+        audio_filename: Optional[str] = None,
     ) -> PointStruct:
         """
         Create a Qdrant PointStruct from a transcript segment.
@@ -139,26 +144,45 @@ class TranscriptIndexingService:
             segment: Segment dictionary from transcription
             segment_index: Index of this segment in the transcript
             transcription_id: Associated transcription ID
-            document_id: Associated document ID
             case_id: Associated case ID
             embeddings: Pre-computed embeddings (will generate if None)
+            audio_filename: Optional audio filename for searchability
 
         Returns:
             PointStruct ready for upsertion to Qdrant
         """
         text = segment.get('text', '').strip()
+        speaker = segment.get('speaker', 'UNKNOWN')
 
         # Generate embeddings if not provided
         if embeddings is None:
             embeddings = self._generate_embeddings(text)
 
-        # Create BM25 sparse vector
-        bm25_vector = self._create_bm25_vector(text)
+        # Build searchable metadata text
+        metadata_parts = []
+
+        # Include audio filename (most important for search)
+        if audio_filename:
+            metadata_parts.append(audio_filename)
+            # Also add filename without extension
+            import os
+            filename_without_ext = os.path.splitext(audio_filename)[0]
+            if filename_without_ext != audio_filename:
+                metadata_parts.append(filename_without_ext)
+
+        # Include speaker name for searchability
+        if speaker and speaker != 'UNKNOWN':
+            metadata_parts.append(speaker)
+
+        # Combine metadata into searchable text
+        metadata_text = " ".join(metadata_parts) if metadata_parts else None
+
+        # Create BM25 sparse vector with metadata included
+        bm25_vector = self._create_bm25_vector(text, metadata_text=metadata_text)
 
         # Build payload with metadata
         payload = {
             "transcription_id": transcription_id,
-            "document_id": document_id,
             "case_id": case_id,
             "text": text,
             "chunk_type": "transcript_segment",  # Distinguish from document chunks
@@ -166,7 +190,7 @@ class TranscriptIndexingService:
             "segment_index": segment_index,
 
             # Transcript-specific fields
-            "speaker": segment.get('speaker', 'UNKNOWN'),
+            "speaker": speaker,
             "start_time": segment.get('start', 0.0),
             "end_time": segment.get('end', 0.0),
             "duration": segment.get('end', 0.0) - segment.get('start', 0.0),
@@ -176,9 +200,14 @@ class TranscriptIndexingService:
             "word_count": len(segment.get('words', [])) if segment.get('words') else len(text.split()),
         }
 
-        # Generate unique point ID: use negative transcription_id * 10000 + segment_index
-        # This ensures no collision with document chunk IDs (which are positive)
-        point_id = -(transcription_id * 100000 + segment_index)
+        # Add audio filename to payload for display in search results
+        if audio_filename:
+            payload["filename"] = audio_filename
+
+        # Generate unique point ID using UUID to avoid collision with document chunk IDs
+        # Format: transcript-{transcription_id}-{segment_index}
+        import uuid
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"transcript-{transcription_id}-{segment_index}"))
 
         # Create point with both dense and sparse vectors
         point = PointStruct(
@@ -232,14 +261,6 @@ class TranscriptIndexingService:
             if not transcription:
                 raise ValueError(f"Transcription {transcription_id} not found")
 
-            # Get document and case info
-            document = db.query(Document).filter(
-                Document.id == transcription.document_id
-            ).first()
-
-            if not document:
-                raise ValueError(f"Document {transcription.document_id} not found for transcription {transcription_id}")
-
             # Get segments
             segments = transcription.segments
 
@@ -252,6 +273,9 @@ class TranscriptIndexingService:
                     "message": "No segments to index",
                 }
 
+            # Get audio filename from transcription for searchability
+            audio_filename = transcription.filename
+
             # Create points for all segments
             points = []
             failed_segments = []
@@ -262,8 +286,8 @@ class TranscriptIndexingService:
                         segment=segment,
                         segment_index=idx,
                         transcription_id=transcription.id,
-                        document_id=document.id,
-                        case_id=document.case_id,
+                        case_id=transcription.case_id,
+                        audio_filename=audio_filename,
                     )
                     points.append(point)
                 except Exception as e:
@@ -280,8 +304,7 @@ class TranscriptIndexingService:
 
             result = {
                 "transcription_id": transcription_id,
-                "document_id": document.id,
-                "case_id": document.case_id,
+                "case_id": transcription.case_id,
                 "indexed_count": len(points),
                 "failed_count": len(failed_segments),
                 "total_segments": len(segments),
@@ -488,15 +511,9 @@ class TranscriptIndexingService:
             if not case:
                 raise ValueError(f"Case {case_id} not found")
 
-            # Get all documents for the case
-            documents = db.query(Document).filter(
-                Document.case_id == case_id
-            ).all()
-
-            # Get all transcriptions for these documents
-            document_ids = [doc.id for doc in documents]
+            # Get all transcriptions for the case directly
             transcriptions = db.query(Transcription).filter(
-                Transcription.document_id.in_(document_ids)
+                Transcription.case_id == case_id
             ).all()
 
             transcription_ids = [trans.id for trans in transcriptions]

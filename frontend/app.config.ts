@@ -1,13 +1,13 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'blue',
+      primary: 'fuchsia',
       secondary: 'violet',
       success: 'green',
       warning: 'yellow',
       error: 'red',
       info: 'cyan',
-      neutral: 'slate'
+      neutral: 'neutral'
     },
     icons: {
       search: 'i-lucide-search',
