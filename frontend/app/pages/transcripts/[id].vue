@@ -78,8 +78,8 @@ async function performSmartSearch() {
     // Extract segment indices from search results
     const segmentIndices = new Set<number>()
     response.results?.forEach((result: any) => {
-      // Backend stores segment_index at payload root (not in metadata)
-      const segmentIndex = result.segment_index
+      // Backend stores segment index in metadata.position
+      const segmentIndex = result.metadata?.position
 
       if (segmentIndex !== undefined && segmentIndex !== null) {
         segmentIndices.add(segmentIndex)
