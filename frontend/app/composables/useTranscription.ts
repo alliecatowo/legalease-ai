@@ -26,7 +26,6 @@ export interface Transcription {
   status: 'processing' | 'completed' | 'failed'
   caseId?: string
   caseName?: string
-  documentId?: number  // Added for search filtering
   createdAt: string
   segments: TranscriptSegment[]
   speakers: Speaker[]
