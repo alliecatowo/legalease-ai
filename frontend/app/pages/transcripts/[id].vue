@@ -541,83 +541,79 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UDashboardPanel>
-    <div class="flex flex-col h-full">
-      <!-- Header -->
-      <header class="border-b border-default bg-background shrink-0">
-        <div class="h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
-          <div class="flex items-center gap-4 min-w-0">
-            <UButton
-              icon="i-lucide-arrow-left"
-              color="neutral"
-              variant="ghost"
-              @click="router.push('/transcripts')"
-            />
-            <h1 class="text-xl font-semibold truncate">{{ transcript?.title || 'Transcript' }}</h1>
-          </div>
-
-          <div v-if="transcript" class="flex items-center gap-2 shrink-0">
-            <UButton
-              icon="i-lucide-copy"
-              color="neutral"
-              variant="ghost"
-              label="Copy All"
-              @click="copyTranscriptToClipboard"
-            />
-
-            <UDropdownMenu
-              :items="[
-                [
-                  {
-                    label: 'Download Original Audio',
-                    icon: 'i-lucide-music',
-                    click: async () => {
-                      const audioUrl = transcript?.audioUrl
-                      if (audioUrl) {
-                        const link = document.createElement('a')
-                        link.href = audioUrl
-                        link.download = `${transcript.title}.mp3`
-                        link.click()
-                      } else {
-                        toast.add({
-                          title: 'Audio not available',
-                          description: 'No audio file found for this transcript',
-                          color: 'warning'
-                        })
-                      }
-                    }
-                  },
-                  { label: 'Export as DOCX', icon: 'i-lucide-file-text', click: () => exportTranscript('docx') },
-                  { label: 'Export as SRT', icon: 'i-lucide-captions', click: () => exportTranscript('srt') },
-                  { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
-                ],
-                [
-                  { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
-                ]
-              ]"
-            >
-              <UButton
-                icon="i-lucide-download"
-                color="primary"
-                :loading="isExporting"
-                label="Export"
-              />
-            </UDropdownMenu>
-
-            <UButton
-              :icon="metadataSidebarOpen ? 'i-lucide-panel-right-close' : 'i-lucide-panel-right-open'"
-              color="neutral"
-              variant="ghost"
-              @click="metadataSidebarOpen = !metadataSidebarOpen"
-            />
-          </div>
+  <UDashboardPanel id="transcript-main" resizable>
+    <template #header>
+      <div class="h-16 px-4 sm:px-6 flex items-center justify-between gap-4 border-b border-default">
+        <div class="flex items-center gap-4 min-w-0">
+          <UButton
+            icon="i-lucide-arrow-left"
+            color="neutral"
+            variant="ghost"
+            @click="router.push('/transcripts')"
+          />
+          <h1 class="text-xl font-semibold truncate">{{ transcript?.title || 'Transcript' }}</h1>
         </div>
-      </header>
 
-      <!-- Body -->
-      <div class="flex flex-1 overflow-hidden">
-      <!-- Main Content Area -->
-      <div class="flex-1 overflow-y-auto">
+        <div v-if="transcript" class="flex items-center gap-2 shrink-0">
+          <UButton
+            icon="i-lucide-copy"
+            color="neutral"
+            variant="ghost"
+            label="Copy All"
+            @click="copyTranscriptToClipboard"
+          />
+
+          <UDropdownMenu
+            :items="[
+              [
+                {
+                  label: 'Download Original Audio',
+                  icon: 'i-lucide-music',
+                  click: async () => {
+                    const audioUrl = transcript?.audioUrl
+                    if (audioUrl) {
+                      const link = document.createElement('a')
+                      link.href = audioUrl
+                      link.download = `${transcript.title}.mp3`
+                      link.click()
+                    } else {
+                      toast.add({
+                        title: 'Audio not available',
+                        description: 'No audio file found for this transcript',
+                        color: 'warning'
+                      })
+                    }
+                  }
+                },
+                { label: 'Export as DOCX', icon: 'i-lucide-file-text', click: () => exportTranscript('docx') },
+                { label: 'Export as SRT', icon: 'i-lucide-captions', click: () => exportTranscript('srt') },
+                { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
+              ],
+              [
+                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
+              ]
+            ]"
+          >
+            <UButton
+              icon="i-lucide-download"
+              color="primary"
+              :loading="isExporting"
+              label="Export"
+            />
+          </UDropdownMenu>
+
+          <UButton
+            :icon="metadataSidebarOpen ? 'i-lucide-panel-right-close' : 'i-lucide-panel-right-open'"
+            color="neutral"
+            variant="ghost"
+            @click="metadataSidebarOpen = !metadataSidebarOpen"
+          />
+        </div>
+      </div>
+    </template>
+
+    <template #body>
+      <div class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
         <!-- Loading State -->
         <div v-if="isLoading" class="flex items-center justify-center min-h-full p-6">
           <div class="text-center space-y-4">
@@ -649,7 +645,7 @@ onMounted(async () => {
         </div>
 
         <!-- Main Content -->
-        <div v-else-if="transcript" class="p-4 sm:p-6 space-y-6">
+        <div v-else-if="transcript" class="space-y-6">
           <!-- Audio Player -->
           <LazyWaveformPlayer
             v-if="transcript.audioUrl"
@@ -979,13 +975,23 @@ onMounted(async () => {
           </div>
         </div>
       </div>
+    </template>
+  </UDashboardPanel>
 
-      <!-- Right Metadata Sidebar -->
-      <aside
-        v-if="transcript && metadataSidebarOpen"
-        class="w-96 border-l border-default bg-background overflow-y-auto shrink-0"
-      >
-        <div class="p-6 space-y-6">
+  <!-- Right Metadata Sidebar -->
+  <UDashboardSidebar
+    v-if="transcript"
+    id="transcript-metadata"
+    v-model:open="metadataSidebarOpen"
+    side="right"
+    resizable
+    collapsible
+    :min-size="20"
+    :max-size="40"
+    :default-size="25"
+  >
+    <template #default>
+      <div class="space-y-6">
           <!-- Transcript Info -->
           <UCard>
             <template #header>
@@ -1283,10 +1289,8 @@ onMounted(async () => {
             </div>
           </UCard>
         </div>
-      </aside>
-    </div>
-    </div>
-  </UDashboardPanel>
+    </template>
+  </UDashboardSidebar>
 </template>
 
 <style scoped>
