@@ -19,6 +19,10 @@ const error = ref<string | null>(null)
 const isVerifying = ref(false)
 const showDeleteConfirm = ref(false)
 const isDeleting = ref(false)
+const showFileBrowser = ref(false)
+const currentPath = ref('')
+const filesData = ref<any>(null)
+const loadingFiles = ref(false)
 
 // Load export data
 async function loadExport() {
@@ -95,6 +99,40 @@ async function deleteExport() {
     isDeleting.value = false
     showDeleteConfirm.value = false
   }
+}
+
+// Open Report.html
+function openReport() {
+  if (!exportData.value) return
+  const reportUrl = api.forensicExports.getReportUrl(exportId.value)
+  window.open(reportUrl, '_blank')
+}
+
+// File browser functions
+async function openFileBrowser() {
+  showFileBrowser.value = true
+  await loadFiles('')
+}
+
+async function loadFiles(path: string) {
+  loadingFiles.value = true
+  currentPath.value = path
+
+  try {
+    filesData.value = await api.forensicExports.listFiles(exportId.value, path)
+  } catch (err: any) {
+    toast.add({
+      title: 'Failed to Load Files',
+      description: err.message || 'Unable to list files',
+      color: 'error'
+    })
+  } finally {
+    loadingFiles.value = false
+  }
+}
+
+async function navigateToFolder(path: string) {
+  await loadFiles(path)
 }
 
 // Utility functions
@@ -505,7 +543,7 @@ onMounted(() => {
                     color="neutral"
                     variant="outline"
                     block
-                    disabled
+                    @click="openFileBrowser"
                   />
                   <UButton
                     label="Open Report.html"
@@ -513,7 +551,7 @@ onMounted(() => {
                     color="neutral"
                     variant="outline"
                     block
-                    disabled
+                    @click="openReport"
                   />
                   <UButton
                     label="Delete Record"
@@ -601,6 +639,97 @@ onMounted(() => {
             color="error"
             :loading="isDeleting"
             @click="deleteExport"
+          />
+        </div>
+      </template>
+    </UModal>
+
+    <!-- File Browser Modal -->
+    <UModal
+      v-model:open="showFileBrowser"
+      title="File Browser"
+      :ui="{ content: 'max-w-5xl' }"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <!-- Breadcrumb / Current Path -->
+          <div class="flex items-center gap-2 p-3 bg-muted/10 rounded-lg">
+            <UIcon name="i-lucide-folder" class="size-5 text-primary" />
+            <span class="font-mono text-sm text-highlighted">
+              {{ filesData?.current_path || '/' }}
+            </span>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="loadingFiles" class="flex items-center justify-center py-12">
+            <UIcon name="i-lucide-loader-2" class="size-8 text-primary animate-spin" />
+          </div>
+
+          <!-- Files List -->
+          <div v-else-if="filesData" class="space-y-2">
+            <!-- Parent Directory Button -->
+            <UCard
+              v-if="filesData.parent_path !== null"
+              class="hover:bg-muted/5 cursor-pointer transition-colors"
+              @click="navigateToFolder(filesData.parent_path)"
+            >
+              <div class="flex items-center gap-3 p-2">
+                <UIcon name="i-lucide-corner-up-left" class="size-5 text-muted" />
+                <span class="font-medium text-muted">..</span>
+              </div>
+            </UCard>
+
+            <!-- Items -->
+            <UCard
+              v-for="item in filesData.items"
+              :key="item.path"
+              class="hover:bg-muted/5 cursor-pointer transition-colors"
+              @click="item.is_directory ? navigateToFolder(item.path) : null"
+            >
+              <div class="flex items-center justify-between p-2">
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                  <UIcon
+                    :name="item.is_directory ? 'i-lucide-folder' : 'i-lucide-file'"
+                    :class="item.is_directory ? 'text-primary' : 'text-muted'"
+                    class="size-5 flex-shrink-0"
+                  />
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium truncate">{{ item.name }}</p>
+                    <div class="flex items-center gap-3 text-xs text-muted mt-0.5">
+                      <span v-if="!item.is_directory">{{ formatBytes(item.size || 0) }}</span>
+                      <span>{{ formatDateShort(item.modified) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <UIcon
+                  v-if="item.is_directory"
+                  name="i-lucide-chevron-right"
+                  class="size-5 text-muted flex-shrink-0"
+                />
+              </div>
+            </UCard>
+
+            <!-- Empty State -->
+            <div v-if="filesData.items.length === 0" class="text-center py-12">
+              <UIcon name="i-lucide-folder-open" class="size-12 text-muted/50 mb-3" />
+              <p class="text-muted">This folder is empty</p>
+            </div>
+          </div>
+
+          <!-- Info Footer -->
+          <div v-if="filesData" class="text-sm text-muted">
+            Showing {{ filesData.total }} item{{ filesData.total !== 1 ? 's' : '' }}
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Close"
+            color="neutral"
+            variant="outline"
+            @click="showFileBrowser = false"
           />
         </div>
       </template>

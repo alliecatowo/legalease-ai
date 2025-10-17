@@ -1,8 +1,11 @@
 """Forensic Export API endpoints."""
 
 from datetime import datetime
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any
 
 from app.core.database import get_db
 from app.schemas.forensic_export import (
@@ -246,4 +249,150 @@ async def delete_export(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
+        )
+
+
+@router.get(
+    "/forensic-exports/{export_id}/report",
+    response_class=HTMLResponse,
+    summary="Get Report.html",
+    description="Serve the Report.html file from the forensic export",
+)
+async def get_export_report(
+    export_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Serve the Report.html file from the forensic export.
+
+    Args:
+        export_id: Export ID
+        db: Database session
+
+    Returns:
+        HTML content of the Report.html file
+
+    Raises:
+        HTTPException: If export not found or Report.html doesn't exist
+    """
+    export = ForensicExportService.get_export(export_id, db)
+    if not export:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Forensic export {export_id} not found"
+        )
+
+    report_path = Path(export.folder_path) / "Report.html"
+
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report.html not found in export folder"
+        )
+
+    try:
+        with open(report_path, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read Report.html: {str(e)}"
+        )
+
+
+@router.get(
+    "/forensic-exports/{export_id}/files",
+    response_model=Dict[str, Any],
+    summary="List files in export",
+    description="List files and directories in the forensic export folder",
+)
+async def list_export_files(
+    export_id: int,
+    subpath: str = "",
+    db: Session = Depends(get_db),
+):
+    """
+    List files and directories in the forensic export folder.
+
+    Args:
+        export_id: Export ID
+        subpath: Optional subdirectory path (relative to export root)
+        db: Database session
+
+    Returns:
+        Dictionary with files and directories lists
+
+    Raises:
+        HTTPException: If export not found or path is invalid
+    """
+    export = ForensicExportService.get_export(export_id, db)
+    if not export:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Forensic export {export_id} not found"
+        )
+
+    export_path = Path(export.folder_path)
+    target_path = export_path / subpath if subpath else export_path
+
+    # Security: Ensure target_path is within export_path
+    try:
+        target_path = target_path.resolve()
+        export_path = export_path.resolve()
+        if not str(target_path).startswith(str(export_path)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid path: cannot access files outside export folder"
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid path"
+        )
+
+    if not target_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Path not found: {subpath}"
+        )
+
+    if not target_path.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Path is not a directory"
+        )
+
+    try:
+        items = []
+        for item in sorted(target_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            try:
+                stat = item.stat()
+                items.append({
+                    "name": item.name,
+                    "path": str(item.relative_to(export_path)),
+                    "is_directory": item.is_dir(),
+                    "size": stat.st_size if item.is_file() else None,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                })
+            except Exception:
+                # Skip items we can't access
+                continue
+
+        return {
+            "export_id": export_id,
+            "current_path": str(target_path.relative_to(export_path)) if subpath else "",
+            "parent_path": str(target_path.parent.relative_to(export_path)) if target_path != export_path else None,
+            "items": items,
+            "total": len(items),
+        }
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied to access this path"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list files: {str(e)}"
         )
