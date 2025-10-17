@@ -28,9 +28,11 @@ class TranscriptionService:
         # Audio formats
         "audio/mpeg",
         "audio/mp3",
+        "audio/mp4",  # M4A files (MPEG-4 audio)
         "audio/wav",
         "audio/x-wav",
         "audio/wave",
+        "audio/vnd.wave",  # Alternative MIME type for WAV files
         "audio/aac",
         "audio/m4a",
         "audio/x-m4a",
