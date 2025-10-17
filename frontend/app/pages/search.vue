@@ -62,7 +62,7 @@ const chunkTypeOptions = [
   { value: 'transcript_segment', label: 'Transcript Segments', description: 'Audio/video transcript snippets' }
 ]
 
-// Watch search mode and update settings
+// Watch search mode and update settings + trigger re-search
 watch(searchMode, (mode) => {
   if (mode === 'hybrid') {
     searchSettings.value.use_bm25 = true
@@ -73,6 +73,11 @@ watch(searchMode, (mode) => {
   } else if (mode === 'keyword') {
     searchSettings.value.use_bm25 = true
     searchSettings.value.use_dense = false
+  }
+
+  // Trigger re-search if there's an active query
+  if (searchQuery.value.trim()) {
+    debouncedSearch()
   }
 })
 
@@ -433,6 +438,20 @@ watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscri
     debouncedSearch()
   }
 }, { deep: true })
+
+// Watch for search settings changes (confidence, fusion method, results limit) and re-run search
+watch(
+  () => [
+    searchSettings.value.score_threshold,
+    searchSettings.value.fusion_method,
+    searchSettings.value.top_k
+  ],
+  () => {
+    if (searchQuery.value.trim()) {
+      debouncedSearch()
+    }
+  }
+)
 
 // Keyboard shortcuts - manage two refs for hero and compact inputs
 const heroSearchInput = useTemplateRef('heroSearchInput')

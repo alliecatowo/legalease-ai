@@ -3,6 +3,7 @@
 import io
 import json
 import logging
+import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import UploadFile, HTTPException
@@ -12,9 +13,9 @@ from docx import Document as DocxDocument
 from docx.shared import Pt, Inches
 
 from app.models.transcription import Transcription, TranscriptSegment
-from app.models.document import Document, DocumentStatus
+from app.models.document import DocumentStatus
 from app.models.case import Case
-from app.services.document_service import DocumentService
+from app.core.minio_client import minio_client
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class TranscriptionService:
         file: UploadFile,
         db: Session,
         options: Optional["TranscriptionOptions"] = None,
-    ) -> Document:
+    ) -> Transcription:
         """
         Upload an audio/video file for transcription.
 
@@ -62,11 +63,17 @@ class TranscriptionService:
             options: Optional transcription configuration options
 
         Returns:
-            Document: Created document record
+            Transcription: Created transcription record
 
         Raises:
             HTTPException: If validation fails or upload fails
         """
+        # Validate case exists
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            logger.error(f"Case {case_id} not found")
+            raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+
         # Validate file type
         if file.content_type not in TranscriptionService.SUPPORTED_FORMATS:
             raise HTTPException(
@@ -76,25 +83,63 @@ class TranscriptionService:
                 f"and video (mp4, mpeg, mov, avi, webm, mkv)",
             )
 
-        # Upload using document service
-        documents = await DocumentService.upload_documents(
+        # Generate unique file identifier
+        file_uuid = str(uuid.uuid4())
+        filename = file.filename or "unknown"
+
+        # Create MinIO path: cases/{case_id}/transcripts/{uuid}_{filename}
+        object_name = f"cases/{case_id}/transcripts/{file_uuid}_{filename}"
+
+        # Read file content and get size
+        file_content = await file.read()
+        file_size = len(file_content)
+
+        # Upload to MinIO
+        try:
+            minio_client.upload_file(
+                file_data=io.BytesIO(file_content),
+                object_name=object_name,
+                content_type=file.content_type,
+                length=file_size,
+            )
+            logger.info(f"Uploaded file to MinIO: {object_name}")
+        except S3Error as e:
+            logger.error(f"Failed to upload file to MinIO: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload file to storage: {str(e)}",
+            )
+
+        # Extract format from content type (e.g., "audio/mp3" -> "mp3")
+        file_format = file.content_type.split("/")[-1] if file.content_type else None
+
+        # Create Transcription record directly
+        transcription = Transcription(
             case_id=case_id,
-            files=[file],
-            db=db,
+            filename=filename,
+            file_path=object_name,
+            mime_type=file.content_type,
+            size=file_size,
+            status=DocumentStatus.PENDING,
+            uploaded_at=datetime.utcnow(),
+            format=file_format,
+            segments=[],
+            speakers=[],
         )
 
-        document = documents[0]
+        db.add(transcription)
+        db.commit()
+        db.refresh(transcription)
 
         # Queue transcription task with options
         from app.workers.tasks.transcription import transcribe_audio
 
         options_dict = options.model_dump() if options else {}
-        transcribe_audio.delay(document.id, options=options_dict)
+        transcribe_audio.delay(transcription.id, options=options_dict)
 
-        logger.info(f"Queued transcription task for document {document.id} with options: {options_dict}")
+        logger.info(f"Created transcription {transcription.id} and queued task with options: {options_dict}")
 
-        # Return the first (and only) document
-        return document
+        return transcription
 
     @staticmethod
     def get_transcription(transcription_id: int, db: Session) -> Transcription:
@@ -145,11 +190,10 @@ class TranscriptionService:
             logger.error(f"Case {case_id} not found")
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
 
-        # Get all transcriptions for the case through documents
+        # Get all transcriptions for the case directly
         transcriptions = (
             db.query(Transcription)
-            .join(Document, Transcription.document_id == Document.id)
-            .filter(Document.case_id == case_id)
+            .filter(Transcription.case_id == case_id)
             .all()
         )
 
@@ -158,19 +202,18 @@ class TranscriptionService:
         # Build summary list
         result = []
         for trans in transcriptions:
-            doc = db.query(Document).filter(Document.id == trans.document_id).first()
             result.append(
                 {
                     "id": trans.id,
-                    "document_id": trans.document_id,
-                    "case_id": doc.case_id if doc else None,
-                    "filename": doc.filename if doc else "Unknown",
+                    "case_id": trans.case_id,
+                    "filename": trans.filename,
                     "format": trans.format,
                     "duration": trans.duration,
                     "segment_count": len(trans.segments) if trans.segments else 0,
                     "speaker_count": len(trans.speakers) if trans.speakers else 0,
-                    "status": doc.status.value if doc and doc.status else "unknown",
+                    "status": trans.status.value if trans.status else "unknown",
                     "created_at": trans.created_at,
+                    "uploaded_at": trans.uploaded_at,
                 }
             )
 
@@ -192,17 +235,6 @@ class TranscriptionService:
             HTTPException: If transcription not found
         """
         transcription = TranscriptionService.get_transcription(transcription_id, db)
-        document = (
-            db.query(Document)
-            .filter(Document.id == transcription.document_id)
-            .first()
-        )
-
-        if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {transcription.document_id} not found",
-            )
 
         # Get key moment metadata for segments
         key_moment_metadata = (
@@ -225,35 +257,30 @@ class TranscriptionService:
 
         return {
             "id": transcription.id,
-            "document_id": transcription.document_id,
-            "case_id": document.case_id,
-            "filename": document.filename,
+            "case_id": transcription.case_id,
+            "filename": transcription.filename,
             "format": transcription.format,
             "duration": transcription.duration,
             "speakers": transcription.speakers,
             "segments": segments_with_metadata,
-            "status": document.status.value if document.status else "unknown",
+            "status": transcription.status.value if transcription.status else "unknown",
             "created_at": transcription.created_at,
+            "uploaded_at": transcription.uploaded_at,
         }
 
     @staticmethod
     def export_as_json(transcription: Transcription, db: Session) -> bytes:
         """Export transcription as JSON."""
-        document = (
-            db.query(Document)
-            .filter(Document.id == transcription.document_id)
-            .first()
-        )
-
         data = {
             "transcription_id": transcription.id,
-            "document_id": transcription.document_id,
-            "filename": document.filename if document else "Unknown",
+            "case_id": transcription.case_id,
+            "filename": transcription.filename,
             "format": transcription.format,
             "duration": transcription.duration,
             "speakers": transcription.speakers,
             "segments": transcription.segments,
             "created_at": transcription.created_at.isoformat(),
+            "uploaded_at": transcription.uploaded_at.isoformat() if transcription.uploaded_at else None,
         }
 
         return json.dumps(data, indent=2).encode("utf-8")
@@ -261,27 +288,24 @@ class TranscriptionService:
     @staticmethod
     def export_as_docx(transcription: Transcription, db: Session) -> bytes:
         """Export transcription as DOCX with formatting."""
-        document_db = (
-            db.query(Document)
-            .filter(Document.id == transcription.document_id)
-            .first()
-        )
-
         doc = DocxDocument()
 
         # Add title
         title = doc.add_heading(
-            f"Transcription: {document_db.filename if document_db else 'Unknown'}", 0
+            f"Transcription: {transcription.filename}", 0
         )
 
         # Add metadata
-        doc.add_paragraph(f"Document ID: {transcription.document_id}")
+        doc.add_paragraph(f"Transcription ID: {transcription.id}")
+        doc.add_paragraph(f"Case ID: {transcription.case_id}")
         doc.add_paragraph(f"Format: {transcription.format or 'Unknown'}")
         if transcription.duration:
             minutes = int(transcription.duration // 60)
             seconds = int(transcription.duration % 60)
             doc.add_paragraph(f"Duration: {minutes}m {seconds}s")
         doc.add_paragraph(f"Created: {transcription.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if transcription.uploaded_at:
+            doc.add_paragraph(f"Uploaded: {transcription.uploaded_at.strftime('%Y-%m-%d %H:%M:%S')}")
         doc.add_paragraph()
 
         # Add speakers section if available
