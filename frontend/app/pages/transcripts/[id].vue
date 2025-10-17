@@ -43,6 +43,7 @@ const editSpeakerRole = ref('')
 const autoScrollEnabled = ref(true)
 const flashSegmentId = ref<string | null>(null)
 const metadataSidebarOpen = ref(true)
+const metadataSidebarCollapsed = ref(false)
 
 // Perform smart search using backend API
 async function performSmartSearch() {
@@ -983,6 +984,7 @@ onMounted(async () => {
     v-if="transcript"
     id="transcript-metadata"
     v-model:open="metadataSidebarOpen"
+    v-model:collapsed="metadataSidebarCollapsed"
     side="right"
     resizable
     collapsible
@@ -990,19 +992,21 @@ onMounted(async () => {
     :max-size="40"
     :default-size="25"
   >
-    <template #header="{ collapsed }">
+    <template #header>
       <div class="flex items-center justify-center gap-3">
-        <UDashboardSidebarCollapse
-          side="right"
-          variant="subtle"
-          :icon="collapsed ? 'i-lucide-chevron-left' : 'i-lucide-chevron-right'"
+        <UButton
+          :icon="metadataSidebarCollapsed ? 'i-lucide-chevron-left' : 'i-lucide-chevron-right'"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          @click="metadataSidebarCollapsed = !metadataSidebarCollapsed"
         />
-        <h2 v-if="!collapsed" class="text-lg font-semibold">Metadata</h2>
+        <h2 v-if="!metadataSidebarCollapsed" class="text-lg font-semibold">Metadata</h2>
       </div>
     </template>
 
-    <template #default="{ collapsed }">
-      <div v-if="!collapsed" class="space-y-6">
+    <template #default>
+      <div v-if="!metadataSidebarCollapsed" class="space-y-6">
           <!-- Transcript Info -->
           <UCard>
             <template #header>
