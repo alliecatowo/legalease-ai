@@ -14,6 +14,7 @@ celery_app = Celery(
     include=[
         "app.workers.tasks.document_processing",
         "app.workers.tasks.transcription",
+        "app.workers.tasks.transcript_indexing",
     ],
 )
 
