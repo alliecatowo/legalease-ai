@@ -101,24 +101,30 @@ class IndexingService:
             logger.error(f"Error generating embeddings: {e}")
             raise
 
-    def _create_bm25_vector(self, text: str) -> Dict[str, Any]:
+    def _create_bm25_vector(self, text: str, metadata_text: Optional[str] = None) -> Dict[str, Any]:
         """
-        Create BM25 sparse vector from text.
+        Create BM25 sparse vector from text and optional metadata.
 
         This is a simplified implementation for keyword matching.
 
         Args:
             text: Input text
+            metadata_text: Optional metadata text to include in search
 
         Returns:
             Dictionary with indices and values for sparse vector
         """
         import re
 
+        # Combine text and metadata for BM25 indexing
+        combined_text = text
+        if metadata_text:
+            combined_text = f"{metadata_text}\n{text}"
+
         # Simple tokenization
-        text = text.lower()
-        text = re.sub(r'[^\w\s]', ' ', text)
-        tokens = text.split()
+        combined_text = combined_text.lower()
+        combined_text = re.sub(r'[^\w\s]', ' ', combined_text)
+        tokens = combined_text.split()
 
         # Count token frequencies
         token_counts = defaultdict(int)
@@ -142,6 +148,7 @@ class IndexingService:
         chunk: Chunk,
         case_id: int,
         embeddings: Optional[Dict[str, List[float]]] = None,
+        document_metadata: Optional[Dict[str, Any]] = None,
     ) -> PointStruct:
         """
         Create a Qdrant PointStruct from a chunk.
@@ -150,6 +157,7 @@ class IndexingService:
             chunk: Chunk object from database
             case_id: Associated case ID
             embeddings: Pre-computed embeddings (will generate if None)
+            document_metadata: Optional document metadata (filename, etc.)
 
         Returns:
             PointStruct ready for upsertion to Qdrant
@@ -158,8 +166,41 @@ class IndexingService:
         if embeddings is None:
             embeddings = self._generate_embeddings(chunk.text)
 
-        # Create BM25 sparse vector
-        bm25_vector = self._create_bm25_vector(chunk.text)
+        # Build searchable metadata text from document metadata
+        metadata_parts = []
+        if document_metadata:
+            # Include filename (most important for search)
+            if document_metadata.get('filename'):
+                filename = document_metadata['filename']
+                # Add filename with and without extension for better matching
+                metadata_parts.append(filename)
+                # Also add filename without extension
+                import os
+                filename_without_ext = os.path.splitext(filename)[0]
+                if filename_without_ext != filename:
+                    metadata_parts.append(filename_without_ext)
+
+            # Include document type if available
+            if document_metadata.get('document_type'):
+                metadata_parts.append(document_metadata['document_type'])
+
+            # Include title if available
+            if document_metadata.get('title'):
+                metadata_parts.append(document_metadata['title'])
+
+            # Include tags if available
+            if document_metadata.get('tags'):
+                tags = document_metadata['tags']
+                if isinstance(tags, list):
+                    metadata_parts.extend(tags)
+                elif isinstance(tags, str):
+                    metadata_parts.append(tags)
+
+        # Combine metadata into searchable text
+        metadata_text = " ".join(metadata_parts) if metadata_parts else None
+
+        # Create BM25 sparse vector with metadata included
+        bm25_vector = self._create_bm25_vector(chunk.text, metadata_text=metadata_text)
 
         # Build payload with metadata
         payload = {
@@ -172,6 +213,17 @@ class IndexingService:
             "page_number": chunk.page_number,
             "created_at": chunk.created_at.isoformat() if chunk.created_at else None,
         }
+
+        # Add document metadata to payload for display in search results
+        if document_metadata:
+            if document_metadata.get('filename'):
+                payload["filename"] = document_metadata['filename']
+            if document_metadata.get('document_type'):
+                payload["document_type"] = document_metadata['document_type']
+            if document_metadata.get('title'):
+                payload["title"] = document_metadata['title']
+            if document_metadata.get('tags'):
+                payload["tags"] = document_metadata['tags']
 
         # Add any additional metadata from chunk
         if chunk.meta_data:
@@ -244,6 +296,20 @@ class IndexingService:
                     "message": "No chunks to index",
                 }
 
+            # Build document metadata for searchable indexing
+            doc_metadata = {
+                'filename': document.filename,
+                'document_type': None,
+                'title': None,
+                'tags': None,
+            }
+
+            # Extract additional metadata from document.meta_data JSON field
+            if document.meta_data:
+                doc_metadata['document_type'] = document.meta_data.get('document_type')
+                doc_metadata['title'] = document.meta_data.get('title')
+                doc_metadata['tags'] = document.meta_data.get('tags')
+
             # Create points for all chunks
             points = []
             failed_chunks = []
@@ -253,6 +319,7 @@ class IndexingService:
                     point = self._create_point(
                         chunk=chunk,
                         case_id=document.case_id,
+                        document_metadata=doc_metadata,
                     )
                     points.append(point)
                 except Exception as e:

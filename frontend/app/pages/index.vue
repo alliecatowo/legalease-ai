@@ -1,11 +1,17 @@
 <script setup lang="ts">
 const api = useApi()
+const toast = useToast()
+
+// Modal state
+const showUploadDocModal = ref(false)
+const showUploadAudioModal = ref(false)
+const showCreateCaseModal = ref(false)
 
 // Fetch all data in parallel for better performance
 const [
-  { data: casesData },
-  { data: documentsData },
-  { data: transcriptionsData }
+  { data: casesData, refresh: refreshCases },
+  { data: documentsData, refresh: refreshDocuments },
+  { data: transcriptionsData, refresh: refreshTranscriptions }
 ] = await Promise.all([
   useAsyncData('dashboard-cases', () => api.cases.list(), {
     default: () => ({ cases: [], total: 0 })
@@ -18,6 +24,156 @@ const [
   })
 ])
 
+// Refresh all dashboard data
+async function refreshDashboard() {
+  await Promise.all([
+    refreshCases(),
+    refreshDocuments(),
+    refreshTranscriptions()
+  ])
+}
+
+// Upload document modal state
+const uploadingDocFiles = ref<File[] | null>(null)
+const uploadDocProgress = ref(0)
+
+async function uploadDocuments() {
+  if (!uploadingDocFiles.value || uploadingDocFiles.value.length === 0) return
+
+  // Get the first available case ID (or show error if no cases exist)
+  if (!casesData.value?.cases || casesData.value.cases.length === 0) {
+    if (import.meta.client) {
+      toast.add({
+        title: 'No Case Available',
+        description: 'Please create a case first before uploading documents',
+        color: 'error'
+      })
+    }
+    return
+  }
+
+  const caseId = casesData.value.cases[0].id
+  uploadDocProgress.value = 0
+
+  const formData = new FormData()
+  uploadingDocFiles.value.forEach(file => {
+    formData.append('files', file)
+  })
+
+  try {
+    uploadDocProgress.value = 50
+    await api.documents.upload(caseId, formData)
+    uploadDocProgress.value = 100
+
+    if (import.meta.client) {
+      toast.add({
+        title: 'Upload Successful',
+        description: `${uploadingDocFiles.value.length} document(s) uploaded successfully`,
+        color: 'success'
+      })
+    }
+
+    showUploadDocModal.value = false
+    uploadingDocFiles.value = null
+    uploadDocProgress.value = 0
+    await refreshDashboard()
+  } catch (error) {
+    console.error('Upload failed:', error)
+    uploadDocProgress.value = 0
+  }
+}
+
+// Upload audio modal state
+const uploadingAudioFiles = ref<File[]>([])
+const selectedCaseForUpload = ref<number | null>(null)
+const isUploadingAudio = ref(false)
+const uploadAudioError = ref<string | null>(null)
+const transcriptionOptions = ref({
+  language: null as string | null,
+  task: 'transcribe' as 'transcribe' | 'translate',
+  enable_diarization: true,
+  min_speakers: 2,
+  max_speakers: 10,
+  temperature: 0.0,
+  initial_prompt: null as string | null
+})
+const fileInputRef = ref<HTMLInputElement>()
+
+function handleAudioFilesSelected(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files) {
+    uploadingAudioFiles.value = Array.from(target.files)
+  }
+}
+
+function removeAudioFile(index: number) {
+  uploadingAudioFiles.value.splice(index, 1)
+}
+
+async function uploadAudioTranscript() {
+  if (!selectedCaseForUpload.value || uploadingAudioFiles.value.length === 0) {
+    toast.add({
+      title: 'Missing Information',
+      description: 'Please select a case and at least one file',
+      color: 'error'
+    })
+    return
+  }
+
+  isUploadingAudio.value = true
+  uploadAudioError.value = null
+
+  try {
+    for (const file of uploadingAudioFiles.value) {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('options', JSON.stringify(transcriptionOptions.value))
+
+      await api.transcriptions.upload(selectedCaseForUpload.value, formData)
+
+      toast.add({
+        title: 'Upload Successful',
+        description: `${file.name} queued for transcription`,
+        color: 'success'
+      })
+    }
+
+    showUploadAudioModal.value = false
+    uploadingAudioFiles.value = []
+    selectedCaseForUpload.value = null
+    uploadAudioError.value = null
+    await refreshDashboard()
+  } catch (error: any) {
+    uploadAudioError.value = error.message || 'Upload failed'
+    toast.add({
+      title: 'Upload Failed',
+      description: error.message || 'An error occurred during upload',
+      color: 'error'
+    })
+  } finally {
+    isUploadingAudio.value = false
+  }
+}
+
+// Create case modal handler
+async function handleCaseCreated(caseData: any) {
+  await refreshDashboard()
+  toast.add({
+    title: 'Case Created',
+    description: `Case "${caseData.name}" has been created successfully`,
+    color: 'success'
+  })
+}
+
+// Case options for upload modals
+const caseOptions = computed(() => [
+  { label: 'All Cases', value: null },
+  ...(casesData.value?.cases || []).map((c: any) => ({
+    label: c.name,
+    value: c.id
+  }))
+])
+
 // Compute stats from real data
 const stats = computed(() => {
   const cases = casesData.value?.cases || []
@@ -27,10 +183,23 @@ const stats = computed(() => {
   // Calculate total storage from actual document sizes
   const totalStorage = documents.reduce((sum: number, doc: any) => sum + (doc.size || 0), 0)
 
+  // Debug: Log transcription statuses to see actual values
+  if (transcriptions.length > 0) {
+    console.log('Transcription statuses:', transcriptions.map((t: any) => ({ id: t.id, status: t.status })))
+  }
+
   // Count active/processing items
   const activeCases = cases.filter((c: any) => c.status === 'ACTIVE').length
-  const processingTranscriptions = transcriptions.filter((t: any) =>
-    t.status === 'processing' || t.status === 'queued'
+
+  // Status values from backend are UPPERCASE (PENDING, PROCESSING, COMPLETED, FAILED)
+  // The backend returns document.status.value from the Document model enum
+  const processingTranscriptions = transcriptions.filter((t: any) => {
+    const status = t.status?.toUpperCase()
+    return status === 'PROCESSING' || status === 'PENDING'
+  }).length
+
+  const completedTranscriptions = transcriptions.filter((t: any) =>
+    t.status?.toUpperCase() === 'COMPLETED'
   ).length
 
   return {
@@ -39,6 +208,7 @@ const stats = computed(() => {
     total_documents: documents.length,
     total_transcriptions: transcriptions.length,
     processing_transcriptions: processingTranscriptions,
+    completed_transcriptions: completedTranscriptions,
     total_storage: totalStorage
   }
 })
@@ -64,15 +234,15 @@ const recentCases = computed(() => {
 const quickActions = [[{
   label: 'Upload Document',
   icon: 'i-lucide-upload',
-  to: '/documents'
+  click: () => { showUploadDocModal.value = true }
 }, {
   label: 'New Transcription',
   icon: 'i-lucide-mic',
-  to: '/transcripts'
+  click: () => { showUploadAudioModal.value = true }
 }, {
   label: 'Create Case',
   icon: 'i-lucide-folder-plus',
-  to: '/cases'
+  click: () => { showCreateCaseModal.value = true }
 }]]
 
 function formatBytes(bytes: number) {
@@ -102,10 +272,17 @@ function formatDuration(seconds: number | null) {
 
 function getStatusColor(status: string) {
   const statusMap: Record<string, string> = {
+    // Document/Transcription statuses (UPPERCASE)
+    'COMPLETED': 'success',
+    'PROCESSING': 'primary',
+    'PENDING': 'warning',
+    'FAILED': 'error',
+    // Legacy lowercase statuses (for backward compatibility)
     'completed': 'success',
     'processing': 'primary',
     'queued': 'warning',
     'failed': 'error',
+    // Case statuses
     'ACTIVE': 'success',
     'STAGING': 'warning',
     'UNLOADED': 'neutral',
@@ -169,7 +346,7 @@ function getStatusColor(status: string) {
               <div>
                 <p class="text-2xl font-bold">{{ stats?.total_transcriptions?.toString() || '0' }}</p>
                 <p class="text-sm text-muted">Transcriptions</p>
-                <p class="text-xs text-muted mt-1">{{ stats?.processing_transcriptions || 0 }} processing</p>
+                <p class="text-xs text-muted mt-1">{{ stats?.completed_transcriptions || 0 }} completed, {{ stats?.processing_transcriptions || 0 }} processing</p>
               </div>
             </div>
           </UCard>
@@ -235,7 +412,7 @@ function getStatusColor(status: string) {
                   <UIcon name="i-lucide-file-text" class="size-12 text-muted mx-auto mb-3 opacity-50" />
                   <p class="text-sm font-medium mb-1">No documents yet</p>
                   <p class="text-xs text-muted mb-4">Upload your first document to get started</p>
-                  <UButton :to="'/documents'" size="sm">
+                  <UButton size="sm" @click="showUploadDocModal = true">
                     Upload Document
                   </UButton>
                 </div>
@@ -291,7 +468,7 @@ function getStatusColor(status: string) {
                   <UIcon name="i-lucide-mic" class="size-12 text-muted mx-auto mb-3 opacity-50" />
                   <p class="text-sm font-medium mb-1">No transcriptions yet</p>
                   <p class="text-xs text-muted mb-4">Upload audio or video to transcribe</p>
-                  <UButton :to="'/transcripts'" size="sm">
+                  <UButton size="sm" @click="showUploadAudioModal = true">
                     New Transcription
                   </UButton>
                 </div>
@@ -309,31 +486,31 @@ function getStatusColor(status: string) {
 
               <div class="space-y-2">
                 <UButton
-                  :to="'/documents'"
                   block
                   color="primary"
                   icon="i-lucide-upload"
                   size="md"
+                  @click="showUploadDocModal = true"
                 >
                   Upload Document
                 </UButton>
                 <UButton
-                  :to="'/transcripts'"
                   block
                   color="primary"
                   variant="outline"
                   icon="i-lucide-mic"
                   size="md"
+                  @click="showUploadAudioModal = true"
                 >
                   Upload Audio
                 </UButton>
                 <UButton
-                  :to="'/cases'"
                   block
                   color="primary"
                   variant="outline"
                   icon="i-lucide-folder-plus"
                   size="md"
+                  @click="showCreateCaseModal = true"
                 >
                   Create New Case
                 </UButton>
@@ -376,7 +553,7 @@ function getStatusColor(status: string) {
                 <div v-if="!recentCases?.length" class="text-center py-6">
                   <UIcon name="i-lucide-folder" class="size-10 text-muted mx-auto mb-2 opacity-50" />
                   <p class="text-xs text-muted mb-3">No cases yet</p>
-                  <UButton :to="'/cases'" size="xs" variant="outline">
+                  <UButton size="xs" variant="outline" @click="showCreateCaseModal = true">
                     Create Case
                   </UButton>
                 </div>
@@ -435,4 +612,220 @@ function getStatusColor(status: string) {
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- Upload Document Modal -->
+  <ClientOnly>
+    <UModal v-model:open="showUploadDocModal" title="Upload Documents" :ui="{ content: 'max-w-2xl' }">
+      <template #body>
+        <div class="space-y-4">
+          <!-- File Upload Component -->
+          <UFileUpload
+            v-model="uploadingDocFiles"
+            multiple
+            accept=".pdf,.docx,.txt"
+            label="Drop your documents here"
+            description="PDF, DOCX, TXT (max 100MB each)"
+            icon="i-lucide-upload-cloud"
+            class="min-h-48"
+          />
+
+          <!-- Upload Progress -->
+          <div v-if="uploadDocProgress > 0 && uploadDocProgress < 100" class="space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted">Uploading...</span>
+              <span class="font-medium text-highlighted">{{ uploadDocProgress }}%</span>
+            </div>
+            <div class="h-2 bg-muted/20 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-primary transition-all duration-300"
+                :style="{ width: `${uploadDocProgress}%` }"
+              />
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="showUploadDocModal = false; uploadingDocFiles = null"
+          />
+          <UButton
+            label="Upload"
+            icon="i-lucide-upload"
+            color="primary"
+            :disabled="!uploadingDocFiles || uploadingDocFiles.length === 0"
+            @click="uploadDocuments"
+          />
+        </div>
+      </template>
+    </UModal>
+  </ClientOnly>
+
+  <!-- Upload Audio Modal -->
+  <ClientOnly>
+    <UModal
+      v-model:open="showUploadAudioModal"
+      title="Upload Transcription"
+      description="Upload audio or video files for AI transcription"
+      :ui="{ content: 'max-w-5xl' }"
+    >
+      <template #body>
+        <div class="space-y-6">
+          <!-- Case Selection -->
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-3">
+                <div class="p-2 bg-primary/10 rounded-lg">
+                  <UIcon name="i-lucide-folder" class="size-5 text-primary" />
+                </div>
+                <h3 class="font-semibold text-lg">Select Case</h3>
+              </div>
+            </template>
+
+            <UFormField label="Associate with Case" name="case" required>
+              <USelectMenu
+                v-model="selectedCaseForUpload"
+                :items="caseOptions"
+                placeholder="Select a case..."
+                size="lg"
+                value-key="value"
+              />
+            </UFormField>
+          </UCard>
+
+          <!-- File Upload -->
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-3">
+                <div class="p-2 bg-primary/10 rounded-lg">
+                  <UIcon name="i-lucide-file-audio" class="size-5 text-primary" />
+                </div>
+                <h3 class="font-semibold text-lg">Upload Files</h3>
+              </div>
+            </template>
+
+            <div class="space-y-4">
+              <!-- Drop Zone -->
+              <div
+                class="relative border-3 border-dashed border-primary/30 rounded-xl p-12 text-center bg-gradient-to-br from-primary/5 via-primary/3 to-transparent hover:border-primary hover:from-primary/10 hover:via-primary/5 transition-all duration-300 cursor-pointer group"
+                @click="fileInputRef?.click()"
+              >
+                <div class="relative">
+                  <div class="inline-flex items-center justify-center size-20 bg-gradient-to-br from-primary/20 to-primary/10 rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-300">
+                    <UIcon name="i-lucide-file-audio" class="size-10 text-primary" />
+                  </div>
+                  <h3 class="text-lg font-bold mb-2">Upload Audio/Video Files</h3>
+                  <p class="text-sm text-muted mb-4">Drag and drop files here or click to browse</p>
+                  <UButton icon="i-lucide-upload" label="Browse Files" color="primary" />
+                  <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+                    <UBadge color="primary" variant="subtle" size="sm">MP3</UBadge>
+                    <UBadge color="primary" variant="subtle" size="sm">WAV</UBadge>
+                    <UBadge color="primary" variant="subtle" size="sm">M4A</UBadge>
+                    <UBadge color="primary" variant="subtle" size="sm">MP4</UBadge>
+                    <UBadge color="primary" variant="subtle" size="sm">MOV</UBadge>
+                    <UBadge color="primary" variant="subtle" size="sm">WebM</UBadge>
+                  </div>
+                  <p class="text-xs text-muted mt-3">Max 2GB per file</p>
+                </div>
+              </div>
+
+              <input
+                ref="fileInputRef"
+                type="file"
+                multiple
+                accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.mp4,.mov,.avi,.mkv,audio/*,video/*"
+                class="hidden"
+                @change="handleAudioFilesSelected"
+              />
+
+              <!-- Selected Files -->
+              <div v-if="uploadingAudioFiles.length > 0" class="space-y-3">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="font-semibold">Selected Files ({{ uploadingAudioFiles.length }})</p>
+                  <UButton
+                    label="Clear All"
+                    size="sm"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-x"
+                    @click="uploadingAudioFiles = []"
+                  />
+                </div>
+                <UCard
+                  v-for="(file, idx) in uploadingAudioFiles"
+                  :key="idx"
+                  class="border-l-4 border-primary"
+                >
+                  <div class="flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                      <div class="p-2 bg-primary/10 rounded-lg shrink-0">
+                        <UIcon name="i-lucide-file-audio" class="size-5 text-primary" />
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p class="font-medium truncate">{{ file.name }}</p>
+                        <div class="flex items-center gap-2 mt-1">
+                          <UBadge color="primary" variant="subtle" size="sm">{{ (file.size / 1024 / 1024).toFixed(2) }} MB</UBadge>
+                          <UBadge color="success" variant="subtle" size="sm">Ready</UBadge>
+                        </div>
+                      </div>
+                    </div>
+                    <UButton
+                      icon="i-lucide-x"
+                      size="sm"
+                      color="neutral"
+                      variant="ghost"
+                      @click="removeAudioFile(idx)"
+                    />
+                  </div>
+                </UCard>
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Transcription Options -->
+          <TranscriptionOptions v-model="transcriptionOptions" />
+
+          <!-- Error Alert -->
+          <UAlert
+            v-if="uploadAudioError"
+            icon="i-lucide-alert-circle"
+            color="error"
+            variant="soft"
+            :title="uploadAudioError"
+            closable
+            @close="uploadAudioError = null"
+          />
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-3">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="outline"
+            @click="showUploadAudioModal = false"
+            :disabled="isUploadingAudio"
+          />
+          <UButton
+            label="Start Transcription"
+            icon="i-lucide-sparkles"
+            color="primary"
+            :disabled="!selectedCaseForUpload || uploadingAudioFiles.length === 0 || isUploadingAudio"
+            :loading="isUploadingAudio"
+            @click="uploadAudioTranscript"
+          />
+        </div>
+      </template>
+    </UModal>
+  </ClientOnly>
+
+  <!-- Create Case Modal -->
+  <ClientOnly>
+    <CreateCaseModal v-model:open="showCreateCaseModal" @created="handleCaseCreated" />
+  </ClientOnly>
 </template>
