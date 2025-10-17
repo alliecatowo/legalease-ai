@@ -66,6 +66,13 @@ const links = [[{
   onSelect: () => {
     open.value = false
   }
+}, {
+  label: 'Forensic Exports',
+  icon: 'i-lucide-hard-drive',
+  to: '/forensic-exports',
+  onSelect: () => {
+    open.value = false
+  }
 }], [{
   label: 'Settings',
   to: '/settings',

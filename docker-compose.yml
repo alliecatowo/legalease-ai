@@ -169,6 +169,7 @@ services:
     volumes:
       - ./backend:/app
       - backend_cache:/root/.cache
+      - ${FORENSIC_EXPORTS_PATH:-/data/forensic-exports}:/data/forensic-exports:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,6 +224,7 @@ services:
       - ./backend:/app
       - worker_cache:/root/.cache
       - ollama_models:/root/.ollama
+      - ${FORENSIC_EXPORTS_PATH:-/data/forensic-exports}:/data/forensic-exports:ro
     depends_on:
       - redis
       - postgres

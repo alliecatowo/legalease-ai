@@ -7,6 +7,7 @@ from app.models.chunk import Chunk
 from app.models.entity import Entity, document_entities
 from app.models.transcription import Transcription
 from app.models.processing_job import ProcessingJob
+from app.models.forensic_export import ForensicExport
 
 # Export all models for easier imports
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "document_entities",
     "Transcription",
     "ProcessingJob",
+    "ForensicExport",
 ]

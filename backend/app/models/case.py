@@ -61,6 +61,12 @@ class Case(Base):
         cascade="all, delete-orphan",
         lazy="selectin"
     )
+    forensic_exports = relationship(
+        "ForensicExport",
+        back_populates="case",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
 
     def __repr__(self) -> str:
         return f"<Case(id={self.id}, case_number='{self.case_number}', name='{self.name}', status='{self.status.value}')>"
