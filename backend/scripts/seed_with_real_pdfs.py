@@ -30,6 +30,7 @@ from app.services.page_image_service import PageImageService
 from datetime import datetime, UTC
 import io
 import requests
+import uuid
 
 # Real legal documents to download (public domain / free legal resources)
 SAMPLE_DOCUMENTS = {
@@ -514,6 +515,157 @@ def main():
                 total_failed += 1
                 import traceback
                 traceback.print_exc()
+
+        # Process test audio file if it exists
+        print(f"\n{'='*80}")
+        print(f"🎤 Checking for test audio file...")
+
+        test_audio_path = Path(__file__).parent.parent.parent / "testaudio.mp3"
+        if test_audio_path.exists():
+            print(f"   Found test audio: {test_audio_path}")
+
+            try:
+                # Read audio file
+                with open(test_audio_path, 'rb') as f:
+                    audio_content = f.read()
+
+                # Create or get a test case for audio
+                audio_case_name = "Audio Test Case"
+                audio_case = db.query(Case).filter(Case.name == audio_case_name).first()
+                if not audio_case:
+                    audio_case = Case(
+                        name=audio_case_name,
+                        case_number=f"CASE-{existing_case_count + len(cases_dict) + 1:03d}",
+                        client="Test Client",
+                        status="ACTIVE",
+                        matter_type="Audio Recording",
+                        created_at=datetime.now(UTC),
+                    )
+                    db.add(audio_case)
+                    db.flush()
+                    print(f"   📁 Created audio test case: {audio_case_name} (ID: {audio_case.id})")
+
+                # Create document record
+                audio_filename = "testaudio.mp3"
+                audio_file_path = f"documents/{audio_case.id}/{audio_filename}"
+
+                audio_doc = Document(
+                    case_id=audio_case.id,
+                    filename=audio_filename,
+                    file_path=audio_file_path,
+                    mime_type="audio/mpeg",
+                    size=len(audio_content),
+                    status=DocumentStatus.PENDING,
+                    uploaded_at=datetime.now(UTC),
+                )
+                db.add(audio_doc)
+                db.flush()
+                print(f"   ✅ Created audio document record (ID: {audio_doc.id})")
+
+                # Upload to MinIO
+                print(f"   ☁️  Uploading audio to MinIO...")
+                minio_client.upload_file(
+                    io.BytesIO(audio_content),
+                    audio_file_path,
+                    content_type="audio/mpeg",
+                    length=len(audio_content),
+                )
+                print(f"   ✅ Uploaded to MinIO: {audio_file_path}")
+
+                # Create sample transcription record with test data
+                from app.models.transcription import Transcription, TranscriptSegment
+
+                # Sample segments for test audio
+                sample_segments = [
+                    {
+                        'id': str(uuid.uuid4()),
+                        'start': 0.0,
+                        'end': 5.0,
+                        'text': 'This is a test audio transcription segment.',
+                        'speaker': 'SPEAKER_00',
+                        'words': []
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'start': 5.5,
+                        'end': 10.0,
+                        'text': 'This segment demonstrates the transcription functionality.',
+                        'speaker': 'SPEAKER_01',
+                        'words': []
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'start': 10.5,
+                        'end': 15.0,
+                        'text': 'You can process real audio by uploading MP3 files.',
+                        'speaker': 'SPEAKER_00',
+                        'words': []
+                    }
+                ]
+
+                # Sample speaker information
+                sample_speakers = [
+                    {
+                        'id': 'SPEAKER_00',
+                        'name': 'Speaker 1',
+                        'color': '#3B82F6',
+                        'segments_count': 2
+                    },
+                    {
+                        'id': 'SPEAKER_01',
+                        'name': 'Speaker 2',
+                        'color': '#EF4444',
+                        'segments_count': 1
+                    }
+                ]
+
+                transcription = Transcription(
+                    document_id=audio_doc.id,
+                    format='mp3',
+                    duration=15.0,
+                    speakers=sample_speakers,
+                    segments=sample_segments,
+                    created_at=datetime.now(UTC),
+                )
+                db.add(transcription)
+                db.flush()  # Flush to get transcription.id
+
+                # Create segment metadata records
+                for seg in sample_segments:
+                    seg_metadata = TranscriptSegment(
+                        transcription_id=transcription.id,
+                        segment_id=seg['id'],
+                        is_key_moment=False,
+                        created_at=datetime.now(UTC),
+                        updated_at=datetime.now(UTC),
+                    )
+                    db.add(seg_metadata)
+
+                # Update document status
+                audio_doc.status = DocumentStatus.COMPLETED
+                audio_doc.meta_data = {
+                    'transcription': {
+                        'completed_at': datetime.now(UTC).isoformat(),
+                        'duration': 15.0,
+                        'segments_count': len(sample_segments),
+                        'speakers_count': len(sample_speakers),
+                        'language': 'en',
+                        'export_formats': ['json']
+                    }
+                }
+
+                db.commit()
+                print(f"   ✅ Created sample transcription with {len(sample_segments)} segments")
+                print(f"   🎤 Audio transcription ready for testing")
+
+            except Exception as e:
+                print(f"   ❌ Error processing test audio: {e}")
+                import traceback
+                traceback.print_exc()
+                db.rollback()
+        else:
+            print(f"   ⚠️  Test audio not found at: {test_audio_path}")
+            print(f"   To enable audio testing, place testaudio.mp3 in the project root")
 
         # Summary
         print(f"\n{'='*80}")
