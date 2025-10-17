@@ -176,9 +176,10 @@ class TranscriptIndexingService:
             "word_count": len(segment.get('words', [])) if segment.get('words') else len(text.split()),
         }
 
-        # Generate unique point ID: use negative transcription_id * 10000 + segment_index
-        # This ensures no collision with document chunk IDs (which are positive)
-        point_id = -(transcription_id * 100000 + segment_index)
+        # Generate unique point ID using UUID to avoid collision with document chunk IDs
+        # Format: transcript-{transcription_id}-{segment_index}
+        import uuid
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"transcript-{transcription_id}-{segment_index}"))
 
         # Create point with both dense and sparse vectors
         point = PointStruct(
