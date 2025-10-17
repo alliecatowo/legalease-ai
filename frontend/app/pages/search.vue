@@ -705,9 +705,9 @@ defineShortcuts({
             />
             <template #help>
               <div class="flex items-center justify-between mt-1">
-                <span class="text-xs text-muted">Current: {{ searchSettings.score_threshold?.toFixed(2) || '0.00' }}</span>
+                <span class="text-xs text-muted">Current: {{ (Number(searchSettings.score_threshold) || 0).toFixed(2) }}</span>
                 <UButton
-                  v-if="searchSettings.score_threshold > 0"
+                  v-if="Number(searchSettings.score_threshold) > 0"
                   label="Reset"
                   size="2xs"
                   color="neutral"

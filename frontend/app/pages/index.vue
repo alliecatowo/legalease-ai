@@ -89,6 +89,16 @@ function formatDate(dateStr: string) {
           <p class="text-muted mt-1">Your AI-powered legal document search and transcription platform</p>
         </div>
 
+        <!-- Development Notice -->
+        <UAlert
+          color="info"
+          variant="subtle"
+          title="Dashboard Analytics Coming Soon"
+          description="Comprehensive analytics and metrics tracking will be available in an upcoming release. Current statistics are computed from your active cases and documents."
+          icon="i-lucide-info"
+          class="mb-6"
+        />
+
         <!-- Stats Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <UCard>
