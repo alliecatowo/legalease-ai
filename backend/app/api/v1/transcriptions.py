@@ -142,30 +142,17 @@ async def upload_audio_for_transcription(
     else:
         transcription_options = TranscriptionOptions()
 
-    document = await TranscriptionService.upload_audio_for_transcription(
+    transcription = await TranscriptionService.upload_audio_for_transcription(
         case_id=case_id,
         file=file,
         db=db,
         options=transcription_options,
     )
 
-    # Create transcription record immediately with empty data
-    transcription = Transcription(
-        document_id=document.id,
-        format=file.content_type.split('/')[-1] if file.content_type else None,
-        duration=None,  # Will be filled by worker
-        speakers=[],
-        segments=[]
-    )
-    db.add(transcription)
-    db.commit()
-    db.refresh(transcription)
-
-    logger.info(f"Created transcription record {transcription.id} for document {document.id}")
+    logger.info(f"Created transcription record {transcription.id} for case {case_id}")
 
     return TranscriptionUploadResponse(
         message=f"Audio/video file '{file.filename}' uploaded successfully. Transcription queued.",
-        document_id=document.id,
         transcription_id=transcription.id,
         status="queued",
     )
@@ -239,6 +226,55 @@ def get_transcription_details(
 
 
 @router.get(
+    "/transcriptions/{transcription_id}/audio",
+    summary="Stream/download original audio file",
+    description="Download the original audio/video file from storage. Supports range requests for media players.",
+    responses={
+        200: {
+            "description": "Audio/video file",
+            "content": {
+                "audio/mpeg": {},
+                "audio/wav": {},
+                "audio/mp4": {},
+                "video/mp4": {},
+                "application/octet-stream": {},
+            },
+        }
+    },
+)
+def download_audio(
+    transcription_id: int = Path(..., description="ID of the transcription"),
+    db: Session = Depends(get_db),
+):
+    """
+    Download the original audio/video file.
+
+    Args:
+        transcription_id: ID of the transcription
+        db: Database session
+
+    Returns:
+        StreamingResponse: Audio/video file content
+    """
+    logger.info(f"Downloading audio for transcription {transcription_id}")
+
+    content, filename, content_type = TranscriptionService.download_audio(
+        transcription_id=transcription_id, db=db
+    )
+
+    # Return as streaming response with proper headers
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Length": str(len(content)),
+            "Accept-Ranges": "bytes",
+        },
+    )
+
+
+@router.get(
     "/transcriptions/{transcription_id}/download/{format}",
     summary="Download transcription in specified format",
     description="Download transcription in JSON, DOCX, SRT, VTT, or TXT format. "
@@ -274,11 +310,8 @@ def download_transcription(
 
     transcription = TranscriptionService.get_transcription(transcription_id, db)
 
-    # Get document for filename
-    from app.models.document import Document
-
-    document = db.query(Document).filter(Document.id == transcription.document_id).first()
-    base_filename = document.filename.rsplit(".", 1)[0] if document else "transcription"
+    # Use transcription filename directly (no document needed)
+    base_filename = transcription.filename.rsplit(".", 1)[0] if transcription.filename else "transcription"
 
     # Export in requested format
     if format == TranscriptionFormat.JSON:
@@ -351,15 +384,9 @@ def delete_transcription(
         transcription_id=transcription_id, db=db
     )
 
-    # Get document info for response
-    from app.models.document import Document
-
-    document = db.query(Document).filter(Document.id == transcription.document_id).first()
-
     return TranscriptionDeleteResponse(
         id=transcription.id,
-        document_id=transcription.document_id,
-        filename=document.filename if document else "Unknown",
+        filename=transcription.filename or "Unknown",
         message=f"Transcription deleted successfully",
     )
 

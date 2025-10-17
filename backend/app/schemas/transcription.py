@@ -99,7 +99,6 @@ class TranscriptionResponse(BaseModel):
     """Schema for transcription response."""
 
     id: int = Field(..., description="Transcription ID")
-    document_id: int = Field(..., description="Associated document ID")
     case_id: int = Field(..., description="Associated case ID")
     filename: str = Field(..., description="Original audio/video filename")
     format: Optional[str] = Field(None, description="Audio/video format")
@@ -108,6 +107,7 @@ class TranscriptionResponse(BaseModel):
     segments: List[Dict[str, Any]] = Field(..., description="Transcription segments with timestamps")
     status: str = Field(..., description="Processing status (queued, processing, completed, failed)")
     created_at: datetime = Field(..., description="Creation timestamp")
+    audio_url: Optional[str] = Field(None, description="URL to stream/download the original audio file")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -116,7 +116,6 @@ class TranscriptionListItem(BaseModel):
     """Schema for transcription list items (summary view)."""
 
     id: int = Field(..., description="Transcription ID")
-    document_id: int = Field(..., description="Associated document ID")
     case_id: int = Field(..., description="Associated case ID")
     filename: str = Field(..., description="Original audio/video filename")
     format: Optional[str] = Field(None, description="Audio/video format")
@@ -141,7 +140,6 @@ class TranscriptionDeleteResponse(BaseModel):
     """Schema for transcription deletion responses."""
 
     id: int = Field(..., description="Deleted transcription ID")
-    document_id: int = Field(..., description="Associated document ID")
     filename: str = Field(..., description="Deleted audio/video filename")
     message: str = Field(..., description="Deletion confirmation message")
 
@@ -150,8 +148,7 @@ class TranscriptionUploadResponse(BaseModel):
     """Schema for transcription upload response."""
 
     message: str = Field(..., description="Upload status message")
-    document_id: int = Field(..., description="Created document ID")
-    transcription_id: Optional[int] = Field(None, description="Transcription ID (if processing completed)")
+    transcription_id: int = Field(..., description="Created transcription ID")
     status: str = Field(..., description="Processing status")
 
 

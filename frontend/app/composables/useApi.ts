@@ -182,7 +182,10 @@ export const useApi = () => {
         api(`/api/v1/transcriptions/${transcriptionId}/speakers/${speakerId}`, {
           method: 'PATCH',
           body: updates
-        })
+        }),
+
+      // Audio
+      getAudio: (id: number) => api(`/api/v1/transcriptions/${id}/audio`)
     },
 
     // Stats & Analytics
