@@ -220,6 +220,44 @@ class TranscriptionService:
         return result
 
     @staticmethod
+    def download_audio(transcription_id: int, db: Session) -> tuple[bytes, str, str]:
+        """
+        Download the original audio/video file from MinIO.
+
+        Args:
+            transcription_id: ID of the transcription
+            db: Database session
+
+        Returns:
+            tuple: (file_content, filename, content_type)
+
+        Raises:
+            HTTPException: If transcription not found or download fails
+        """
+        # Get transcription from database
+        transcription = TranscriptionService.get_transcription(transcription_id, db)
+
+        try:
+            # Download from MinIO
+            logger.info(f"Downloading audio for transcription {transcription_id} from MinIO: {transcription.file_path}")
+            content = minio_client.download_file(transcription.file_path)
+
+            return content, transcription.filename, transcription.mime_type or "application/octet-stream"
+
+        except S3Error as e:
+            logger.error(f"MinIO error downloading audio for transcription {transcription_id}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to download audio from storage: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(f"Error downloading audio for transcription {transcription_id}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to download audio: {str(e)}",
+            )
+
+    @staticmethod
     def get_transcription_details(transcription_id: int, db: Session) -> Dict[str, Any]:
         """
         Get detailed transcription information.
@@ -266,6 +304,7 @@ class TranscriptionService:
             "status": transcription.status.value if transcription.status else "unknown",
             "created_at": transcription.created_at,
             "uploaded_at": transcription.uploaded_at,
+            "audio_url": f"/api/v1/transcriptions/{transcription.id}/audio",
         }
 
     @staticmethod
