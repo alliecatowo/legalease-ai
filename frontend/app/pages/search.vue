@@ -99,6 +99,13 @@ const performSearch = async () => {
         chunkTypes.push('transcript_segment')
       }
     }
+
+    // IMPORTANT: If no chunk types are selected, include transcript_segment by default
+    // Transcript segments only have BM25 vectors (no dense vectors), so they need to be
+    // explicitly included in the chunk_types filter or they won't be found
+    if (chunkTypes.length === 0 && includeTranscripts.value) {
+      chunkTypes.push('transcript_segment')
+    }
     // Add other document type mappings if needed in the future
     // e.g., if (selectedDocumentTypes.value.includes('contract')) { ... }
 
