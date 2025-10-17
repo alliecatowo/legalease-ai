@@ -189,6 +189,69 @@ class DocumentService:
         return documents
 
     @staticmethod
+    def list_all_documents(
+        page: int = 1,
+        page_size: int = 50,
+        case_id: Optional[int] = None,
+        db: Session = None
+    ) -> tuple[List[dict], int]:
+        """
+        List all documents across all cases with pagination.
+
+        Uses an efficient JOIN query to include case information without N+1 queries.
+
+        Args:
+            page: Page number (starting from 1)
+            page_size: Number of items per page (max 100)
+            case_id: Optional case ID to filter documents
+            db: Database session
+
+        Returns:
+            tuple: (list of document dicts with case info, total count)
+        """
+        # Build base query with join to Case table to get case name and number
+        query = db.query(
+            Document,
+            Case.name.label('case_name'),
+            Case.case_number.label('case_number')
+        ).join(
+            Case, Document.case_id == Case.id
+        )
+
+        # Apply case filter if provided
+        if case_id is not None:
+            query = query.filter(Document.case_id == case_id)
+
+        # Get total count before pagination
+        total = query.count()
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        results = query.order_by(Document.uploaded_at.desc()).offset(offset).limit(page_size).all()
+
+        logger.info(f"Found {total} total documents, returning {len(results)} for page {page}")
+
+        # Convert to dicts with case information
+        document_dicts = []
+        for doc, case_name, case_number in results:
+            doc_dict = {
+                'id': doc.id,
+                'case_id': doc.case_id,
+                'case_name': case_name,
+                'case_number': case_number,
+                'filename': doc.filename,
+                'file_path': doc.file_path,
+                'mime_type': doc.mime_type,
+                'size': doc.size,
+                'status': doc.status,
+                'meta_data': doc.meta_data,
+                'uploaded_at': doc.uploaded_at,
+            }
+            document_dicts.append(doc_dict)
+
+        return document_dicts, total
+
+    @staticmethod
     def download_document(document_id: int, db: Session) -> tuple[bytes, str, str]:
         """
         Download a document from MinIO.

@@ -1,8 +1,8 @@
 """Document API endpoints."""
 
 import logging
-from typing import List
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import io
@@ -12,6 +12,7 @@ from app.schemas.document import (
     DocumentResponse,
     DocumentListResponse,
     DocumentDeleteResponse,
+    PaginatedDocumentListResponse,
 )
 from app.schemas.search import (
     DocumentContentResponse,
@@ -24,6 +25,50 @@ from app.services.page_image_service import PageImageService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get(
+    "/documents",
+    response_model=PaginatedDocumentListResponse,
+    summary="List all documents with pagination",
+    description="Get all documents across all cases with pagination support. "
+    "This endpoint efficiently retrieves documents in a single JOIN query to avoid N+1 query problems. "
+    "Includes case information (case_name, case_number) for each document.",
+)
+def list_all_documents(
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+    page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
+    case_id: Optional[int] = Query(None, description="Optional case ID to filter documents"),
+    db: Session = Depends(get_db),
+):
+    """
+    List all documents with pagination.
+
+    Args:
+        page: Page number (starting from 1)
+        page_size: Number of items per page (max 100)
+        case_id: Optional case ID to filter documents
+        db: Database session
+
+    Returns:
+        PaginatedDocumentListResponse: Paginated list of documents with case metadata
+    """
+    logger.info(f"Listing all documents: page={page}, page_size={page_size}, case_id={case_id}")
+
+    # Get documents with case information using efficient JOIN
+    documents, total = DocumentService.list_all_documents(
+        page=page,
+        page_size=page_size,
+        case_id=case_id,
+        db=db
+    )
+
+    return PaginatedDocumentListResponse(
+        documents=documents,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(

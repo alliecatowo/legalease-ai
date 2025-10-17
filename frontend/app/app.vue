@@ -39,7 +39,9 @@ useSeoMeta({
       <NuxtLoadingIndicator />
 
       <NuxtLayout>
-        <NuxtPage />
+        <KeepAlive :max="5">
+          <NuxtPage />
+        </KeepAlive>
       </NuxtLayout>
     </UApp>
   </ConfigProvider>
