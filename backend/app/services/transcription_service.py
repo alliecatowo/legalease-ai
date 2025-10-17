@@ -204,6 +204,25 @@ class TranscriptionService:
                 detail=f"Document {transcription.document_id} not found",
             )
 
+        # Get key moment metadata for segments
+        key_moment_metadata = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.transcription_id == transcription_id)
+            .all()
+        )
+
+        # Build a dict of segment_id -> is_key_moment for quick lookup
+        key_moments_map = {meta.segment_id: meta.is_key_moment for meta in key_moment_metadata}
+
+        # Merge key moment status into segments
+        segments_with_metadata = []
+        for segment in (transcription.segments or []):
+            segment_copy = segment.copy()
+            segment_id = segment.get('id')
+            # Add isKeyMoment field (camelCase for frontend)
+            segment_copy['isKeyMoment'] = key_moments_map.get(segment_id, False)
+            segments_with_metadata.append(segment_copy)
+
         return {
             "id": transcription.id,
             "document_id": transcription.document_id,
@@ -212,7 +231,7 @@ class TranscriptionService:
             "format": transcription.format,
             "duration": transcription.duration,
             "speakers": transcription.speakers,
-            "segments": transcription.segments,
+            "segments": segments_with_metadata,
             "status": document.status.value if document.status else "unknown",
             "created_at": transcription.created_at,
         }
