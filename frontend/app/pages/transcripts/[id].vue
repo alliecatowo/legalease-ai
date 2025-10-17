@@ -990,8 +990,19 @@ onMounted(async () => {
     :max-size="40"
     :default-size="25"
   >
-    <template #default>
-      <div class="space-y-6">
+    <template #header="{ collapsed }">
+      <div class="flex items-center" :class="collapsed ? 'justify-center' : 'justify-between'">
+        <h2 v-if="!collapsed" class="text-lg font-semibold">Metadata</h2>
+        <UDashboardSidebarCollapse
+          side="right"
+          variant="subtle"
+          :icon="collapsed ? 'i-lucide-chevron-left' : 'i-lucide-chevron-right'"
+        />
+      </div>
+    </template>
+
+    <template #default="{ collapsed }">
+      <div v-if="!collapsed" class="space-y-6">
           <!-- Transcript Info -->
           <UCard>
             <template #header>
@@ -1288,7 +1299,7 @@ onMounted(async () => {
               </div>
             </div>
           </UCard>
-        </div>
+      </div>
     </template>
   </UDashboardSidebar>
 </template>
