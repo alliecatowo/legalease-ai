@@ -994,13 +994,15 @@ onMounted(async () => {
   >
     <template #header>
       <div class="flex items-center justify-center gap-3">
-        <UButton
-          :icon="metadataSidebarCollapsed ? 'i-lucide-chevron-left' : 'i-lucide-chevron-right'"
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          @click="metadataSidebarCollapsed = !metadataSidebarCollapsed"
-        />
+        <UTooltip :text="metadataSidebarCollapsed ? 'Show metadata' : 'Hide metadata'">
+          <UButton
+            :icon="metadataSidebarCollapsed ? 'i-lucide-info' : 'i-lucide-x'"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            @click="metadataSidebarCollapsed = !metadataSidebarCollapsed"
+          />
+        </UTooltip>
         <h2 v-if="!metadataSidebarCollapsed" class="text-lg font-semibold">Metadata</h2>
       </div>
     </template>
