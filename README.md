@@ -56,19 +56,28 @@ LegalEase is a self-hosted workspace for legal teams to organise case material, 
 
 ## Quick Start (Docker Compose)
 
-### 1. Requirements
+### 1. Install mise
 
-- Docker Engine 24+ and Docker Compose v2
-- `make` (or translate commands to `docker compose`)
-- 16 GB RAM minimum for the full stack; GPU strongly recommended for WhisperX
-- Optional: Hugging Face token (`HF_TOKEN`) if you want Pyannote diarisation accuracy
+First, install mise for managing tools and tasks:
 
-### 2. Clone and prepare configuration
+```bash
+curl https://mise.run | sh
+```
+
+Or see alternative installation methods at https://mise.jdx.dev/getting-started.html
+
+### 2. Clone and install tools
 
 ```bash
 git clone https://github.com/AlliecatOwO/legalease-ai.git
 cd legalease-ai
 
+mise install      # installs all tools defined in .mise.toml
+```
+
+### 3. Prepare configuration
+
+```bash
 cp .env.example .env                # sets HF_TOKEN/FORENSIC_EXPORTS_PATH placeholders
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
@@ -80,11 +89,17 @@ Edit the newly created files:
 - Point `FORENSIC_EXPORTS_PATH` to a directory containing Cellebrite/AXIOM exports if you intend to scan evidence.
 - Adjust database passwords or port mappings if they conflict with existing services.
 
-### 3. Start infrastructure, run migrations, and pull LLMs
+### 4. Setup and seed the application
 
 ```bash
-make setup         # starts infra containers, runs alembic, pulls default Ollama models
-make up            # launches backend, worker, beat, and frontend containers
+mise run setup     # starts infra containers, runs alembic, pulls default Ollama models
+mise run seed      # (optional) loads sample cases and documents
+```
+
+### 5. Start the full stack
+
+```bash
+mise run up        # launches backend, worker, beat, and frontend containers
 ```
 
 The stack exposes:
@@ -97,28 +112,34 @@ The stack exposes:
 
 Monitor logs with `docker compose logs -f backend worker frontend`.
 
-### 4. Shut down
+### 6. Shut down
 
 ```bash
-make down          # stop containers (data persisted)
-make down-v        # stop and clear volumes (destructive)
+mise run down      # stop containers (data persisted)
+mise run down-v    # stop and clear volumes (destructive)
 ```
+
+### Requirements
+
+- Docker Engine 24+ and Docker Compose v2
+- 16 GB RAM minimum for the full stack; GPU strongly recommended for WhisperX
+- Optional: Hugging Face token (`HF_TOKEN`) if you want Pyannote diarisation accuracy
 
 ---
 
-## Useful Make Targets
+## Useful mise Tasks
 
 | Command | Description |
 |---------|-------------|
-| `make up` / `make down` | Start or stop the full stack |
-| `make up-infra` | Start only databases, MinIO, Qdrant, Ollama |
-| `make migrate` | Apply latest Alembic migrations |
-| `make logs-backend` / `make logs-worker` | Follow service-specific logs |
-| `make test` | Run backend pytest suite inside the container |
-| `make ollama-pull-<model>` | Download an additional Ollama model |
-| `make restart-backend` | Restart a single container without touching others |
+| `mise run up` / `mise run down` | Start or stop the full stack |
+| `mise run up-infra` | Start only databases, MinIO, Qdrant, Ollama |
+| `mise run migrate` | Apply latest Alembic migrations |
+| `mise run logs-backend` / `mise run logs-worker` | Follow service-specific logs |
+| `mise run test` | Run backend pytest suite inside the container |
+| `mise run ollama-pull-<model>` | Download an additional Ollama model |
+| `mise run restart-backend` | Restart a single container without touching others |
 
-Run `make help` for the full catalogue.
+Run `mise tasks` to see all available tasks.
 
 ---
 
@@ -162,7 +183,7 @@ Contributions that harden the experimental areas are very welcome.
 
 ## Developing Without Docker
 
-You can run services locally for faster iteration, but you still need infrastructure services (Postgres, Redis, Qdrant, MinIO, Ollama, etc.) available. Start them with Docker (`make up-infra`) and then run apps on the host.
+You can run services locally for faster iteration, but you still need infrastructure services (Postgres, Redis, Qdrant, MinIO, Ollama, etc.) available. Start them with Docker (`mise run up-infra`) and then run apps on the host.
 
 ### Backend (FastAPI + Celery)
 
