@@ -367,6 +367,13 @@ watch(searchQuery, () => {
   debouncedSearch()
 })
 
+// Watch for filter changes and re-run search
+watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscripts], () => {
+  if (searchQuery.value.trim()) {
+    debouncedSearch()
+  }
+}, { deep: true })
+
 // Keyboard shortcuts - manage two refs for hero and compact inputs
 const heroSearchInput = useTemplateRef('heroSearchInput')
 const compactSearchInput = useTemplateRef('compactSearchInput')
