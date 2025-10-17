@@ -944,45 +944,75 @@ def transcribe_audio(
         try:
             import torch
             from app.services.model_manager import get_pyannote_model_paths
-            from app.services.device_manager import get_device, get_compute_type
+            from app.services.device_manager import get_device_manager, get_device, get_compute_type
+            from app.services.model_selector import ModelSelector
+            from app.core.config import settings
 
             # Get device and compute type (supports both CUDA and ROCm)
+            device_manager = get_device_manager()
             device = get_device()
             compute_type = get_compute_type(prefer_fp16=True)
 
+            # Get VRAM and calculate optimal settings
+            vram_gb = device_manager._vram_gb or 0
+            if vram_gb == 0:
+                # Fallback for CPU or unknown device
+                logger.warning("Unable to detect VRAM, using conservative defaults")
+                vram_gb = 4.0  # Assume 4GB for conservative defaults
+
+            # Calculate optimal settings based on VRAM
+            optimal_settings = ModelSelector.calculate_optimal_settings(
+                vram_gb=vram_gb,
+                user_model=settings.WHISPER_MODEL,
+                enable_diarization=options.get("enable_diarization", settings.ENABLE_DIARIZATION),
+            )
+
+            # Extract settings
+            whisper_model = optimal_settings["model"]
+            batch_size = optimal_settings["batch_size"]
+            enable_diarization = optimal_settings["enable_diarization"]
+
             logger.info(f"Using device: {device} with compute type: {compute_type}")
+            logger.info(
+                f"Adaptive settings: model={whisper_model}, batch_size={batch_size}, "
+                f"diarization={enable_diarization}, VRAM={vram_gb:.1f}GB"
+            )
+            logger.info(f"Reason: {optimal_settings['reason']}")
 
             # Check if HF token is available for Pyannote diarization
+            # (enable_diarization may have been adjusted by ModelSelector)
             hf_token = os.getenv("HF_TOKEN")
             pyannote_available = hf_token is not None and enable_diarization
 
-            if pyannote_available:
+            if not enable_diarization:
+                logger.info("Speaker diarization disabled by adaptive model selector")
+            elif pyannote_available:
                 logger.info("HuggingFace token available - will use Pyannote for speaker diarization")
-            elif enable_diarization:
+            else:
                 logger.warning("No HF_TOKEN found - will use simple heuristic diarization")
 
             # Try WhisperX for transcription + alignment (faster, more accurate)
             try:
                 from app.workers.pipelines.whisperx_pipeline import WhisperXPipeline
 
-                min_speakers = options.get("min_speakers", 2)
-                max_speakers = options.get("max_speakers", 10)
+                min_speakers = options.get("min_speakers", settings.DIARIZATION_MIN_SPEAKERS)
+                max_speakers = options.get("max_speakers", settings.DIARIZATION_MAX_SPEAKERS)
 
-                # Initialize WhisperX WITHOUT diarization (we'll use Pyannote directly)
+                # Initialize WhisperX with adaptively selected model
                 pipeline = WhisperXPipeline(
-                    model_name="medium",  # Medium model (~5GB VRAM, good balance of speed/quality)
+                    model_name=whisper_model,  # Adaptive model selection
                     device=device,
                     compute_type=compute_type,
                     language=language if language and language != "auto" else None,
-                    hf_token=None  # No HF token needed!
+                    hf_token=None  # No HF token needed for transcription
                 )
 
                 # Transcribe with alignment only (no diarization yet)
                 result = pipeline.transcribe(
                     audio_path=processed_wav,
                     enable_alignment=True,
-                    enable_diarization=False,  # We'll do this separately
-                    batch_size=16
+                    enable_diarization=False,  # We'll do this separately with Pyannote
+                    batch_size=batch_size  # Adaptive batch size
                 )
 
                 # Convert WhisperX result to our format and add UUIDs

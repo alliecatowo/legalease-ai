@@ -202,7 +202,11 @@ services:
       dockerfile: docker/worker/Dockerfile
       target: development
     container_name: legalease-worker
-    command: uv run celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    command: >
+      uv run celery -A app.workers.celery_app worker
+      --loglevel=info
+      --autoscale=${CELERY_WORKER_AUTOSCALE:-4,1}
+      --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD:-8000000}
     environment:
       DATABASE_URL: postgresql://legalease:legalease_dev@postgres:5432/legalease
       REDIS_URL: redis://redis:6379/0
@@ -220,6 +224,15 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       ENVIRONMENT: development
       DEBUG: "true"
+      # Transcription settings
+      WHISPER_MODEL: ${WHISPER_MODEL:-auto}
+      WHISPER_BATCH_SIZE: ${WHISPER_BATCH_SIZE:-0}
+      ENABLE_DIARIZATION: ${ENABLE_DIARIZATION:-true}
+      # Worker settings
+      CELERY_WORKER_AUTOSCALE: ${CELERY_WORKER_AUTOSCALE:-4,1}
+      CELERY_WORKER_MAX_MEMORY_PER_CHILD: ${CELERY_WORKER_MAX_MEMORY_PER_CHILD:-8000000}
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-3600}
+      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-3000}
     volumes:
       - ./backend:/app
       - worker_cache:/root/.cache
@@ -232,10 +245,15 @@ services:
     networks:
       - legalease-network
     restart: unless-stopped
-    # GPU support for Docling document processing
+    # GPU support for transcription
     deploy:
       resources:
+        limits:
+          memory: 12G
+          cpus: '8.0'
         reservations:
+          memory: 6G
+          cpus: '2.0'
           devices:
             - driver: nvidia
               count: 1
