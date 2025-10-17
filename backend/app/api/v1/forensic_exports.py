@@ -253,10 +253,77 @@ async def delete_export(
 
 
 @router.get(
+    "/forensic-exports/{export_id}/serve/{file_path:path}",
+    summary="Serve file from export",
+    description="Serve any file from the forensic export folder (for Report.html assets)",
+)
+async def serve_export_file(
+    export_id: int,
+    file_path: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Serve any file from the forensic export folder.
+
+    This endpoint is used to serve assets (CSS, JS, images) referenced
+    by Report.html with relative paths.
+
+    Args:
+        export_id: Export ID
+        file_path: Relative path to file within export folder
+        db: Database session
+
+    Returns:
+        File content with appropriate content type
+
+    Raises:
+        HTTPException: If export or file not found
+    """
+    export = ForensicExportService.get_export(export_id, db)
+    if not export:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Forensic export {export_id} not found"
+        )
+
+    export_path = Path(export.folder_path)
+    target_file = export_path / file_path
+
+    # Security: Ensure target_file is within export_path
+    try:
+        target_file = target_file.resolve()
+        export_path = export_path.resolve()
+        if not str(target_file).startswith(str(export_path)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid path: cannot access files outside export folder"
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid path"
+        )
+
+    if not target_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found: {file_path}"
+        )
+
+    if not target_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Path is not a file"
+        )
+
+    return FileResponse(target_file)
+
+
+@router.get(
     "/forensic-exports/{export_id}/report",
     response_class=HTMLResponse,
     summary="Get Report.html",
-    description="Serve the Report.html file from the forensic export",
+    description="Serve the Report.html file from the forensic export with rewritten paths",
 )
 async def get_export_report(
     export_id: int,
@@ -265,16 +332,21 @@ async def get_export_report(
     """
     Serve the Report.html file from the forensic export.
 
+    Rewrites relative paths in the HTML to use the /serve/ endpoint
+    so that CSS, JS, and images load correctly.
+
     Args:
         export_id: Export ID
         db: Database session
 
     Returns:
-        HTML content of the Report.html file
+        HTML content with rewritten asset paths
 
     Raises:
         HTTPException: If export not found or Report.html doesn't exist
     """
+    import re
+
     export = ForensicExportService.get_export(export_id, db)
     if not export:
         raise HTTPException(
@@ -293,6 +365,31 @@ async def get_export_report(
     try:
         with open(report_path, 'r', encoding='utf-8') as f:
             html_content = f.read()
+
+        # Rewrite relative paths to use our serve endpoint
+        # Match src="..." and href="..." with relative paths (not starting with http:// or https://)
+        def replace_path(match):
+            attr = match.group(1)  # 'src' or 'href'
+            path = match.group(2)  # the path value
+
+            # Skip absolute URLs
+            if path.startswith(('http://', 'https://', '//', 'data:', '#')):
+                return match.group(0)
+
+            # Remove leading ./ if present
+            clean_path = path.lstrip('./')
+
+            # Rewrite to use our serve endpoint
+            return f'{attr}="/api/v1/forensic-exports/{export_id}/serve/{clean_path}"'
+
+        # Replace src and href attributes
+        html_content = re.sub(
+            r'((?:src|href))="([^"]+)"',
+            replace_path,
+            html_content,
+            flags=re.IGNORECASE
+        )
+
         return HTMLResponse(content=html_content)
     except Exception as e:
         raise HTTPException(
