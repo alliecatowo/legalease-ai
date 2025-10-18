@@ -40,6 +40,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://app.localhost",  # Production-like HTTPS frontend
+        "http://app.localhost",   # HTTP fallback
         "http://localhost:3000",  # React dev server
         "http://localhost:5173",  # Vite dev server
         "http://127.0.0.1:3000",
