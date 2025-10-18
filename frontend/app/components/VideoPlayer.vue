@@ -300,8 +300,8 @@ function drawSegmentTimeline() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // For video, use a fixed small height; for audio, use the element's height
-  const displayHeight = isVideo.value ? 6 : canvas.getBoundingClientRect().height
+  // For video, use a fixed height; for audio, use the element's height
+  const displayHeight = isVideo.value ? 12 : canvas.getBoundingClientRect().height
   const rect = canvas.getBoundingClientRect()
 
   canvas.width = rect.width * window.devicePixelRatio
@@ -503,12 +503,12 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <!-- Segment Timeline - Always Visible (thin bar at bottom) -->
+        <!-- Segment Timeline - Always Visible (bigger bar at bottom) -->
         <canvas
           v-if="segments && segments.length > 0"
           ref="timelineCanvasRef"
           class="absolute bottom-0 left-0 right-0 cursor-pointer z-10"
-          style="height: 6px;"
+          style="height: 12px;"
           @click="handleTimelineClick"
         />
 
@@ -517,11 +517,11 @@ onBeforeUnmount(() => {
           <div class="relative w-full h-10 pointer-events-auto">
             <div ref="waveformRef" class="w-full h-full cursor-pointer" @click="handleWaveformClick" />
 
-            <!-- Key Moments Overlay Canvas -->
+            <!-- Key Moments Overlay Canvas (higher z-index to be on top) -->
             <canvas
               v-if="keyMoments && keyMoments.length > 0"
               ref="keyMomentsCanvasRef"
-              class="absolute top-0 left-0 w-full h-full pointer-events-none"
+              class="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
             />
           </div>
         </div>

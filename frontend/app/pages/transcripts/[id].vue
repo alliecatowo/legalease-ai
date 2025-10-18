@@ -804,6 +804,22 @@ onMounted(async () => {
               @waveform-click="handleWaveformClick"
             />
           </div>
+
+          <!-- Segment Timeline - visible when collapsed -->
+          <div v-else class="h-3 bg-muted/20 cursor-pointer relative overflow-hidden">
+            <div
+              v-for="segment in transcript.segments"
+              :key="segment.id"
+              class="absolute top-0 h-full transition-opacity"
+              :style="{
+                left: `${(segment.start / transcript.duration) * 100}%`,
+                width: `${((segment.end - segment.start) / transcript.duration) * 100}%`,
+                backgroundColor: segment.isKeyMoment ? '#F59E0B' : '#3B82F6',
+                opacity: segment.id === selectedSegment?.id ? 1 : 0.7
+              }"
+              @click="seekToSegment(segment)"
+            />
+          </div>
         </div>
 
         <!-- Audio Player (Simple for audio-only files) -->
