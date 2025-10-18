@@ -764,9 +764,8 @@ onMounted(async () => {
         </div>
 
         <!-- Transcript Content Section (Shared by both video and audio) -->
-        <div class="flex-1 overflow-hidden">
-          <div class="h-full overflow-y-auto p-4 sm:p-6">
-            <div class="space-y-2">
+        <div class="flex-1 overflow-hidden flex flex-col">
+          <div class="flex-1 flex flex-col min-h-0 p-4 sm:p-6 gap-2">
               <!-- Search and Filters -->
               <div class="space-y-1">
             <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
@@ -929,11 +928,10 @@ onMounted(async () => {
           </div>
 
           <!-- Transcript Segments Container -->
-          <div>
+          <div class="flex-1 flex flex-col min-h-0">
             <div
               ref="scrollContainerRef"
-              class="overflow-y-auto"
-              :class="isVideoFile ? 'max-h-[50vh]' : 'max-h-[60vh]'"
+              class="flex-1 overflow-y-auto"
               data-transcript-container
             >
             <!-- Virtual list -->
@@ -1102,7 +1100,6 @@ onMounted(async () => {
             </div>
             </div>
           </div>
-            </div>
           </div>
         </div>
       </div>
