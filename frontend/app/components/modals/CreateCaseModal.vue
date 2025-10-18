@@ -65,7 +65,7 @@ const steps = [
   { title: 'Basic Info', description: 'Case details', icon: 'i-lucide-info' },
   { title: 'Parties', description: 'Add parties', icon: 'i-lucide-users' },
   { title: 'Documents', description: 'Attach documents', icon: 'i-lucide-files' },
-  { title: 'Timeline', description: 'Key dates', icon: 'i-lucide-calendar' },
+  // { title: 'Timeline', description: 'Key dates', icon: 'i-lucide-calendar' },
   { title: 'Analysis', description: 'AI processing', icon: 'i-lucide-sparkles' }
 ]
 
@@ -115,20 +115,51 @@ function canProceed() {
     case 2:
       return true // Documents optional
     case 3:
-      return true // Timeline optional
-    case 4:
       return true // Analysis optional
     default:
       return false
   }
 }
 
+const isCreating = ref(false)
+
 async function createCase() {
-  // TODO: Call API to create case
-  console.log('Creating case:', caseData.value)
-  emit('created', caseData.value)
-  open.value = false
-  resetForm()
+  if (isCreating.value) return
+
+  try {
+    isCreating.value = true
+    const api = useApi()
+    const toast = useToast()
+
+    // Map frontend data to backend schema
+    const payload = {
+      name: caseData.value.name,
+      case_number: caseData.value.caseNumber,
+      client: caseData.value.parties[0]?.name || 'Unknown Client',
+      matter_type: caseData.value.caseType
+    }
+
+    const result = await api.cases.create(payload)
+
+    toast.add({
+      title: 'Success',
+      description: `Case "${result.name}" created successfully`,
+      color: 'success'
+    })
+
+    emit('created', result)
+    open.value = false
+    resetForm()
+  } catch (error: any) {
+    const toast = useToast()
+    toast.add({
+      title: 'Error',
+      description: error.message || 'Failed to create case',
+      color: 'error'
+    })
+  } finally {
+    isCreating.value = false
+  }
 }
 
 function resetForm() {
@@ -280,8 +311,8 @@ function resetForm() {
           </p>
         </div>
 
-        <!-- Step 4: Timeline -->
-        <div v-if="currentStep === 3" class="space-y-4">
+        <!-- Step 4: Timeline (commented out) -->
+        <!-- <div v-if="currentStep === 3" class="space-y-4">
           <div class="flex items-center justify-between mb-4">
             <h3 class="font-medium">Key Dates & Events</h3>
             <UBadge :label="`${caseData.timeline.length} events`" variant="soft" />
@@ -309,10 +340,10 @@ function resetForm() {
               </div>
             </UCard>
           </div>
-        </div>
+        </div> -->
 
-        <!-- Step 5: Analysis -->
-        <div v-if="currentStep === 4" class="space-y-4">
+        <!-- Step 4: Analysis -->
+        <div v-if="currentStep === 3" class="space-y-4">
           <div class="mb-4">
             <h3 class="font-medium mb-2">AI Analysis Options</h3>
             <p class="text-sm text-muted">Select the types of analysis to run on your case documents</p>
@@ -365,8 +396,10 @@ function resetForm() {
           />
           <UButton
             v-else
-            label="Create Case"
-            icon="i-lucide-check"
+            :label="isCreating ? 'Creating...' : 'Create Case'"
+            :icon="isCreating ? 'i-lucide-loader-2' : 'i-lucide-check'"
+            :loading="isCreating"
+            :disabled="isCreating"
             color="primary"
             @click="createCase"
           />
