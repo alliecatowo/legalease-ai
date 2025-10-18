@@ -159,7 +159,10 @@ async function initializeWaveSurfer() {
 
   // Throttle audioprocess to 100ms instead of 60fps for better performance
   const throttledAudioProcess = useThrottleFn((time: number) => {
-    emit('update:currentTime', time)
+    // Don't emit during external seeks
+    if (!isExternalSeek.value) {
+      emit('update:currentTime', time)
+    }
   }, 100)
 
   wavesurfer.value.on('audioprocess', throttledAudioProcess)
