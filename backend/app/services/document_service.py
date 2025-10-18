@@ -369,7 +369,8 @@ class DocumentService:
             item_data = {
                 "text": chunk.text,
                 "type": chunk.chunk_type,
-                "chunk_id": chunk.id,
+                "chunk_id": str(chunk.id),
+                "chunk_gid": str(chunk.id),
                 "bboxes": [],
             }
 

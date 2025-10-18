@@ -117,7 +117,7 @@ async function performHybridSearch(query: string) {
       // 1. BM25 only (blue boxes) - strong keyword matches
       api.search.hybrid({
         query,
-        document_ids: [documentId.value],
+        document_gids: [documentId.value],
         top_k: 5,
         use_bm25: true,
         use_dense: false,
@@ -126,7 +126,7 @@ async function performHybridSearch(query: string) {
       // 2. Fusion: BM25 + semantic (yellow boxes)
       api.search.hybrid({
         query,
-        document_ids: [documentId.value],
+        document_gids: [documentId.value],
         top_k: 5,
         use_bm25: true,
         use_dense: true,
@@ -637,7 +637,7 @@ const tabItems = computed(() => [
                     :bm25-results="bm25Results"
                     :fusion-results="fusionResults"
                     :initial-page="parseInt(route.query.page as string) || 1"
-                    :chunk-id="parseInt(route.query.chunk as string) || undefined"
+                    :chunk-id="(route.query.chunk as string) || undefined"
                   />
                 </div>
 

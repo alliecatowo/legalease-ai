@@ -76,8 +76,8 @@ export const useApi = () => {
     // Search
     search: {
       query: (params: any) => api('/api/v1/search', { params }),
-      hybrid: (data: { query: string; document_ids?: string[]; case_ids?: string[]; [key: string]: any }) => api('/api/v1/search/hybrid', { method: 'POST', body: data }),
-      semantic: (data: { query: string; document_ids?: string[]; case_ids?: string[]; [key: string]: any }) => api('/api/v1/search/semantic', { method: 'POST', body: data }),
+      hybrid: (data: { query: string; document_gids?: string[]; case_gids?: string[]; document_ids?: string[]; case_ids?: string[]; [key: string]: any }) => api('/api/v1/search/hybrid', { method: 'POST', body: data }),
+      semantic: (data: { query: string; document_gids?: string[]; case_gids?: string[]; document_ids?: string[]; case_ids?: string[]; [key: string]: any }) => api('/api/v1/search/semantic', { method: 'POST', body: data }),
       suggest: (q: string) => api('/api/v1/search/suggestions', { params: { q } })
     },
 

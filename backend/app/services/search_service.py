@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional
 import logging
 from collections import defaultdict
 import re
+from uuid import UUID
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -33,6 +34,9 @@ from app.schemas.search import (
 from app.workers.pipelines.embeddings import FastEmbedPipeline
 from app.workers.pipelines.reranker import CrossEncoderReranker
 from app.workers.pipelines.bm25_encoder import BM25Encoder
+from app.core.database import SessionLocal
+from app.models.document import Document
+from app.models.case import Case
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +86,12 @@ class HybridSearchEngine:
             self.reranker = CrossEncoderReranker(model_name=reranker_model_name)
         else:
             self.reranker = None
+
+        # Simple in-memory caches for ID↔GID lookups within a single process
+        self._document_gid_cache: Dict[str, Optional[str]] = {}
+        self._case_gid_cache: Dict[str, Optional[str]] = {}
+        self._document_uuid_cache: Dict[str, Optional[str]] = {}
+        self._case_uuid_cache: Dict[str, Optional[str]] = {}
 
     def _create_sparse_vector(self, text: str) -> SparseVector:
         """
@@ -203,6 +213,104 @@ class HybridSearchEngine:
 
         return results
 
+    def _resolve_document_gid(self, document_id: Any) -> Optional[str]:
+        """Resolve document UUID to GID with simple caching."""
+        if document_id is None:
+            return None
+
+        doc_key = str(document_id)
+        if doc_key in self._document_gid_cache:
+            return self._document_gid_cache[doc_key]
+
+        try:
+            uuid_val = UUID(doc_key)
+        except (ValueError, TypeError):
+            self._document_gid_cache[doc_key] = None
+            return None
+
+        db = SessionLocal()
+        try:
+            document = db.query(Document).filter(Document.id == uuid_val).first()
+            gid = document.gid if document else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve document GID for {doc_key}: {exc}", exc_info=True)
+            gid = None
+        finally:
+            db.close()
+
+        self._document_gid_cache[doc_key] = gid
+        return gid
+
+    def _resolve_case_gid(self, case_id: Any) -> Optional[str]:
+        """Resolve case UUID to GID with simple caching."""
+        if case_id is None:
+            return None
+
+        case_key = str(case_id)
+        if case_key in self._case_gid_cache:
+            return self._case_gid_cache[case_key]
+
+        try:
+            uuid_val = UUID(case_key)
+        except (ValueError, TypeError):
+            self._case_gid_cache[case_key] = None
+            return None
+
+        db = SessionLocal()
+        try:
+            case = db.query(Case).filter(Case.id == uuid_val).first()
+            gid = case.gid if case else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve case GID for {case_key}: {exc}", exc_info=True)
+            gid = None
+        finally:
+            db.close()
+
+        self._case_gid_cache[case_key] = gid
+        return gid
+
+    def _resolve_document_uuid_from_gid(self, document_gid: str) -> Optional[str]:
+        """Resolve document GID back to UUID string with caching."""
+        if not document_gid:
+            return None
+
+        if document_gid in self._document_uuid_cache:
+            return self._document_uuid_cache[document_gid]
+
+        db = SessionLocal()
+        try:
+            document = db.query(Document).filter(Document.gid == document_gid).first()
+            uuid_value = str(document.id) if document else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve document UUID for GID {document_gid}: {exc}", exc_info=True)
+            uuid_value = None
+        finally:
+            db.close()
+
+        self._document_uuid_cache[document_gid] = uuid_value
+        return uuid_value
+
+    def _resolve_case_uuid_from_gid(self, case_gid: str) -> Optional[str]:
+        """Resolve case GID back to UUID string with caching."""
+        if not case_gid:
+            return None
+
+        if case_gid in self._case_uuid_cache:
+            return self._case_uuid_cache[case_gid]
+
+        db = SessionLocal()
+        try:
+            case = db.query(Case).filter(Case.gid == case_gid).first()
+            uuid_value = str(case.id) if case else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve case UUID for GID {case_gid}: {exc}", exc_info=True)
+            uuid_value = None
+        finally:
+            db.close()
+
+        self._case_uuid_cache[case_gid] = uuid_value
+        return uuid_value
+
     def search_keyword_only(
         self,
         request: HybridSearchRequest,
@@ -219,15 +327,43 @@ class HybridSearchEngine:
             List of search results with BM25 scores
         """
         try:
+            case_ids_filter_set = {str(cid) for cid in (request.case_ids or []) if cid is not None}
+            if request.case_gids:
+                for gid in request.case_gids:
+                    resolved = self._resolve_case_uuid_from_gid(gid)
+                    if resolved:
+                        case_ids_filter_set.add(resolved)
+
+            document_ids_filter_set = {str(did) for did in (request.document_ids or []) if did is not None}
+            if request.document_gids:
+                for gid in request.document_gids:
+                    resolved = self._resolve_document_uuid_from_gid(gid)
+                    if resolved:
+                        document_ids_filter_set.add(resolved)
+
+            case_ids_filter = list(case_ids_filter_set) if case_ids_filter_set else None
+            case_gids_filter = None if case_ids_filter else request.case_gids
+            document_ids_filter = list(document_ids_filter_set) if document_ids_filter_set else None
+            document_gids_filter = None if document_ids_filter else request.document_gids
+
             # Build filters
             filters = build_filter(
-                case_ids=request.case_ids,
-                document_ids=request.document_ids,
+                case_ids=case_ids_filter,
+                case_gids=case_gids_filter,
+                document_ids=document_ids_filter,
+                document_gids=document_gids_filter,
                 chunk_types=request.chunk_types,
             )
 
             # Log filter details
-            logger.info(f"Keyword-only search filters: case_ids={request.case_ids}, document_ids={request.document_ids}, chunk_types={request.chunk_types}")
+            logger.info(
+                "Keyword-only search filters: case_ids=%s, case_gids=%s, document_ids=%s, document_gids=%s, chunk_types=%s",
+                case_ids_filter,
+                case_gids_filter,
+                document_ids_filter,
+                document_gids_filter,
+                request.chunk_types,
+            )
             if filters:
                 logger.info(f"Filter conditions: {filters.model_dump() if hasattr(filters, 'model_dump') else filters}")
 
@@ -291,15 +427,43 @@ class HybridSearchEngine:
             List of search results with normalized scores
         """
         try:
+            case_ids_filter_set = {str(cid) for cid in (request.case_ids or []) if cid is not None}
+            if request.case_gids:
+                for gid in request.case_gids:
+                    resolved = self._resolve_case_uuid_from_gid(gid)
+                    if resolved:
+                        case_ids_filter_set.add(resolved)
+
+            document_ids_filter_set = {str(did) for did in (request.document_ids or []) if did is not None}
+            if request.document_gids:
+                for gid in request.document_gids:
+                    resolved = self._resolve_document_uuid_from_gid(gid)
+                    if resolved:
+                        document_ids_filter_set.add(resolved)
+
+            case_ids_filter = list(case_ids_filter_set) if case_ids_filter_set else None
+            case_gids_filter = None if case_ids_filter else request.case_gids
+            document_ids_filter = list(document_ids_filter_set) if document_ids_filter_set else None
+            document_gids_filter = None if document_ids_filter else request.document_gids
+
             # Build filters
             filters = build_filter(
-                case_ids=request.case_ids,
-                document_ids=request.document_ids,
+                case_ids=case_ids_filter,
+                case_gids=case_gids_filter,
+                document_ids=document_ids_filter,
+                document_gids=document_gids_filter,
                 chunk_types=request.chunk_types,
             )
 
             # Log filter details
-            logger.info(f"Query API search filters: case_ids={request.case_ids}, document_ids={request.document_ids}, chunk_types={request.chunk_types}")
+            logger.info(
+                "Query API search filters: case_ids=%s, case_gids=%s, document_ids=%s, document_gids=%s, chunk_types=%s",
+                case_ids_filter,
+                case_gids_filter,
+                document_ids_filter,
+                document_gids_filter,
+                request.chunk_types,
+            )
             if filters:
                 logger.info(f"Filter conditions: {filters.model_dump() if hasattr(filters, 'model_dump') else filters}")
 
@@ -511,7 +675,9 @@ class HybridSearchEngine:
                     score_threshold=request.score_threshold,
                     chunk_types=["summary", "section", "microblock"],
                     case_ids=request.case_ids,
+                    case_gids=request.case_gids,
                     document_ids=request.document_ids,
+                    document_gids=request.document_gids,
                 )
                 doc_results = self.search_with_query_api(doc_request)
                 logger.info(f"Document search returned {len(doc_results)} results")
@@ -526,7 +692,9 @@ class HybridSearchEngine:
                     score_threshold=request.score_threshold,
                     chunk_types=["transcript_segment"],
                     case_ids=request.case_ids,
+                    case_gids=request.case_gids,
                     document_ids=request.document_ids,
+                    document_gids=request.document_gids,
                 )
                 transcript_results = self.search_with_query_api(transcript_request)
                 logger.info(f"Transcript search returned {len(transcript_results)} results")
@@ -601,22 +769,50 @@ class HybridSearchEngine:
                     # Neither found it (shouldn't happen, but default to hybrid)
                     match_type = "hybrid"
 
+                document_id_raw = payload.get("document_id")
+                document_id = str(document_id_raw) if document_id_raw is not None else None
+                if document_id is not None:
+                    payload["document_id"] = document_id
+
+                document_gid = payload.get("document_gid")
+                if not document_gid and document_id:
+                    document_gid = self._resolve_document_gid(document_id)
+                    if document_gid:
+                        payload["document_gid"] = document_gid
+
+                case_id_raw = payload.get("case_id")
+                case_id = str(case_id_raw) if case_id_raw is not None else None
+                if case_id is not None:
+                    payload["case_id"] = case_id
+
+                case_gid = payload.get("case_gid")
+                if not case_gid and case_id:
+                    case_gid = self._resolve_case_gid(case_id)
+                    if case_gid:
+                        payload["case_gid"] = case_gid
+
+                chunk_identifier = str(result["id"])
+
                 formatted_results.append(
                     SearchResult(
-                        gid=result["id"],  # Chunk point ID from Qdrant
+                        id=chunk_identifier,
+                        gid=chunk_identifier,
                         score=result["score"],
                         text=text,
                         match_type=match_type,
                         page_number=payload.get("page_number"),
                         bboxes=payload.get("bboxes", []),
                         metadata={
-                            "document_gid": payload.get("document_gid"),
-                            "case_gid": payload.get("case_gid"),
+                            "document_id": document_id,
+                            "document_gid": document_gid,
+                            "case_id": case_id,
+                            "case_gid": case_gid,
                             "chunk_type": payload.get("chunk_type"),
                             "position": payload.get("position"),
                             "bm25_score": actual_bm25_score,
                             "dense_score": actual_dense_score,
                             "score_debug": result.get("_score_debug"),
+                            "point_id": chunk_identifier,
                         },
                         highlights=highlights,
                         vector_type=payload.get("chunk_type"),
@@ -651,7 +847,9 @@ class HybridSearchEngine:
                     },
                     "filters_applied": {
                         "case_ids": request.case_ids,
+                        "case_gids": request.case_gids,
                         "document_ids": request.document_ids,
+                        "document_gids": request.document_gids,
                         "chunk_types": request.chunk_types,
                     },
                 },

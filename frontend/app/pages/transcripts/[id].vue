@@ -64,9 +64,9 @@ async function performSmartSearch() {
       chunk_types: ['transcript_segment']
     }
 
-    const docId = (transcript.value as any).document_id
+    const docId = (transcript.value as any).document_gid || (transcript.value as any).document_id
     if (docId) {
-      searchRequest.document_ids = [docId]
+      searchRequest.document_gids = [docId]
     }
 
     const response = await api.search.hybrid(searchRequest)

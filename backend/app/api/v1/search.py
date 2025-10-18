@@ -93,7 +93,8 @@ async def search_documents(
             "query": q,
             "results": [
                 {
-                    "gid": r.gid,  # Use gid not id
+                    "id": r.id,
+                    "gid": r.gid,
                     "score": round(r.score, 3),  # Round to 3 decimal places for cleaner display
                     "text": r.text,
                     "metadata": r.metadata,
@@ -219,19 +220,38 @@ async def keyword_search(
         formatted_results = []
         for result in filtered_results:
             payload = result.get("payload", {})
+            document_id_raw = payload.get("document_id")
+            document_id = str(document_id_raw) if document_id_raw is not None else None
+            document_gid = payload.get("document_gid")
+            if not document_gid and document_id:
+                document_gid = search_engine._resolve_document_gid(document_id)
+
+            case_id_raw = payload.get("case_id")
+            case_id = str(case_id_raw) if case_id_raw is not None else None
+            case_gid = payload.get("case_gid")
+            if not case_gid and case_id:
+                case_gid = search_engine._resolve_case_gid(case_id)
+
+            point_id = str(result["id"])
+
             formatted_results.append({
-                "gid": result["id"],  # Chunk point ID
+                "id": point_id,
+                "gid": point_id,  # Qdrant point identifier
                 "score": result["score"],
                 "text": payload.get("text", ""),
                 "metadata": {
-                    "document_gid": payload.get("document_gid"),
-                    "case_gid": payload.get("case_gid"),
+                    "document_id": document_id,
+                    "document_gid": document_gid,
+                    "case_id": case_id,
+                    "case_gid": case_gid,
                     "chunk_type": payload.get("chunk_type"),
                     "page_number": payload.get("page_number"),
                     "position": payload.get("position"),
-                    "bboxes": payload.get("bboxes", []),
                     "bm25_score": result.get("bm25_score", 0.0),
+                    "dense_score": result.get("dense_score", 0.0),
+                    "point_id": point_id,
                 },
+                "bboxes": payload.get("bboxes", []),
             })
 
         return {
@@ -291,7 +311,8 @@ async def semantic_search(
             "query": query,
             "results": [
                 {
-                    "gid": r.gid,  # Use gid not id
+                    "id": r.id,
+                    "gid": r.gid,
                     "score": r.score,
                     "text": r.text,
                     "metadata": r.metadata,

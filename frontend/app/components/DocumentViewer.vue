@@ -3,7 +3,7 @@
 import type { BBox, DocumentContentItem, PageData } from '~/composables/useDocumentViewer'
 
 interface SearchResult {
-  chunk_id: number
+  chunk_id?: string | number
   score: number
   text: string
   page_number?: number
@@ -17,7 +17,7 @@ interface Props {
   fusionResults?: SearchResult[]  // Fusion hybrid results (yellow)
   highlightBboxes?: BBox[]
   initialPage?: number
-  chunkId?: number
+  chunkId?: string | number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -231,10 +231,11 @@ const currentPageHighlights = computed(() => {
 
   // Fallbacks
   if (results.length === 0) {
-    if (props.chunkId) {
-      const item = currentPageData.value.items.find(i => i.chunk_id === props.chunkId)
-      if (item) (item.bboxes || []).forEach(e => pushEntry(e, item.text))
-    }
+  if (props.chunkId !== undefined && props.chunkId !== null) {
+    const targetId = String(props.chunkId)
+    const item = currentPageData.value.items.find(i => String(i.chunk_id) === targetId)
+    if (item) (item.bboxes || []).forEach(e => pushEntry(e, item.text))
+  }
     if (results.length === 0 && !q) {
       // No query: show all bboxes on page
       collectBoxesForPage(currentPageData.value).forEach(e => results.push(e))

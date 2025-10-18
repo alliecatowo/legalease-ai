@@ -5,7 +5,9 @@ interface Entity {
 }
 
 interface SearchResult {
-  id: number
+  id: string
+  gid?: string
+  internalId?: string
   title: string
   excerpt: string
   documentType: string
@@ -88,11 +90,16 @@ const formatTimestamp = (seconds: number): string => {
 
 // Handle click - navigate to document or transcript with highlight
 const handleClick = () => {
-  const query: any = {}
+  const query: Record<string, any> = {}
 
   // For transcripts, navigate to transcript page
   if (isTranscript.value) {
-    const transcriptId = props.result.metadata?.transcription_id || props.result.metadata?.document_id || props.result.id
+    const transcriptId =
+      props.result.metadata?.transcription_gid ||
+      props.result.metadata?.transcription_id ||
+      props.result.metadata?.document_gid ||
+      props.result.metadata?.document_id ||
+      props.result.id
     if (props.result.metadata?.start_time !== undefined) query.t = props.result.metadata.start_time
     if (props.query) query.q = props.query
 
@@ -105,11 +112,19 @@ const handleClick = () => {
 
   // For documents
   if (props.result.pageNumber) query.page = props.result.pageNumber
-  if (props.result.metadata?.chunk_id) query.chunk = props.result.metadata.chunk_id
+  if (props.result.metadata?.chunk_id) {
+    query.chunk = props.result.metadata.chunk_id
+  }
   if (props.query) query.q = props.query
 
+  const documentGid =
+    props.result.metadata?.document_gid ||
+    props.result.metadata?.document_id ||
+    props.result.gid ||
+    props.result.id
+
   navigateTo({
-    path: `/documents/${props.result.metadata?.document_id || props.result.id}`,
+    path: `/documents/${documentGid}`,
     query
   })
 }
