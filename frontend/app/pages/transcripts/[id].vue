@@ -638,15 +638,14 @@ onMounted(async () => {
                   label: 'Download Original Audio',
                   icon: 'i-lucide-music',
                   click: async () => {
-                    if (!transcript) return
+                    if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Downloading...', description: 'Fetching original audio file', color: 'primary' })
                     try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/audio`)
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/audio`)
                       if (!response.ok) throw new Error('Download failed')
                       const blob = await response.blob()
-                      const extension = transcript.title.split('.').pop() || 'mp3'
-                      await downloadFile(blob, `${transcript.title}`)
+                      await downloadFile(blob, `${transcript.value.title}`)
                       toast.add({ title: 'Download complete', description: 'Audio file downloaded', color: 'success' })
                     } catch (error: any) {
                       toast.add({ title: 'Download failed', description: error.message || 'Failed to download audio', color: 'error' })
@@ -660,14 +659,14 @@ onMounted(async () => {
                   label: 'Export as DOCX',
                   icon: 'i-lucide-file-text',
                   click: async () => {
-                    if (!transcript) return
+                    if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Exporting...', description: 'Generating DOCX file', color: 'primary' })
                     try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/download/docx`)
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/docx`)
                       if (!response.ok) throw new Error('Export failed')
                       const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.title}_transcription.docx`)
+                      await downloadFile(blob, `${transcript.value.title}_transcription.docx`)
                       toast.add({ title: 'Export complete', description: 'DOCX file downloaded', color: 'success' })
                     } catch (error: any) {
                       toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
@@ -681,14 +680,14 @@ onMounted(async () => {
                   label: 'Export as SRT',
                   icon: 'i-lucide-subtitles',
                   click: async () => {
-                    if (!transcript) return
+                    if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Exporting...', description: 'Generating SRT file', color: 'primary' })
                     try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/download/srt`)
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/srt`)
                       if (!response.ok) throw new Error('Export failed')
                       const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.title}_transcription.srt`)
+                      await downloadFile(blob, `${transcript.value.title}_transcription.srt`)
                       toast.add({ title: 'Export complete', description: 'SRT file downloaded', color: 'success' })
                     } catch (error: any) {
                       toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
@@ -702,14 +701,14 @@ onMounted(async () => {
                   label: 'Export as VTT',
                   icon: 'i-lucide-captions',
                   click: async () => {
-                    if (!transcript) return
+                    if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Exporting...', description: 'Generating VTT file', color: 'primary' })
                     try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/download/vtt`)
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/vtt`)
                       if (!response.ok) throw new Error('Export failed')
                       const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.title}_transcription.vtt`)
+                      await downloadFile(blob, `${transcript.value.title}_transcription.vtt`)
                       toast.add({ title: 'Export complete', description: 'VTT file downloaded', color: 'success' })
                     } catch (error: any) {
                       toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
