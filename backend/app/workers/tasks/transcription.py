@@ -136,6 +136,12 @@ class AudioProcessor:
             Tuple of (success: bool, message: str)
         """
         try:
+            # Calculate dynamic timeout based on file size
+            # Allow 5 minutes per GB, minimum 5 minutes, maximum 60 minutes
+            file_size_gb = os.path.getsize(input_path) / (1024**3)
+            timeout_seconds = max(300, min(3600, int(file_size_gb * 300)))
+            logger.info(f"FFmpeg timeout set to {timeout_seconds}s for {file_size_gb:.2f}GB file")
+
             cmd = [
                 'ffmpeg',
                 '-i', input_path,
@@ -150,7 +156,7 @@ class AudioProcessor:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=300  # 5 minute timeout
+                timeout=timeout_seconds  # Dynamic timeout based on file size
             )
 
             if result.returncode == 0:
@@ -160,7 +166,7 @@ class AudioProcessor:
                 return False, f"FFmpeg error: {error_msg}"
 
         except subprocess.TimeoutExpired:
-            return False, "Audio preprocessing timed out"
+            return False, f"Audio preprocessing timed out after {timeout_seconds}s"
         except Exception as e:
             return False, f"Audio preprocessing failed: {str(e)}"
 
@@ -1092,17 +1098,11 @@ def transcribe_audio(
         transcription.status = DocumentStatus.PROCESSING
         db.commit()
 
-        # Step 2: Download audio/video from MinIO
+        # Step 2: Download audio/video from MinIO (STREAMING - memory efficient)
         self.update_state(
             state='PROCESSING',
             meta={'status': 'Downloading audio from storage', 'progress': 10}
         )
-
-        logger.info(f"Downloading file from MinIO: {transcription.file_path}")
-        file_content = minio_client.download_file(transcription.file_path)
-
-        if not file_content:
-            raise TranscriptionError("Failed to download file from MinIO")
 
         # Create temporary directory for processing
         temp_dir = tempfile.mkdtemp(prefix='transcription_')
@@ -1113,9 +1113,15 @@ def transcribe_audio(
         original_file = os.path.join(temp_dir, f"original{ext}")
         processed_wav = os.path.join(temp_dir, "audio.wav")
 
-        # Save original file
-        with open(original_file, 'wb') as f:
-            f.write(file_content)
+        # Stream file directly to disk (no memory loading)
+        logger.info(f"Streaming file from MinIO: {transcription.file_path} -> {original_file}")
+        try:
+            minio_client.download_file_to_path(transcription.file_path, original_file)
+        except Exception as e:
+            logger.error(f"Failed to stream file from MinIO: {e}")
+            raise TranscriptionError(f"Failed to download file from MinIO: {e}")
+
+        logger.info(f"File streamed successfully to {original_file}")
 
         # Step 3: Preprocess audio with FFmpeg
         self.update_state(

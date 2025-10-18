@@ -176,20 +176,34 @@ async function initializeWaveSurfer() {
     isReady.value = false
   })
 
-  // Load waveform (pre-computed if available, otherwise generate)
+  // Load waveform (pre-computed if available, otherwise skip waveform generation)
   const waveformData = await fetchWaveformData()
 
   if (waveformData?.peaks && waveformData?.duration) {
+    // Use pre-computed waveform data
     const peaksArray = [waveformData.peaks]
     wavesurfer.value.load(props.mediaUrl, peaksArray, waveformData.duration).catch(() => {
       isLoading.value = false
       isMediaReady.value = false
     })
   } else {
-    wavesurfer.value.load(props.mediaUrl).catch(() => {
-      isLoading.value = false
-      isMediaReady.value = false
-    })
+    // CRITICAL FIX: Don't generate waveform in browser for large files
+    // Just load media without waveform to prevent browser crashes
+    console.warn('[VideoPlayer] No pre-computed waveform available, loading media without waveform')
+
+    // Load media element directly without waveform generation
+    if (isVideo.value && videoRef.value) {
+      videoRef.value.src = props.mediaUrl
+      videoRef.value.load()
+    } else if (mediaElement) {
+      mediaElement.src = props.mediaUrl
+      mediaElement.load()
+    }
+
+    // Mark as ready without waveform
+    isLoading.value = false
+    isReady.value = true
+    isMediaReady.value = true
   }
 }
 

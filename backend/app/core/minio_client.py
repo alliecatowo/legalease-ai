@@ -95,6 +95,9 @@ class MinIOClient:
         """
         Download a file from MinIO.
 
+        WARNING: This loads the entire file into memory. Use download_file_to_path()
+        for large files to avoid memory issues.
+
         Args:
             object_name: Name/path of the object in MinIO
 
@@ -114,6 +117,45 @@ class MinIOClient:
             return data
         except S3Error as e:
             logger.error(f"Error downloading file from MinIO: {e}")
+            raise
+
+    def download_file_to_path(self, object_name: str, local_path: str, chunk_size: int = 8192) -> str:
+        """
+        Download a file from MinIO directly to disk using streaming (memory-efficient).
+
+        This method streams the file in chunks without loading it entirely into memory,
+        making it suitable for large files.
+
+        Args:
+            object_name: Name/path of the object in MinIO
+            local_path: Local file path to write to
+            chunk_size: Size of chunks to read at a time (default: 8KB)
+
+        Returns:
+            str: Local file path where file was saved
+
+        Raises:
+            S3Error: If download fails
+        """
+        self._initialize()
+        try:
+            logger.info(f"Streaming download from MinIO: {object_name} -> {local_path}")
+            response = self.client.get_object(self.bucket_name, object_name)
+
+            # Stream to file in chunks
+            with open(local_path, 'wb') as f:
+                for chunk in response.stream(chunk_size):
+                    f.write(chunk)
+
+            response.close()
+            response.release_conn()
+            logger.info(f"Streamed file from MinIO to {local_path}")
+            return local_path
+        except S3Error as e:
+            logger.error(f"Error streaming file from MinIO: {e}")
+            raise
+        except IOError as e:
+            logger.error(f"Error writing file to {local_path}: {e}")
             raise
 
     def delete_file(self, object_name: str) -> None:
