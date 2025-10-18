@@ -3,10 +3,13 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, Integer, String, DateTime, JSON, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.models.base import UUIDMixin
 
 
-class ProcessingJob(Base):
+class ProcessingJob(UUIDMixin, Base):
     """
     ProcessingJob model for tracking asynchronous processing tasks.
 
@@ -16,10 +19,9 @@ class ProcessingJob(Base):
 
     __tablename__ = "processing_jobs"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     job_type = Column(String(100), nullable=False, index=True)  # e.g., 'transcription', 'entity_extraction', 'ocr'
     status = Column(String(50), nullable=False, index=True)  # e.g., 'pending', 'running', 'completed', 'failed'
-    entity_id = Column(Integer, nullable=True)  # Generic ID for the entity being processed (document_id, case_id, etc.)
+    entity_id: Mapped[Optional[UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)  # Generic ID for the entity being processed (document_id, case_id, etc.)
     result = Column(JSON, nullable=True)  # Job results as JSON
     error = Column(Text, nullable=True)  # Error message if job failed
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)

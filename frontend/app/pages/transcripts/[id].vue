@@ -45,6 +45,9 @@ const flashSegmentId = ref<string | null>(null)
 // Metadata sidebar defaults: visible and expanded
 const metadataSidebarOpen = ref(true)
 const metadataSidebarCollapsed = ref(false)
+// Video player state
+const videoPlayerOpen = ref(true)
+const videoSize = ref<'small' | 'theater'>('theater')
 
 // Perform smart search using backend API
 async function performSmartSearch() {
@@ -64,9 +67,9 @@ async function performSmartSearch() {
       chunk_types: ['transcript_segment']
     }
 
-    const docId = (transcript.value as any).document_id
+    const docId = (transcript.value as any).document_gid || (transcript.value as any).document_id
     if (docId) {
-      searchRequest.document_ids = [docId]
+      searchRequest.document_gids = [docId]
     }
 
     const response = await api.search.hybrid(searchRequest)
@@ -103,6 +106,15 @@ const activeSegmentId = computed(() => {
   return segment?.id || null
 })
 
+// Computed property to determine if this is a video file
+const isVideoFile = computed(() => {
+  if (!transcript.value?.metadata?.format) return false
+  const format = transcript.value.metadata.format.toLowerCase()
+  // Common video formats
+  const videoFormats = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'wmv']
+  return videoFormats.includes(format)
+})
+
 // Watch for search changes
 watch([searchQuery, searchMode], () => {
   if (searchMode.value === 'smart' && searchQuery.value.trim()) {
@@ -119,6 +131,7 @@ watch(activeSegmentId, (newSegmentId) => {
   const index = filteredSegments.value.findIndex(s => s.id === newSegmentId)
 
   if (index !== -1 && rowVirtualizer.value) {
+    // Use 'center' alignment for better visibility of context
     rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 })
@@ -161,7 +174,7 @@ const rowVirtualizerOptions = computed(() => {
   return {
     count: filteredSegments.value.length,
     getScrollElement: () => scrollContainerRef.value,
-    estimateSize: () => 128,
+    estimateSize: () => 80,
     overscan: 8,
   }
 })
@@ -261,7 +274,8 @@ function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
 
   const index = filteredSegments.value.findIndex(s => s.id === segment.id)
   if (index !== -1 && rowVirtualizer.value) {
-    rowVirtualizer.value.scrollToIndex(index, { align: 'center' })
+    // Center the segment with smooth scrolling for better UX
+    rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 }
 
@@ -491,9 +505,49 @@ async function loadTranscript() {
 
   try {
     const response = await api.transcriptions.get(transcriptId.value)
+
+    const statusMap: Record<string, Transcription['status']> = {
+      COMPLETED: 'completed',
+      PROCESSING: 'processing',
+      PENDING: 'processing',
+      FAILED: 'failed'
+    }
+
+    const fallbackSpeakerColors = [
+      '#3B82F6',
+      '#8B5CF6',
+      '#10B981',
+      '#F59E0B',
+      '#EF4444',
+      '#EC4899',
+      '#6366F1',
+      '#14B8A6'
+    ]
+
+    const normalizedSpeakers: Speaker[] = (response.speakers || []).map((speaker: any, index: number) => ({
+      id: speaker.id || `speaker-${index}`,
+      name: speaker.name || `Speaker ${index + 1}`,
+      role: speaker.role,
+      color: speaker.color || fallbackSpeakerColors[index % fallbackSpeakerColors.length]
+    }))
+
     transcript.value = {
-      ...response,
-      audioUrl: response.audio_url || null
+      id: response.gid,
+      title: response.filename || response.gid,
+      audioUrl: response.audio_url || null,
+      duration: response.duration || 0,
+      status: statusMap[String(response.status || '').toUpperCase()] || 'processing',
+      caseId: response.case_gid,
+      caseName: (response as any).case_name,
+      createdAt: response.created_at,
+      segments: response.segments || [],
+      speakers: normalizedSpeakers,
+      metadata: {
+        format: response.format,
+        fileSize: (response as any).size,
+        sampleRate: (response as any).sample_rate,
+        bitRate: (response as any).bit_rate
+      } as Transcription['metadata']
     }
   } catch (err: any) {
     error.value = err.message || 'Failed to load transcript'
@@ -543,7 +597,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UDashboardPanel id="transcript-main" resizable>
+  <UDashboardPanel id="transcript-main" resizable :ui="{ body: 'flex flex-col flex-1 overflow-hidden' }">
     <template #header>
       <div class="h-16 px-4 sm:px-6 flex items-center justify-between gap-4 border-b border-default">
         <div class="flex items-center gap-4 min-w-0">
@@ -615,9 +669,9 @@ onMounted(async () => {
     </template>
 
     <template #body>
-      <div class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
-        <!-- Loading State -->
-        <div v-if="isLoading" class="flex items-center justify-center min-h-full p-6">
+      <!-- Loading State -->
+      <div v-if="isLoading" class="h-full flex items-center justify-center">
+        <div class="flex items-center justify-center min-h-full p-6">
           <div class="text-center space-y-4">
             <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
             <div>
@@ -626,9 +680,11 @@ onMounted(async () => {
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Error State -->
-        <div v-else-if="error" class="flex items-center justify-center min-h-full p-6">
+      <!-- Error State -->
+      <div v-else-if="error" class="h-full flex items-center justify-center">
+        <div class="flex items-center justify-center min-h-full p-6">
           <UCard class="max-w-md">
             <div class="text-center space-y-4">
               <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto" />
@@ -645,13 +701,134 @@ onMounted(async () => {
             </div>
           </UCard>
         </div>
+      </div>
 
-        <!-- Main Content -->
-        <div v-else-if="transcript" class="space-y-6">
-          <!-- Audio Player -->
-          <LazyWaveformPlayer
+      <!-- Unified Layout for Video and Audio -->
+      <div v-else-if="transcript" class="h-full flex flex-col overflow-hidden">
+        <!-- Video Player (Collapsible for video files) -->
+        <div v-if="isVideoFile" class="flex-shrink-0 border-b border-default">
+          <!-- Custom header with video controls -->
+          <div class="flex items-center justify-between gap-3 px-4 py-2 bg-elevated border-b border-default">
+            <div class="flex items-center gap-3">
+              <!-- Collapse toggle -->
+              <UButton
+                :icon="videoPlayerOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                @click="videoPlayerOpen = !videoPlayerOpen"
+              />
+
+              <UIcon name="i-lucide-video" class="size-4 text-muted" />
+              <span class="text-sm font-medium">Video Player</span>
+            </div>
+
+            <!-- Video controls (always visible) -->
+            <div class="flex items-center gap-2">
+              <!-- Skip back -->
+              <UTooltip text="Skip back 10s">
+                <UButton
+                  icon="i-lucide-skip-back"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!isPlaying && currentTime === 0"
+                  @click="currentTime = Math.max(0, currentTime - 10)"
+                />
+              </UTooltip>
+
+              <!-- Play/Pause -->
+              <UButton
+                :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
+                color="primary"
+                size="sm"
+                @click="isPlaying = !isPlaying"
+              />
+
+              <!-- Skip forward -->
+              <UTooltip text="Skip forward 10s">
+                <UButton
+                  icon="i-lucide-skip-forward"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  @click="currentTime = currentTime + 10"
+                />
+              </UTooltip>
+
+              <!-- Time display -->
+              <div class="text-xs text-muted min-w-[80px] text-center">
+                {{ formatTime(currentTime) }} / {{ formatTime(transcript.duration || 0) }}
+              </div>
+
+              <!-- Size controls -->
+              <UFieldGroup size="sm">
+                <UTooltip text="Compact view">
+                  <UButton
+                    icon="i-lucide-minimize-2"
+                    :color="videoSize === 'small' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'small' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'small'"
+                  />
+                </UTooltip>
+                <UTooltip text="Theater view">
+                  <UButton
+                    icon="i-lucide-rectangle-horizontal"
+                    :color="videoSize === 'theater' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'theater'"
+                  />
+                </UTooltip>
+              </UFieldGroup>
+            </div>
+          </div>
+
+          <!-- Video player content (collapsible) -->
+          <div v-show="videoPlayerOpen" class="p-4 sm:p-6">
+            <LazyVideoPlayer
+              v-if="transcript.audioUrl"
+              :media-url="transcript.audioUrl"
+              media-type="video"
+              :transcription-id="transcript.id"
+              :current-time="currentTime"
+              :is-playing="isPlaying"
+              :segments="transcript.segments"
+              :selected-segment-id="selectedSegment?.id"
+              :key-moments="keyMoments"
+              :size="videoSize"
+              :hide-controls="true"
+              @update:current-time="currentTime = $event"
+              @update:is-playing="isPlaying = $event"
+              @segment-click="seekToSegment"
+              @waveform-click="handleWaveformClick"
+            />
+          </div>
+
+          <!-- Segment Timeline - visible when collapsed -->
+          <div v-show="!videoPlayerOpen" class="h-3 bg-muted/20 cursor-pointer relative overflow-hidden">
+            <div
+              v-for="segment in transcript.segments"
+              :key="segment.id"
+              class="absolute top-0 h-full transition-opacity"
+              :style="{
+                left: `${(segment.start / transcript.duration) * 100}%`,
+                width: `${((segment.end - segment.start) / transcript.duration) * 100}%`,
+                backgroundColor: segment.isKeyMoment ? '#F59E0B' : '#3B82F6',
+                opacity: segment.id === selectedSegment?.id ? 1 : 0.7
+              }"
+              @click="seekToSegment(segment)"
+            />
+          </div>
+        </div>
+
+        <!-- Audio Player (Simple for audio-only files) -->
+        <div v-else class="flex-shrink-0 p-4 sm:p-6 border-b border-default">
+          <LazyVideoPlayer
             v-if="transcript.audioUrl"
-            :audio-url="transcript.audioUrl"
+            :media-url="transcript.audioUrl"
+            media-type="audio"
             :transcription-id="transcript.id"
             :current-time="currentTime"
             :segments="transcript.segments"
@@ -662,10 +839,14 @@ onMounted(async () => {
             @segment-click="seekToSegment"
             @waveform-click="handleWaveformClick"
           />
+        </div>
 
-          <!-- Search and Filters -->
-          <div class="space-y-3">
-            <div class="flex items-center gap-3">
+        <!-- Transcript Content Section (Shared by both video and audio) -->
+        <div class="flex-1 overflow-hidden flex flex-col">
+          <div class="flex-1 flex flex-col min-h-0 gap-2 p-1">
+              <!-- Search and Filters -->
+              <div class="space-y-1">
+            <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
               <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
                 <UButton
                   :icon="autoScrollEnabled ? 'i-lucide-radio' : 'i-lucide-circle'"
@@ -803,10 +984,10 @@ onMounted(async () => {
           </div>
 
           <!-- Transcript Segments Container -->
-          <div>
+          <div class="flex-1 flex flex-col min-h-0">
             <div
               ref="scrollContainerRef"
-              class="overflow-y-auto max-h-[60vh]"
+              class="flex-1 overflow-y-auto"
               data-transcript-container
             >
             <!-- Virtual list -->
@@ -828,13 +1009,13 @@ onMounted(async () => {
                   left: 0,
                   transform: `translateY(${virtualRow.start}px)`,
                   width: '100%',
-                  height: '120px',
-                  marginBottom: '8px',
+                  height: '74px',
+                  marginBottom: '6px',
                 }"
                 :class="[
-                  'p-4 rounded-lg cursor-pointer overflow-hidden transition-colors duration-200',
+                  'p-2 rounded cursor-pointer overflow-hidden transition-colors duration-200',
                   {
-                    'bg-primary/10 border-l-4 border-primary shadow-sm': filteredSegments[virtualRow.index].id === activeSegmentId,
+                    'bg-primary/10 border-l-2 border-primary': filteredSegments[virtualRow.index].id === activeSegmentId,
                     'hover:bg-muted/30': filteredSegments[virtualRow.index].id !== activeSegmentId,
                     'animate-pulse bg-warning/20': filteredSegments[virtualRow.index].id === flashSegmentId
                   }
@@ -842,20 +1023,13 @@ onMounted(async () => {
                 @click="currentTime = filteredSegments[virtualRow.index].start"
               >
                 <!-- Header -->
-                <div class="flex items-start justify-between gap-3 mb-3">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <UButton
-                      :label="formatTime(filteredSegments[virtualRow.index].start)"
-                      icon="i-lucide-clock"
-                      color="neutral"
-                      variant="soft"
-                      size="xs"
-                      @click.stop="seekToSegment(filteredSegments[virtualRow.index])"
-                    />
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs text-muted font-mono">{{ formatTime(filteredSegments[virtualRow.index].start) }}</span>
 
                     <div
                       v-if="getSpeaker(filteredSegments[virtualRow.index].speaker)"
-                      class="px-3 py-1 rounded-full text-sm font-medium"
+                      class="px-2 py-0.5 rounded-full text-xs font-medium"
                       :style="{
                         backgroundColor: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color + '20',
                         color: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color
@@ -863,56 +1037,36 @@ onMounted(async () => {
                     >
                       {{ getSpeaker(filteredSegments[virtualRow.index].speaker)!.name }}
                     </div>
-                    <UBadge v-else label="Unknown Speaker" color="neutral" size="xs" variant="soft" />
-
-                    <UBadge v-if="filteredSegments[virtualRow.index].isKeyMoment" label="Key Moment" icon="i-lucide-star" color="warning" size="xs" />
-
-                    <UTooltip v-if="filteredSegments[virtualRow.index].confidence" :text="`Confidence: ${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`">
-                      <UBadge
-                        :label="`${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`"
-                        :color="filteredSegments[virtualRow.index].confidence > 0.9 ? 'success' : filteredSegments[virtualRow.index].confidence > 0.7 ? 'warning' : 'neutral'"
-                        size="xs"
-                        variant="subtle"
-                      />
-                    </UTooltip>
                   </div>
 
                   <!-- Actions -->
-                  <div class="flex items-center gap-1">
-                    <UTooltip :text="filteredSegments[virtualRow.index].isKeyMoment ? 'Remove Key Moment' : 'Mark as Key Moment'">
-                      <UButton
-                        icon="i-lucide-star"
-                        :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index].id)"
-                      />
-                    </UTooltip>
-
-                    <UTooltip text="Copy Segment">
-                      <UButton
-                        icon="i-lucide-copy"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
-                      />
-                    </UTooltip>
-
-                    <UTooltip text="Edit Text">
-                      <UButton
-                        icon="i-lucide-edit"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="startEdit(filteredSegments[virtualRow.index])"
-                      />
-                    </UTooltip>
+                  <div class="flex items-center gap-0.5">
+                    <UButton
+                      icon="i-lucide-star"
+                      :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index].id)"
+                    />
+                    <UButton
+                      icon="i-lucide-copy"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
+                    />
+                    <UButton
+                      icon="i-lucide-edit"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="startEdit(filteredSegments[virtualRow.index])"
+                    />
                   </div>
                 </div>
 
                 <!-- Text Content -->
-                <div class="mt-2">
+                <div>
                   <div v-if="editingSegmentId === filteredSegments[virtualRow.index].id" class="space-y-2" @click.stop>
                     <UTextarea
                       v-model="editText"
@@ -941,22 +1095,10 @@ onMounted(async () => {
                   </div>
                   <p
                     v-else
-                    class="text-default leading-relaxed text-base line-clamp-3"
+                    class="text-sm leading-snug line-clamp-2"
                   >
                     {{ filteredSegments[virtualRow.index].text }}
                   </p>
-                </div>
-
-                <!-- Tags -->
-                <div v-if="filteredSegments[virtualRow.index].tags && filteredSegments[virtualRow.index].tags.length > 0" class="flex flex-wrap gap-1 mt-3">
-                  <UBadge
-                    v-for="tag in filteredSegments[virtualRow.index].tags"
-                    :key="tag"
-                    :label="tag"
-                    color="neutral"
-                    size="xs"
-                    variant="outline"
-                  />
                 </div>
               </div>
             </div>
@@ -974,6 +1116,7 @@ onMounted(async () => {
               />
             </div>
             </div>
+          </div>
           </div>
         </div>
       </div>

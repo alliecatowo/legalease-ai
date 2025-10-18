@@ -103,13 +103,13 @@ class DeleteResponse(BaseModel):
 class BatchIndexRequest(BaseModel):
     """Request schema for batch indexing operations."""
 
-    document_ids: List[int] = Field(..., min_length=1, description="List of document IDs to index")
+    document_gids: List[str] = Field(..., min_length=1, description="List of document GIDs to index")
     batch_size: int = Field(100, ge=1, le=1000, description="Batch size for uploading points")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "document_ids": [1, 2, 3, 4, 5],
+                "document_gids": ["abc123xyz456", "def789uvw012"],
                 "batch_size": 100,
             }
         }
@@ -140,7 +140,7 @@ class BatchIndexResponse(BaseModel):
 
 # Endpoints
 @router.post(
-    "/document/{document_id}",
+    "/document/{document_gid}",
     response_model=IndexDocumentResponse,
     status_code=status.HTTP_200_OK,
     summary="Reindex a document",
@@ -148,7 +148,7 @@ class BatchIndexResponse(BaseModel):
                 "This will generate embeddings and update the vector index.",
 )
 async def reindex_document(
-    document_id: int = Path(..., description="ID of the document to index", gt=0),
+    document_gid: str = Path(..., description="GID of the document to index"),
     batch_size: int = Query(100, ge=1, le=1000, description="Batch size for uploading points"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
@@ -163,7 +163,7 @@ async def reindex_document(
     4. Upsert points to Qdrant collection
 
     Args:
-        document_id: ID of the document to index
+        document_gid: GID of the document to index
         batch_size: Number of points to upload per batch (default: 100)
         db: Database session (injected)
         indexing_service: Indexing service instance (injected)
@@ -175,31 +175,31 @@ async def reindex_document(
         HTTPException 404: If document not found
         HTTPException 500: If indexing fails
     """
-    logger.info(f"Reindex request for document {document_id}")
+    logger.info(f"Reindex request for document {document_gid}")
 
     try:
         # Check if document exists
-        document = db.query(Document).filter(Document.id == document_id).first()
+        document = db.query(Document).filter(Document.gid == document_gid).first()
         if not document:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Document {document_id} not found",
+                detail=f"Document {document_gid} not found",
             )
 
         # Index the document
         result = indexing_service.index_document(
-            document_id=document_id,
+            document_gid=document_gid,
             db=db,
             batch_size=batch_size,
         )
 
-        logger.info(f"Successfully indexed document {document_id}: {result}")
+        logger.info(f"Successfully indexed document {document_gid}: {result}")
         return IndexDocumentResponse(**result)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error indexing document {document_id}: {e}", exc_info=True)
+        logger.error(f"Error indexing document {document_gid}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to index document: {str(e)}",
@@ -207,7 +207,7 @@ async def reindex_document(
 
 
 @router.post(
-    "/case/{case_id}",
+    "/case/{case_gid}",
     response_model=IndexCaseResponse,
     status_code=status.HTTP_200_OK,
     summary="Reindex an entire case",
@@ -216,7 +216,7 @@ async def reindex_document(
                 "generating embeddings and updating the vector index.",
 )
 async def reindex_case(
-    case_id: int = Path(..., description="ID of the case to index", gt=0),
+    case_gid: str = Path(..., description="GID of the case to index"),
     batch_size: int = Query(100, ge=1, le=1000, description="Batch size for uploading points"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
@@ -234,7 +234,7 @@ async def reindex_case(
     async task processing for production environments.
 
     Args:
-        case_id: ID of the case to index
+        case_gid: GID of the case to index
         batch_size: Number of points to upload per batch (default: 100)
         db: Database session (injected)
         indexing_service: Indexing service instance (injected)
@@ -246,31 +246,31 @@ async def reindex_case(
         HTTPException 404: If case not found
         HTTPException 500: If indexing fails
     """
-    logger.info(f"Reindex request for case {case_id}")
+    logger.info(f"Reindex request for case {case_gid}")
 
     try:
         # Check if case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        case = db.query(Case).filter(Case.gid == case_gid).first()
         if not case:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Case {case_id} not found",
+                detail=f"Case {case_gid} not found",
             )
 
         # Index the case
         result = indexing_service.index_case(
-            case_id=case_id,
+            case_gid=case_gid,
             db=db,
             batch_size=batch_size,
         )
 
-        logger.info(f"Successfully indexed case {case_id}: {result}")
+        logger.info(f"Successfully indexed case {case_gid}: {result}")
         return IndexCaseResponse(**result)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error indexing case {case_id}: {e}", exc_info=True)
+        logger.error(f"Error indexing case {case_gid}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to index case: {str(e)}",
@@ -313,7 +313,7 @@ async def batch_index_documents(
     try:
         # Batch index documents
         result = indexing_service.batch_index(
-            documents=request.document_ids,
+            documents=request.document_gids,
             db=db,
             batch_size=request.batch_size,
         )
@@ -330,7 +330,7 @@ async def batch_index_documents(
 
 
 @router.delete(
-    "/document/{document_id}",
+    "/document/{document_gid}",
     response_model=DeleteResponse,
     status_code=status.HTTP_200_OK,
     summary="Remove document from index",
@@ -339,7 +339,7 @@ async def batch_index_documents(
                 "only from the vector index.",
 )
 async def delete_document_from_index(
-    document_id: int = Path(..., description="ID of the document to remove from index", gt=0),
+    document_gid: str = Path(..., description="GID of the document to remove from index"),
     indexing_service: IndexingService = Depends(get_indexing_service),
 ):
     """
@@ -349,7 +349,7 @@ async def delete_document_from_index(
     from Qdrant. The document and chunks remain in the PostgreSQL database.
 
     Args:
-        document_id: ID of the document to remove
+        document_gid: GID of the document to remove
         indexing_service: Indexing service instance (injected)
 
     Returns:
@@ -358,17 +358,17 @@ async def delete_document_from_index(
     Raises:
         HTTPException 500: If deletion fails
     """
-    logger.info(f"Delete request for document {document_id} from index")
+    logger.info(f"Delete request for document {document_gid} from index")
 
     try:
         # Delete from index
-        result = indexing_service.delete_from_index(document_id=document_id)
+        result = indexing_service.delete_from_index(document_gid=document_gid)
 
-        logger.info(f"Successfully deleted document {document_id} from index")
+        logger.info(f"Successfully deleted document {document_gid} from index")
         return DeleteResponse(**result)
 
     except Exception as e:
-        logger.error(f"Error deleting document {document_id} from index: {e}", exc_info=True)
+        logger.error(f"Error deleting document {document_gid} from index: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete document from index: {str(e)}",
@@ -376,7 +376,7 @@ async def delete_document_from_index(
 
 
 @router.delete(
-    "/case/{case_id}",
+    "/case/{case_gid}",
     response_model=DeleteResponse,
     status_code=status.HTTP_200_OK,
     summary="Remove case from index",
@@ -385,7 +385,7 @@ async def delete_document_from_index(
                 "only from the vector index.",
 )
 async def delete_case_from_index(
-    case_id: int = Path(..., description="ID of the case to remove from index", gt=0),
+    case_gid: str = Path(..., description="GID of the case to remove from index"),
     indexing_service: IndexingService = Depends(get_indexing_service),
 ):
     """
@@ -396,7 +396,7 @@ async def delete_case_from_index(
     PostgreSQL database.
 
     Args:
-        case_id: ID of the case to remove
+        case_gid: GID of the case to remove
         indexing_service: Indexing service instance (injected)
 
     Returns:
@@ -405,17 +405,17 @@ async def delete_case_from_index(
     Raises:
         HTTPException 500: If deletion fails
     """
-    logger.info(f"Delete request for case {case_id} from index")
+    logger.info(f"Delete request for case {case_gid} from index")
 
     try:
         # Delete from index
-        result = indexing_service.delete_case_from_index(case_id=case_id)
+        result = indexing_service.delete_case_from_index(case_gid=case_gid)
 
-        logger.info(f"Successfully deleted case {case_id} from index")
+        logger.info(f"Successfully deleted case {case_gid} from index")
         return DeleteResponse(**result)
 
     except Exception as e:
-        logger.error(f"Error deleting case {case_id} from index: {e}", exc_info=True)
+        logger.error(f"Error deleting case {case_gid} from index: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete case from index: {str(e)}",
@@ -423,7 +423,7 @@ async def delete_case_from_index(
 
 
 @router.put(
-    "/document/{document_id}",
+    "/document/{document_gid}",
     response_model=IndexDocumentResponse,
     status_code=status.HTTP_200_OK,
     summary="Update document index",
@@ -432,7 +432,7 @@ async def delete_case_from_index(
                 "content has been modified or re-processed.",
 )
 async def update_document_index(
-    document_id: int = Path(..., description="ID of the document to update", gt=0),
+    document_gid: str = Path(..., description="GID of the document to update"),
     batch_size: int = Query(100, ge=1, le=1000, description="Batch size for uploading points"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
@@ -450,7 +450,7 @@ async def update_document_index(
     - Embedding model has been updated
 
     Args:
-        document_id: ID of the document to update
+        document_gid: GID of the document to update
         batch_size: Number of points to upload per batch (default: 100)
         db: Database session (injected)
         indexing_service: Indexing service instance (injected)
@@ -462,31 +462,31 @@ async def update_document_index(
         HTTPException 404: If document not found
         HTTPException 500: If update fails
     """
-    logger.info(f"Update index request for document {document_id}")
+    logger.info(f"Update index request for document {document_gid}")
 
     try:
         # Check if document exists
-        document = db.query(Document).filter(Document.id == document_id).first()
+        document = db.query(Document).filter(Document.gid == document_gid).first()
         if not document:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Document {document_id} not found",
+                detail=f"Document {document_gid} not found",
             )
 
         # Update the index
         result = indexing_service.update_index(
-            document_id=document_id,
+            document_gid=document_gid,
             db=db,
             batch_size=batch_size,
         )
 
-        logger.info(f"Successfully updated index for document {document_id}: {result}")
+        logger.info(f"Successfully updated index for document {document_gid}: {result}")
         return IndexDocumentResponse(**result)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating index for document {document_id}: {e}", exc_info=True)
+        logger.error(f"Error updating index for document {document_gid}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update document index: {str(e)}",
@@ -500,7 +500,7 @@ async def update_document_index(
     description="Debug endpoint to check what chunk_types exist in Qdrant and their counts.",
 )
 async def debug_chunk_types(
-    case_id: Optional[int] = Query(None, description="Filter by case ID"),
+    case_gid: Optional[str] = Query(None, description="Filter by case GID"),
 ):
     """
     Debug endpoint to check chunk types in Qdrant.
@@ -509,7 +509,7 @@ async def debug_chunk_types(
     of each chunk_type exist. Useful for debugging search issues.
 
     Args:
-        case_id: Optional case ID to filter by
+        case_gid: Optional case GID to filter by
 
     Returns:
         Dictionary with chunk type statistics
@@ -520,14 +520,14 @@ async def debug_chunk_types(
         client = get_qdrant_client()
         collection_name = settings.QDRANT_COLLECTION
 
-        # Build filter if case_id provided
+        # Build filter if case_gid provided
         scroll_filter = None
-        if case_id:
+        if case_gid:
             scroll_filter = Filter(
                 must=[
                     FieldCondition(
-                        key="case_id",
-                        match=MatchValue(value=case_id),
+                        key="case_gid",
+                        match=MatchValue(value=case_gid),
                     )
                 ]
             )
@@ -563,12 +563,12 @@ async def debug_chunk_types(
 
             offset = next_offset
 
-        logger.info(f"Debug chunk types: {chunk_type_counts} (total: {total_points}, case_id: {case_id})")
+        logger.info(f"Debug chunk types: {chunk_type_counts} (total: {total_points}, case_gid: {case_gid})")
 
         return {
             "total_points": total_points,
             "chunk_type_counts": chunk_type_counts,
-            "case_id_filter": case_id,
+            "case_gid_filter": case_gid,
             "collection": collection_name,
         }
 
@@ -587,7 +587,7 @@ async def debug_chunk_types(
     description="Debug endpoint to check transcript_segment points in Qdrant.",
 )
 async def debug_transcript_segments(
-    case_id: Optional[int] = Query(None, description="Filter by case ID"),
+    case_gid: Optional[str] = Query(None, description="Filter by case GID"),
     limit: int = Query(10, ge=1, le=100, description="Number of samples to return"),
 ):
     """
@@ -597,7 +597,7 @@ async def debug_transcript_segments(
     they're indexed correctly.
 
     Args:
-        case_id: Optional case ID to filter by
+        case_gid: Optional case GID to filter by
         limit: Number of sample points to return
 
     Returns:
@@ -617,11 +617,11 @@ async def debug_transcript_segments(
             )
         ]
 
-        if case_id:
+        if case_gid:
             conditions.append(
                 FieldCondition(
-                    key="case_id",
-                    match=MatchValue(value=case_id),
+                    key="case_gid",
+                    match=MatchValue(value=case_gid),
                 )
             )
 
@@ -652,11 +652,11 @@ async def debug_transcript_segments(
                 "end_time": point.payload.get("end_time"),
             })
 
-        logger.info(f"Debug transcript segments: found {len(samples)} samples (case_id: {case_id})")
+        logger.info(f"Debug transcript segments: found {len(samples)} samples (case_gid: {case_gid})")
 
         return {
             "total_samples": len(samples),
-            "case_id_filter": case_id,
+            "case_gid_filter": case_gid,
             "collection": collection_name,
             "samples": samples,
         }

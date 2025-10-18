@@ -23,29 +23,46 @@ router = APIRouter()
 
 
 @router.get(
-    "/cases/{case_id}/forensic-exports",
+    "/cases/{case_gid}/forensic-exports",
     response_model=ForensicExportListResponse,
     summary="List forensic exports for a case",
     description="Get all forensic exports associated with a specific case",
 )
 async def list_exports_for_case(
-    case_id: int,
+    case_gid: str,
     db: Session = Depends(get_db),
 ):
     """
     List all forensic exports for a specific case.
 
     Args:
-        case_id: Case ID
+        case_gid: Case GID
         db: Database session
 
     Returns:
         List of forensic exports for the case
     """
-    exports = ForensicExportService.list_exports_for_case(case_id, db)
+    exports = ForensicExportService.list_exports_for_case(case_gid, db)
+    items = [
+        ForensicExportListItem(
+            gid=export.gid,
+            case_gid=export.case.gid if export.case else case_gid,
+            case_name=export.case.name if export.case else None,
+            folder_name=export.folder_name,
+            export_uuid=export.export_uuid,
+            total_records=export.total_records,
+            exported_records=export.exported_records,
+            num_attachments=export.num_attachments,
+            size_bytes=export.size_bytes,
+            export_status=export.export_status,
+            discovered_at=export.discovered_at,
+            last_verified_at=export.last_verified_at,
+        )
+        for export in exports
+    ]
     return ForensicExportListResponse(
-        exports=exports,
-        total=len(exports)
+        exports=items,
+        total=len(items)
     )
 
 
@@ -68,27 +85,44 @@ async def list_all_exports(
         List of all forensic exports
     """
     exports = ForensicExportService.list_all_exports(db)
+    items = [
+        ForensicExportListItem(
+            gid=export.gid,
+            case_gid=export.case.gid if export.case else None,
+            case_name=export.case.name if export.case else None,
+            folder_name=export.folder_name,
+            export_uuid=export.export_uuid,
+            total_records=export.total_records,
+            exported_records=export.exported_records,
+            num_attachments=export.num_attachments,
+            size_bytes=export.size_bytes,
+            export_status=export.export_status,
+            discovered_at=export.discovered_at,
+            last_verified_at=export.last_verified_at,
+        )
+        for export in exports
+    ]
     return ForensicExportListResponse(
-        exports=exports,
-        total=len(exports)
+        exports=items,
+        total=len(items)
     )
 
 
 @router.get(
-    "/forensic-exports/{export_id}",
+    "/forensic-exports/{export_gid}",
     response_model=ForensicExportResponse,
     summary="Get forensic export details",
     description="Get detailed information about a specific forensic export including full JSON data",
 )
 async def get_export(
-    export_id: int,
+    export_gid: str,
     db: Session = Depends(get_db),
 ):
     """
     Get detailed information about a forensic export.
 
     Args:
-        export_id: Export ID
+        export_gid: Export GID
         db: Database session
 
     Returns:
@@ -97,25 +131,48 @@ async def get_export(
     Raises:
         HTTPException: If export not found
     """
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(export_gid, db)
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Forensic export {export_id} not found"
+            detail=f"Forensic export {export_gid} not found"
         )
 
-    return export
+    return ForensicExportResponse(
+        gid=export.gid,
+        case_gid=export.case.gid if export.case else None,
+        case_name=export.case.name if export.case else None,
+        folder_path=export.folder_path,
+        folder_name=export.folder_name,
+        export_uuid=export.export_uuid,
+        axiom_version=export.axiom_version,
+        total_records=export.total_records,
+        exported_records=export.exported_records,
+        num_attachments=export.num_attachments,
+        export_start_date=export.export_start_date,
+        export_end_date=export.export_end_date,
+        export_duration=export.export_duration,
+        size_bytes=export.size_bytes,
+        export_status=export.export_status,
+        case_directory=export.case_directory,
+        case_storage_location=export.case_storage_location,
+        summary_json=export.summary_json,
+        export_options_json=export.export_options_json,
+        problems_json=export.problems_json,
+        discovered_at=export.discovered_at,
+        last_verified_at=export.last_verified_at,
+    )
 
 
 @router.post(
-    "/cases/{case_id}/forensic-exports/scan",
+    "/cases/{case_gid}/forensic-exports/scan",
     response_model=ScanLocationResponse,
     status_code=status.HTTP_200_OK,
     summary="Scan location for forensic exports",
     description="Recursively scan a directory for forensic export folders and register them",
 )
 async def scan_location(
-    case_id: int,
+    case_gid: str,
     request: ScanLocationRequest,
     db: Session = Depends(get_db),
 ):
@@ -127,7 +184,7 @@ async def scan_location(
     stops recursing into that folder (critical for performance).
 
     Args:
-        case_id: ID of the case to associate exports with
+        case_gid: GID of the case to associate exports with
         request: Scan request with path to scan
         db: Database session
 
@@ -139,24 +196,24 @@ async def scan_location(
     """
     # Validate case exists
     from app.models.case import Case
-    case = db.query(Case).filter(Case.id == case_id).first()
+    case = db.query(Case).filter(Case.gid == case_gid).first()
     if not case:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Case {case_id} not found"
+            detail=f"Case {case_gid} not found"
         )
 
     # Perform scan
     try:
         results = ForensicExportService.scan_for_exports(
             request.path,
-            case_id,
+            case_gid,
             db
         )
 
         return ScanLocationResponse(
             scanned_path=request.path,
-            case_id=case_id,
+            case_gid=case_gid,
             found=results["found"],
             existing=results["existing"],
             errors=results["errors"]
@@ -174,13 +231,13 @@ async def scan_location(
 
 
 @router.post(
-    "/forensic-exports/{export_id}/verify",
+    "/forensic-exports/{export_gid}/verify",
     response_model=VerifyExportResponse,
     summary="Verify export exists",
     description="Verify that the export folder still exists on disk",
 )
 async def verify_export(
-    export_id: int,
+    export_gid: str,
     db: Session = Depends(get_db),
 ):
     """
@@ -189,7 +246,7 @@ async def verify_export(
     Updates the last_verified_at timestamp.
 
     Args:
-        export_id: Export ID
+        export_gid: Export GID
         db: Database session
 
     Returns:
@@ -199,7 +256,7 @@ async def verify_export(
         HTTPException: If export not found
     """
     try:
-        exists, path = ForensicExportService.verify_export_exists(export_id, db)
+        exists, path = ForensicExportService.verify_export_exists(export_gid, db)
         return VerifyExportResponse(
             exists=exists,
             path=path,
@@ -213,13 +270,13 @@ async def verify_export(
 
 
 @router.delete(
-    "/forensic-exports/{export_id}",
+    "/forensic-exports/{export_gid}",
     response_model=DeleteForensicExportResponse,
     summary="Delete forensic export record",
     description="Delete the export record from database (files remain on disk)",
 )
 async def delete_export(
-    export_id: int,
+    export_gid: str,
     db: Session = Depends(get_db),
 ):
     """
@@ -229,7 +286,7 @@ async def delete_export(
     The export folder and all its contents remain on the filesystem.
 
     Args:
-        export_id: Export ID
+        export_gid: Export GID
         db: Database session
 
     Returns:
@@ -239,9 +296,9 @@ async def delete_export(
         HTTPException: If export not found
     """
     try:
-        export = ForensicExportService.delete_export(export_id, db)
+        export = ForensicExportService.delete_export(export_gid, db)
         return DeleteForensicExportResponse(
-            id=export.id,
+            gid=export.gid,
             folder_path=export.folder_path,
             message=f"Export record deleted (files remain at {export.folder_path})"
         )
@@ -253,12 +310,12 @@ async def delete_export(
 
 
 @router.get(
-    "/forensic-exports/{export_id}/serve/{file_path:path}",
+    "/forensic-exports/{export_gid}/serve/{file_path:path}",
     summary="Serve file from export",
     description="Serve any file from the forensic export folder (for Report.html assets)",
 )
 async def serve_export_file(
-    export_id: int,
+    export_gid: str,
     file_path: str,
     db: Session = Depends(get_db),
 ):
@@ -269,7 +326,7 @@ async def serve_export_file(
     by Report.html with relative paths.
 
     Args:
-        export_id: Export ID
+        export_gid: Export GID
         file_path: Relative path to file within export folder
         db: Database session
 
@@ -279,11 +336,11 @@ async def serve_export_file(
     Raises:
         HTTPException: If export or file not found
     """
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(export_gid, db)
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Forensic export {export_id} not found"
+            detail=f"Forensic export {export_gid} not found"
         )
 
     export_path = Path(export.folder_path)
@@ -320,13 +377,13 @@ async def serve_export_file(
 
 
 @router.get(
-    "/forensic-exports/{export_id}/report",
+    "/forensic-exports/{export_gid}/report",
     response_class=HTMLResponse,
     summary="Get Report.html",
     description="Serve the Report.html file from the forensic export with rewritten paths",
 )
 async def get_export_report(
-    export_id: int,
+    export_gid: str,
     db: Session = Depends(get_db),
 ):
     """
@@ -336,7 +393,7 @@ async def get_export_report(
     so that CSS, JS, and images load correctly.
 
     Args:
-        export_id: Export ID
+        export_gid: Export GID
         db: Database session
 
     Returns:
@@ -347,11 +404,11 @@ async def get_export_report(
     """
     import re
 
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(export_gid, db)
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Forensic export {export_id} not found"
+            detail=f"Forensic export {export_gid} not found"
         )
 
     report_path = Path(export.folder_path) / "Report.html"
@@ -380,7 +437,7 @@ async def get_export_report(
             clean_path = path.lstrip('./')
 
             # Rewrite to use our serve endpoint
-            return f'{attr}="/api/v1/forensic-exports/{export_id}/serve/{clean_path}"'
+            return f'{attr}="/api/v1/forensic-exports/{export_gid}/serve/{clean_path}"'
 
         # Replace src and href attributes
         html_content = re.sub(
@@ -399,13 +456,13 @@ async def get_export_report(
 
 
 @router.get(
-    "/forensic-exports/{export_id}/files",
+    "/forensic-exports/{export_gid}/files",
     response_model=Dict[str, Any],
     summary="List files in export",
     description="List files and directories in the forensic export folder",
 )
 async def list_export_files(
-    export_id: int,
+    export_gid: str,
     subpath: str = "",
     db: Session = Depends(get_db),
 ):
@@ -413,7 +470,7 @@ async def list_export_files(
     List files and directories in the forensic export folder.
 
     Args:
-        export_id: Export ID
+        export_gid: Export GID
         subpath: Optional subdirectory path (relative to export root)
         db: Database session
 
@@ -423,11 +480,11 @@ async def list_export_files(
     Raises:
         HTTPException: If export not found or path is invalid
     """
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(export_gid, db)
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Forensic export {export_id} not found"
+            detail=f"Forensic export {export_gid} not found"
         )
 
     export_path = Path(export.folder_path)
@@ -477,7 +534,7 @@ async def list_export_files(
                 continue
 
         return {
-            "export_id": export_id,
+            "export_gid": export_gid,
             "current_path": str(target_path.relative_to(export_path)) if subpath else "",
             "parent_path": str(target_path.parent.relative_to(export_path)) if target_path != export_path else None,
             "items": items,

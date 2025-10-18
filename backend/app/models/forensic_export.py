@@ -3,12 +3,13 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger, Index
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
+from app.models.base import UUIDMixin
 
 
-class ForensicExport(Base):
+class ForensicExport(UUIDMixin, Base):
     """
     ForensicExport model representing a forensic discovery export (e.g., Cellebrite AXIOM).
 
@@ -25,9 +26,8 @@ class ForensicExport(Base):
 
     __tablename__ = "forensic_exports"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    case_id = Column(
-        Integer,
+    case_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True

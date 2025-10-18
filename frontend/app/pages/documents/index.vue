@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const api = useApi()
+const toast = useToast()
 
 // Use shared data cache
 const { documents: documentsCache, cases: casesCache } = useSharedData()
@@ -43,6 +44,7 @@ const showUploadModal = ref(false)
 const showBulkActionsModal = ref(false)
 const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
+const selectedCaseForUpload = ref<string | null>(null)
 
 const typeOptions = [
   { label: 'All Documents', value: 'all' },
@@ -121,17 +123,39 @@ const stats = computed(() => {
   }
 })
 
+const caseOptions = computed(() =>
+  (casesCache.data.value?.cases || []).map((c: any) => ({
+    label: c.name,
+    value: c.id ?? c.gid
+  }))
+)
+
+watch(
+  () => casesCache.data.value?.cases,
+  (caseList) => {
+    if (!caseList || caseList.length === 0) {
+      selectedCaseForUpload.value = null
+      return
+    }
+
+    if (!selectedCaseForUpload.value) {
+      selectedCaseForUpload.value = caseList[0].id ?? caseList[0].gid
+    }
+  },
+  { immediate: true }
+)
+
 // Bulk selection
 const allSelected = computed(() => {
   return filteredDocuments.value.length > 0 &&
-    filteredDocuments.value.every(d => selectedDocuments.value.has(String(d.id)))
+    filteredDocuments.value.every(d => selectedDocuments.value.has(d.gid))
 })
 
 function toggleSelectAll() {
   if (allSelected.value) {
     selectedDocuments.value.clear()
   } else {
-    filteredDocuments.value.forEach(d => selectedDocuments.value.add(String(d.id)))
+    filteredDocuments.value.forEach(d => selectedDocuments.value.add(d.gid))
   }
 }
 
@@ -151,18 +175,24 @@ async function uploadDocuments() {
 
   // Get the first available case ID (or show error if no cases exist)
   if (!casesCache.data.value?.cases || casesCache.data.value.cases.length === 0) {
-    if (import.meta.client) {
-      const toast = useToast()
-      toast.add({
-        title: 'No Case Available',
-        description: 'Please create a case first before uploading documents',
-        color: 'error'
-      })
-    }
+    toast.add({
+      title: 'No Case Available',
+      description: 'Please create a case first before uploading documents',
+      color: 'error'
+    })
     return
   }
 
-  const caseId = casesCache.data.value.cases[0].id
+  if (!selectedCaseForUpload.value) {
+    toast.add({
+      title: 'Select a Case',
+      description: 'Choose a case to associate these documents with.',
+      color: 'warning'
+    })
+    return
+  }
+
+  const caseId = selectedCaseForUpload.value
   uploadProgress.value = 0
 
   const formData = new FormData()
@@ -181,14 +211,11 @@ async function uploadDocuments() {
     uploadProgress.value = 100
 
     // Success feedback
-    if (import.meta.client) {
-      const toast = useToast()
-      toast.add({
-        title: 'Upload Successful',
-        description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
-        color: 'success'
-      })
-    }
+    toast.add({
+      title: 'Upload Successful',
+      description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
+      color: 'success'
+    })
 
     // Close modal and refresh
     showUploadModal.value = false
@@ -394,21 +421,21 @@ const documentTypeIcons: Record<string, string> = {
       <div v-if="viewMode === 'list'" class="space-y-3">
         <UCard
           v-for="doc in filteredDocuments"
-          :key="doc.id"
+          :key="doc.gid"
           class="hover:shadow-md transition-all cursor-pointer"
-          :class="selectedDocuments.has(String(doc.id)) ? 'ring-2 ring-primary' : ''"
-          @click="navigateTo(`/documents/${doc.id}`)"
+          :class="selectedDocuments.has(doc.gid) ? 'ring-2 ring-primary' : ''"
+          @click="navigateTo(`/documents/${doc.gid}`)"
         >
           <div class="flex items-start gap-4">
             <!-- Selection Icon -->
             <div
               class="flex-shrink-0 cursor-pointer p-2"
-              @click.stop="toggleSelect(doc.id)"
+              @click.stop="toggleSelect(doc.gid)"
             >
               <UIcon
-                :name="selectedDocuments.has(String(doc.id)) ? 'i-lucide-check-square' : 'i-lucide-square'"
+                :name="selectedDocuments.has(doc.gid) ? 'i-lucide-check-square' : 'i-lucide-square'"
                 class="size-5"
-                :class="selectedDocuments.has(String(doc.id)) ? 'text-primary' : 'text-muted'"
+                :class="selectedDocuments.has(doc.gid) ? 'text-primary' : 'text-muted'"
               />
             </div>
 
@@ -465,7 +492,7 @@ const documentTypeIcons: Record<string, string> = {
                         variant="ghost"
                         color="neutral"
                         size="sm"
-                        @click.stop="navigateTo(`/documents/${doc.id}`)"
+                        @click.stop="navigateTo(`/documents/${doc.gid}`)"
                       />
                     </UTooltip>
                     <UTooltip text="Download">
@@ -474,7 +501,7 @@ const documentTypeIcons: Record<string, string> = {
                         variant="ghost"
                         color="neutral"
                         size="sm"
-                        @click.stop="downloadDocument(doc.id)"
+                        @click.stop="downloadDocument(doc.gid)"
                       />
                     </UTooltip>
                     <UDropdownMenu
@@ -485,7 +512,7 @@ const documentTypeIcons: Record<string, string> = {
                           { label: 'Share', icon: 'i-lucide-share' }
                         ],
                         [
-                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.gid) }
                         ]
                       ]"
                     >
@@ -509,22 +536,22 @@ const documentTypeIcons: Record<string, string> = {
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <UCard
           v-for="doc in filteredDocuments"
-          :key="doc.id"
+          :key="doc.gid"
           class="hover:shadow-lg transition-all cursor-pointer relative"
-          :class="selectedDocuments.has(String(doc.id)) ? 'ring-2 ring-primary' : ''"
-          @click="navigateTo(`/documents/${doc.id}`)"
+          :class="selectedDocuments.has(doc.gid) ? 'ring-2 ring-primary' : ''"
+          @click="navigateTo(`/documents/${doc.gid}`)"
         >
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <div
                   class="cursor-pointer"
-                  @click.stop="toggleSelect(doc.id)"
+                  @click.stop="toggleSelect(doc.gid)"
                 >
                   <UIcon
-                    :name="selectedDocuments.has(String(doc.id)) ? 'i-lucide-check-square' : 'i-lucide-square'"
+                    :name="selectedDocuments.has(doc.gid) ? 'i-lucide-check-square' : 'i-lucide-square'"
                     class="size-5"
-                    :class="selectedDocuments.has(String(doc.id)) ? 'text-primary' : 'text-muted'"
+                    :class="selectedDocuments.has(doc.gid) ? 'text-primary' : 'text-muted'"
                   />
                 </div>
                 <div class="p-2 bg-primary/10 rounded-lg">
@@ -538,11 +565,11 @@ const documentTypeIcons: Record<string, string> = {
                 <UDropdownMenu
                   :items="[
                     [
-                      { label: 'View', icon: 'i-lucide-eye', click: () => navigateTo(`/documents/${doc.id}`) },
-                      { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.id) }
+                      { label: 'View', icon: 'i-lucide-eye', click: () => navigateTo(`/documents/${doc.gid}`) },
+                      { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.gid) }
                     ],
                     [
-                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.gid) }
                     ]
                   ]"
                 >
@@ -598,6 +625,17 @@ const documentTypeIcons: Record<string, string> = {
       <UModal v-model:open="showUploadModal" title="Upload Documents" :ui="{ content: 'max-w-2xl' }">
       <template #body>
         <div class="space-y-4">
+          <UFormField label="Associate with Case" name="case" required>
+            <USelectMenu
+              v-model="selectedCaseForUpload"
+              :items="caseOptions"
+              placeholder="Select a case..."
+              size="lg"
+              value-key="value"
+              :disabled="caseOptions.length === 0"
+            />
+          </UFormField>
+
           <!-- File Upload Component -->
           <UFileUpload
             v-model="uploadingFiles"
@@ -637,7 +675,7 @@ const documentTypeIcons: Record<string, string> = {
             label="Upload"
             icon="i-lucide-upload"
             color="primary"
-            :disabled="!uploadingFiles || uploadingFiles.length === 0"
+            :disabled="!selectedCaseForUpload || !uploadingFiles || uploadingFiles.length === 0"
             @click="uploadDocuments"
           />
         </div>

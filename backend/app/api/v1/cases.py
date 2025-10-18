@@ -53,7 +53,7 @@ async def create_case(
     """
     Create a new case.
 
-    The case is created in STAGING status. Upon creation:
+    The case is created in ACTIVE status (ready to use). Upon creation:
     - A Qdrant collection is created for vector search
     - A MinIO bucket is created for document storage
 
@@ -127,6 +127,7 @@ async def list_cases(
 
         case_item = CaseListItem(
             id=case.id,
+            gid=case.gid,
             name=case.name,
             case_number=case.case_number,
             client=case.client,
@@ -149,20 +150,20 @@ async def list_cases(
 
 
 @router.get(
-    "/{case_id}",
+    "/{case_gid}",
     response_model=CaseResponse,
     summary="Get case details",
     description="Get detailed information about a specific case",
 )
 async def get_case(
-    case_id: int,
+    case_gid: str,
     case_service: CaseService = Depends(get_case_service),
 ):
     """
-    Get case by ID.
+    Get case by GID.
 
     Args:
-        case_id: Case ID
+        case_gid: Case GID (22-char base62 string)
         case_service: Case service dependency
 
     Returns:
@@ -172,7 +173,7 @@ async def get_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.get_case(case_id)
+        case = case_service.get_case(case_gid)
         return case
     except CaseNotFoundError as e:
         raise HTTPException(
@@ -182,13 +183,13 @@ async def get_case(
 
 
 @router.put(
-    "/{case_id}",
+    "/{case_gid}",
     response_model=CaseResponse,
     summary="Update case details",
     description="Update case information (name, case_number, client, matter_type)",
 )
 async def update_case(
-    case_id: int,
+    case_gid: str,
     case_data: CaseUpdate,
     case_service: CaseService = Depends(get_case_service),
 ):
@@ -196,7 +197,7 @@ async def update_case(
     Update case details.
 
     Args:
-        case_id: Case ID
+        case_gid: Case GID (22-char base62 string)
         case_data: Updated case data
         case_service: Case service dependency
 
@@ -208,7 +209,7 @@ async def update_case(
     """
     try:
         case = case_service.update_case(
-            case_id=case_id,
+            case_gid=case_gid,
             name=case_data.name,
             case_number=case_data.case_number,
             client=case_data.client,
@@ -228,13 +229,13 @@ async def update_case(
 
 
 @router.put(
-    "/{case_id}/activate",
+    "/{case_gid}/activate",
     response_model=CaseStatusUpdate,
     summary="Activate case",
     description="Change case status to ACTIVE, making it available for processing",
 )
 async def activate_case(
-    case_id: int,
+    case_gid: str,
     case_service: CaseService = Depends(get_case_service),
 ):
     """
@@ -246,7 +247,7 @@ async def activate_case(
     - Active case management
 
     Args:
-        case_id: Case ID
+        case_gid: Case GID (22-char base62 string)
         case_service: Case service dependency
 
     Returns:
@@ -256,7 +257,7 @@ async def activate_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.activate_case(case_id)
+        case = case_service.activate_case(case_gid)
         return CaseStatusUpdate(
             id=case.id,
             case_number=case.case_number,
@@ -271,26 +272,26 @@ async def activate_case(
 
 
 @router.put(
-    "/{case_id}/unload",
+    "/{case_gid}/close",
     response_model=CaseStatusUpdate,
-    summary="Unload case",
-    description="Change case status to UNLOADED, removing it from active processing",
+    summary="Close case",
+    description="Mark case as closed (complete but searchable)",
 )
-async def unload_case(
-    case_id: int,
+async def close_case(
+    case_gid: str,
     case_service: CaseService = Depends(get_case_service),
 ):
     """
-    Unload a case (RAGFlow unload pattern).
+    Close a case.
 
-    Changes the case status to UNLOADED, which:
-    - Removes the case from active processing
+    Changes the case status to CLOSED, which:
+    - Marks the case as complete
     - Preserves all data (documents, vectors, files)
-    - Keeps Qdrant collection and MinIO bucket intact
+    - Remains searchable and accessible
     - Can be reactivated later with /activate
 
     Args:
-        case_id: Case ID
+        case_gid: Case GID (22-char base62 string)
         case_service: Case service dependency
 
     Returns:
@@ -300,12 +301,12 @@ async def unload_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.unload_case(case_id)
+        case = case_service.close_case(case_gid)
         return CaseStatusUpdate(
             id=case.id,
             case_number=case.case_number,
             status=case.status,
-            message=f"Case '{case.case_number}' unloaded successfully",
+            message=f"Case '{case.case_number}' closed successfully",
         )
     except CaseNotFoundError as e:
         raise HTTPException(
@@ -315,13 +316,13 @@ async def unload_case(
 
 
 @router.delete(
-    "/{case_id}",
+    "/{case_gid}",
     response_model=CaseDeleteResponse,
     summary="Delete case",
     description="Permanently delete a case and all associated resources",
 )
 async def delete_case(
-    case_id: int,
+    case_gid: str,
     case_service: CaseService = Depends(get_case_service),
 ):
     """
@@ -336,7 +337,7 @@ async def delete_case(
     WARNING: This operation is irreversible.
 
     Args:
-        case_id: Case ID
+        case_gid: Case GID (22-char base62 string)
         case_service: Case service dependency
 
     Returns:
@@ -346,12 +347,12 @@ async def delete_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.get_case(case_id)
+        case = case_service.get_case(case_gid)
         case_number = case.case_number
-        case_service.delete_case(case_id)
+        case_service.delete_case(case_gid)
 
         return CaseDeleteResponse(
-            id=case_id,
+            id=case.id,
             case_number=case_number,
             message=f"Case '{case_number}' and all associated resources deleted successfully",
             deleted_at=datetime.utcnow(),
