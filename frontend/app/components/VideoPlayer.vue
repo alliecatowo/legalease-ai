@@ -333,6 +333,12 @@ function drawSegmentTimeline() {
     duration: duration.value
   })
 
+  // Don't draw if canvas is too small (likely not rendered yet)
+  if (rect.width < 100) {
+    console.log('Canvas too small, skipping draw')
+    return
+  }
+
   canvas.width = rect.width * window.devicePixelRatio
   canvas.height = displayHeight * window.devicePixelRatio
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
@@ -563,8 +569,8 @@ onBeforeUnmount(() => {
         <canvas
           v-if="segments && segments.length > 0"
           ref="timelineCanvasRef"
-          class="absolute bottom-0 left-0 right-0 cursor-pointer z-10"
-          style="height: 12px;"
+          class="absolute bottom-0 left-0 right-0 cursor-pointer z-30"
+          style="height: 12px; display: block !important;"
           @click="handleTimelineClick"
         />
 
