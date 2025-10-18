@@ -706,12 +706,7 @@ onMounted(async () => {
       <!-- Unified Layout for Video and Audio -->
       <div v-else-if="transcript" class="h-full flex flex-col overflow-hidden">
         <!-- Video Player (Collapsible for video files) -->
-        <UCollapsible
-          v-if="isVideoFile"
-          v-model:open="videoPlayerOpen"
-          :unmount-on-hide="false"
-          class="flex-shrink-0 border-b border-default"
-        >
+        <div v-if="isVideoFile" class="flex-shrink-0 border-b border-default">
           <!-- Custom header with video controls -->
           <div class="flex items-center justify-between gap-3 px-4 py-2 bg-elevated border-b border-default">
             <div class="flex items-center gap-3">
@@ -790,27 +785,26 @@ onMounted(async () => {
             </div>
           </div>
 
-          <template #content>
-            <div class="p-4 sm:p-6">
-              <LazyVideoPlayer
-                v-if="transcript.audioUrl"
-                :media-url="transcript.audioUrl"
-                media-type="video"
-                :transcription-id="transcript.id"
-                :current-time="currentTime"
-                :segments="transcript.segments"
-                :selected-segment-id="selectedSegment?.id"
-                :key-moments="keyMoments"
-                :size="videoSize"
-                :hide-controls="true"
-                @update:current-time="currentTime = $event"
-                @update:is-playing="isPlaying = $event"
-                @segment-click="seekToSegment"
-                @waveform-click="handleWaveformClick"
-              />
-            </div>
-          </template>
-        </UCollapsible>
+          <!-- Video player content (collapsible) -->
+          <div v-if="videoPlayerOpen" class="p-4 sm:p-6">
+            <LazyVideoPlayer
+              v-if="transcript.audioUrl"
+              :media-url="transcript.audioUrl"
+              media-type="video"
+              :transcription-id="transcript.id"
+              :current-time="currentTime"
+              :segments="transcript.segments"
+              :selected-segment-id="selectedSegment?.id"
+              :key-moments="keyMoments"
+              :size="videoSize"
+              :hide-controls="true"
+              @update:current-time="currentTime = $event"
+              @update:is-playing="isPlaying = $event"
+              @segment-click="seekToSegment"
+              @waveform-click="handleWaveformClick"
+            />
+          </div>
+        </div>
 
         <!-- Audio Player (Simple for audio-only files) -->
         <div v-else class="flex-shrink-0 p-4 sm:p-6 border-b border-default">
