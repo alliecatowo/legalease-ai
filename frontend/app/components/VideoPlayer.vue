@@ -482,7 +482,7 @@ onBeforeUnmount(() => {
         <video
           ref="videoRef"
           class="w-full h-auto"
-          :class="{ 'opacity-0': !isReady }"
+          :class="{ 'invisible': !isReady }"
           preload="metadata"
           crossorigin="anonymous"
           @loadedmetadata="isMediaReady = true"
@@ -504,14 +504,27 @@ onBeforeUnmount(() => {
             <canvas
               v-if="segments && segments.length > 0"
               ref="timelineCanvasRef"
-              class="absolute bottom-0 left-0 w-full h-1.5 cursor-pointer opacity-0 group-hover/waveform:opacity-100 transition-opacity duration-200"
+              class="absolute bottom-0 left-0 w-full cursor-pointer opacity-0 group-hover/waveform:opacity-100 transition-opacity duration-200"
+              style="height: 6px;"
               @click="handleTimelineClick"
             />
           </div>
         </div>
 
         <!-- Controls Overlay (Hover Only) -->
-        <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+        <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+          <!-- Center Play/Pause Button -->
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-auto">
+            <UButton
+              :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
+              color="primary"
+              size="xl"
+              :disabled="!isMediaReady"
+              class="!size-20 rounded-full shadow-2xl"
+              @click="togglePlayPause"
+            />
+          </div>
+
           <!-- Top Controls -->
           <div class="absolute top-0 left-0 right-0 p-4 flex items-center justify-between pointer-events-auto">
             <!-- Video Size Controls -->
