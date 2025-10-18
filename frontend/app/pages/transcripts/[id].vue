@@ -699,23 +699,25 @@ onMounted(async () => {
             @click="copyTranscriptToClipboard"
           />
 
-          <UDropdownMenu>
+          <UDropdownMenu
+            :items="[
+              [
+                { label: 'Download Original Audio', icon: 'i-lucide-music', onSelect: () => downloadAudio() },
+                { label: 'Export as DOCX', icon: 'i-lucide-file-text', onSelect: () => exportDOCX() },
+                { label: 'Export as SRT', icon: 'i-lucide-subtitles', onSelect: () => exportSRT() },
+                { label: 'Export as VTT', icon: 'i-lucide-captions', onSelect: () => exportVTT() }
+              ],
+              [
+                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => deleteTranscription() }
+              ]
+            ]"
+          >
             <UButton
               icon="i-lucide-download"
               color="primary"
               :loading="isExporting"
               label="Export"
             />
-            <template #content>
-              <div class="p-1">
-                <UButton label="Download Original Audio" icon="i-lucide-music" block variant="ghost" @click="downloadAudio" />
-                <UButton label="Export as DOCX" icon="i-lucide-file-text" block variant="ghost" @click="exportDOCX" />
-                <UButton label="Export as SRT" icon="i-lucide-subtitles" block variant="ghost" @click="exportSRT" />
-                <UButton label="Export as VTT" icon="i-lucide-captions" block variant="ghost" @click="exportVTT" />
-                <UDivider />
-                <UButton label="Delete Transcription" icon="i-lucide-trash-2" color="error" block variant="ghost" @click="deleteTranscription" />
-              </div>
-            </template>
           </UDropdownMenu>
 
           <UButton
