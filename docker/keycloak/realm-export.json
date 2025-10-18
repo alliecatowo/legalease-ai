@@ -1,7 +1,7 @@
 {
   "realm": "legalease",
   "enabled": true,
-  "sslRequired": "none",
+  "sslRequired": "external",
   "registrationAllowed": false,
   "registrationEmailAsUsername": true,
   "loginWithEmailAllowed": true,
