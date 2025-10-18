@@ -382,8 +382,8 @@ watch(() => props.currentTime, (newTime) => {
   if (newTime !== undefined && wavesurfer.value && duration.value > 0) {
     const currentWavesurferTime = wavesurfer.value.getCurrentTime()
     const timeDiff = Math.abs(newTime - currentWavesurferTime)
-    // Only seek if the difference is significant (0.5s threshold to avoid jitter)
-    if (timeDiff > 0.5) {
+    // Only seek if different (small threshold to avoid rounding errors)
+    if (timeDiff > 0.05) {
       isExternalSeek.value = true
       const progress = newTime / duration.value
       wavesurfer.value.seekTo(progress)
