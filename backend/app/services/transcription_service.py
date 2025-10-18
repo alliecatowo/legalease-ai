@@ -139,7 +139,7 @@ class TranscriptionService:
         from app.workers.tasks.transcription import transcribe_audio
 
         options_dict = options.model_dump() if options else {}
-        transcribe_audio.delay(transcription.id, options=options_dict)
+        transcribe_audio.delay(transcription.gid, options=options_dict)
 
         logger.info(f"Created transcription {transcription.gid} and queued task with options: {options_dict}")
 
@@ -300,8 +300,11 @@ class TranscriptionService:
             segments_with_metadata.append(segment_copy)
 
         return {
+            "gid": transcription.gid,
             "id": transcription.id,
             "case_id": transcription.case_id,
+            "case_gid": transcription.case.gid if transcription.case else None,
+            "document_gid": transcription.document.gid if transcription.document else None,
             "filename": transcription.filename,
             "format": transcription.format,
             "duration": transcription.duration,
@@ -310,7 +313,7 @@ class TranscriptionService:
             "status": transcription.status.value if transcription.status else "unknown",
             "created_at": transcription.created_at,
             "uploaded_at": transcription.uploaded_at,
-            "audio_url": f"/api/v1/transcriptions/{transcription.id}/audio",
+            "audio_url": f"/api/v1/transcriptions/{transcription.gid}/audio",
         }
 
     @staticmethod

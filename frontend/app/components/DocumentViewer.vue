@@ -231,11 +231,11 @@ const currentPageHighlights = computed(() => {
 
   // Fallbacks
   if (results.length === 0) {
-  if (props.chunkId !== undefined && props.chunkId !== null) {
-    const targetId = String(props.chunkId)
-    const item = currentPageData.value.items.find(i => String(i.chunk_id) === targetId)
-    if (item) (item.bboxes || []).forEach(e => pushEntry(e, item.text))
-  }
+    if (props.chunkId !== undefined && props.chunkId !== null) {
+      const targetId = String(props.chunkId)
+      const item = currentPageData.value.items.find(i => String(i.chunk_id) === targetId)
+      if (item) (item.bboxes || []).forEach(e => pushEntry(e, item.text))
+    }
     if (results.length === 0 && !q) {
       // No query: show all bboxes on page
       collectBoxesForPage(currentPageData.value).forEach(e => results.push(e))

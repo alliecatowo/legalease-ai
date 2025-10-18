@@ -90,7 +90,7 @@ const filteredTranscriptions = computed(() => {
 
   // Case filter
   if (selectedCase.value) {
-    result = result.filter((t: any) => t.case_id === selectedCase.value)
+    result = result.filter((t: any) => t.case_gid === selectedCase.value)
   }
 
   // Date range filter
@@ -196,9 +196,9 @@ function formatDate(dateStr: string) {
 }
 
 // Delete transcription
-async function deleteTranscription(id: string) {
+async function deleteTranscription(gid: string) {
   try {
-    await api.transcriptions.delete(id)
+    await api.transcriptions.delete(gid)
     toast.add({
       title: 'Success',
       description: 'Transcription deleted successfully',
@@ -215,9 +215,9 @@ async function deleteTranscription(id: string) {
 }
 
 // Download transcription
-async function downloadTranscription(id: string, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') {
+async function downloadTranscription(gid: string, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') {
   try {
-    const response = await api.transcriptions.download(id, format)
+    const response = await api.transcriptions.download(gid, format)
     // Handle download
     toast.add({
       title: 'Success',
@@ -498,7 +498,7 @@ async function uploadTranscript() {
         <div v-if="viewMode === 'grid' && filteredTranscriptions.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <UCard
             v-for="trans in filteredTranscriptions"
-            :key="trans.id"
+            :key="trans.gid"
             class="h-full shadow-md hover:shadow-xl transition-all duration-300 border-l-4 group cursor-pointer"
             :class="{
               'border-success bg-gradient-to-br from-success/5 to-transparent': trans.status === 'completed',
@@ -506,7 +506,7 @@ async function uploadTranscript() {
               'border-error bg-gradient-to-br from-error/5 to-transparent': trans.status === 'failed',
               'border-info bg-gradient-to-br from-info/5 to-transparent': trans.status === 'queued'
             }"
-            @click="$router.push(`/transcripts/${trans.id}`)"
+            @click="$router.push(`/transcripts/${trans.gid}`)"
           >
             <template #header>
               <div class="flex items-start gap-3">
@@ -544,7 +544,7 @@ async function uploadTranscript() {
                     color="error"
                     variant="ghost"
                     size="sm"
-                    @click.stop="deleteTranscription(trans.id)"
+                    @click.stop="deleteTranscription(trans.gid)"
                   />
                 </UTooltip>
               </div>
@@ -593,9 +593,9 @@ async function uploadTranscript() {
         <div v-if="viewMode === 'list' && filteredTranscriptions.length > 0" class="space-y-2">
           <UCard
             v-for="trans in filteredTranscriptions"
-            :key="trans.id"
+            :key="trans.gid"
             class="hover:shadow-md transition-shadow duration-200 cursor-pointer"
-            @click="$router.push(`/transcripts/${trans.id}`)"
+            @click="$router.push(`/transcripts/${trans.gid}`)"
           >
             <div class="flex items-center gap-4">
               <div
@@ -648,7 +648,7 @@ async function uploadTranscript() {
                   color="error"
                   variant="ghost"
                   size="sm"
-                  @click.stop="deleteTranscription(trans.id)"
+                  @click.stop="deleteTranscription(trans.gid)"
                 />
               </UTooltip>
             </div>

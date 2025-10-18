@@ -669,13 +669,13 @@ export function useSharedDocument(documentId: Ref<string | number> | string | nu
  * Get computed transcription by ID
  * Useful for finding a specific transcription from the cache
  */
-export function useSharedTranscription(transcriptionId: Ref<number> | number) {
+export function useSharedTranscription(transcriptionGid: Ref<string | number> | string | number) {
   const { transcriptions } = useSharedData()
-  const id = computed(() => typeof transcriptionId === 'object' ? transcriptionId.value : transcriptionId)
+  const gid = computed(() => typeof transcriptionGid === 'object' ? String(transcriptionGid.value) : String(transcriptionGid))
 
   const transcriptionItem = computed(() => {
     if (!transcriptions.data.value?.transcriptions) return null
-    return transcriptions.data.value.transcriptions.find(t => t.id === id.value) || null
+    return transcriptions.data.value.transcriptions.find(t => String(t.gid) === gid.value) || null
   })
 
   return {

@@ -150,6 +150,7 @@ class TranscriptionUploadResponse(BaseModel):
 
     message: str = Field(..., description="Upload status message")
     transcription_gid: str = Field(..., description="Created transcription global identifier")
+    transcription_id: Optional[str] = Field(None, description="Internal transcription UUID identifier")
     status: str = Field(..., description="Processing status")
 
 

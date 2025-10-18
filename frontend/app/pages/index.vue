@@ -164,7 +164,7 @@ const caseOptions = computed(() => [
   { label: 'All Cases', value: null },
   ...(casesData.value?.cases || []).map((c: any) => ({
     label: c.name,
-    value: c.id
+    value: c.gid
   }))
 ])
 

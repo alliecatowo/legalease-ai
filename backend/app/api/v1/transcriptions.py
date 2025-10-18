@@ -238,7 +238,8 @@ async def upload_audio_for_transcription(
 
     return TranscriptionUploadResponse(
         message=f"Audio/video file '{file.filename}' uploaded successfully. Transcription queued.",
-        transcription_id=transcription.id,
+        transcription_gid=transcription.gid,
+        transcription_id=str(transcription.id),
         status="queued",
     )
 
