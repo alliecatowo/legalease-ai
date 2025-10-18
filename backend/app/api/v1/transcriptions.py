@@ -439,19 +439,26 @@ def download_audio(
             }
         )
 
-    # No range requested - return full file with 200 OK
-    # For large files, browsers will typically follow up with Range requests
-    logger.info(f"Serving full file ({file_size} bytes) for {filename}")
+    # No range requested - stream full file from MinIO
+    # For large files, avoid loading into memory by using iterator
+    logger.info(f"Streaming full file ({file_size} bytes) for {filename}")
 
-    # For full file, use the old method that loads into memory
-    # Could be optimized further with chunked streaming, but browsers typically
-    # send Range requests immediately after getting the file size
-    content, _, _ = TranscriptionService.download_audio(
-        transcription_gid=transcription_gid, db=db
-    )
+    # Create a generator that streams the file in chunks from MinIO
+    def generate_chunks():
+        """Stream file in 1MB chunks from MinIO without loading into memory."""
+        chunk_size = 1024 * 1024  # 1MB chunks
+        offset = 0
+
+        while offset < file_size:
+            length = min(chunk_size, file_size - offset)
+            chunk = TranscriptionService.stream_media_range(
+                file_path=file_path, offset=offset, length=length
+            )
+            yield chunk
+            offset += length
 
     return StreamingResponse(
-        io.BytesIO(content),
+        generate_chunks(),
         media_type=content_type,
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
