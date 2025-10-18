@@ -637,7 +637,7 @@ onMounted(async () => {
                 {
                   label: 'Download Original Audio',
                   icon: 'i-lucide-music',
-                  click: async () => {
+                  onSelect: async () => {
                     if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Downloading...', description: 'Fetching original audio file', color: 'primary' })
@@ -658,7 +658,7 @@ onMounted(async () => {
                 {
                   label: 'Export as DOCX',
                   icon: 'i-lucide-file-text',
-                  click: async () => {
+                  onSelect: async () => {
                     if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Exporting...', description: 'Generating DOCX file', color: 'primary' })
@@ -679,7 +679,7 @@ onMounted(async () => {
                 {
                   label: 'Export as SRT',
                   icon: 'i-lucide-subtitles',
-                  click: async () => {
+                  onSelect: async () => {
                     if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Exporting...', description: 'Generating SRT file', color: 'primary' })
@@ -700,7 +700,7 @@ onMounted(async () => {
                 {
                   label: 'Export as VTT',
                   icon: 'i-lucide-captions',
-                  click: async () => {
+                  onSelect: async () => {
                     if (!transcript.value) return
                     isExporting.value = true
                     toast.add({ title: 'Exporting...', description: 'Generating VTT file', color: 'primary' })
@@ -720,7 +720,7 @@ onMounted(async () => {
                 }
               ],
               [
-                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
+                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', onSelect: deleteTranscription, class: 'text-error' }
               ]
             ]"
           >
