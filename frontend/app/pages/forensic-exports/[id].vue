@@ -581,12 +581,21 @@ onMounted(() => {
                     </div>
                   </div>
                   <div>
-                    <p class="text-xs text-muted mb-1">Database ID</p>
-                    <p class="font-medium text-highlighted">{{ exportData.id }}</p>
+                    <p class="text-xs text-muted mb-1">Export GID</p>
+                    <p class="font-medium text-highlighted font-mono break-all">{{ exportData.gid }}</p>
                   </div>
                   <div>
-                    <p class="text-xs text-muted mb-1">Case ID</p>
-                    <p class="font-medium text-highlighted">{{ exportData.case_id }}</p>
+                    <p class="text-xs text-muted mb-1">Case</p>
+                    <div class="flex items-center gap-2">
+                      <NuxtLink
+                        v-if="exportData.case_gid"
+                        :to="`/cases/${exportData.case_gid}`"
+                        class="text-primary hover:underline"
+                      >
+                        {{ exportData.case_name || exportData.case_gid }}
+                      </NuxtLink>
+                      <span v-else class="font-medium text-highlighted">Unknown Case</span>
+                    </div>
                   </div>
                 </div>
               </UCard>

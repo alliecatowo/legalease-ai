@@ -49,6 +49,7 @@ class ForensicExportResponse(ForensicExportBase):
 
     gid: str = Field(..., description="Forensic export global identifier")
     case_gid: str = Field(..., description="Case global identifier")
+    case_name: Optional[str] = Field(None, description="Case name for display")
     summary_json: Optional[List[SummaryField]] = Field(None, description="Full summary array from JSON")
     export_options_json: Optional[List[ExportOption]] = Field(None, description="Export options from JSON")
     problems_json: Optional[List[Any]] = Field(None, description="Problems array from JSON")
@@ -63,6 +64,7 @@ class ForensicExportListItem(BaseModel):
 
     gid: str = Field(..., description="Forensic export global identifier")
     case_gid: str = Field(..., description="Case global identifier")
+    case_name: Optional[str] = Field(None, description="Case name for display")
     folder_name: Optional[str]
     export_uuid: Optional[str]
     total_records: Optional[int]

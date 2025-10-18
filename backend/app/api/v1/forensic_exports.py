@@ -43,9 +43,26 @@ async def list_exports_for_case(
         List of forensic exports for the case
     """
     exports = ForensicExportService.list_exports_for_case(case_gid, db)
+    items = [
+        ForensicExportListItem(
+            gid=export.gid,
+            case_gid=export.case.gid if export.case else case_gid,
+            case_name=export.case.name if export.case else None,
+            folder_name=export.folder_name,
+            export_uuid=export.export_uuid,
+            total_records=export.total_records,
+            exported_records=export.exported_records,
+            num_attachments=export.num_attachments,
+            size_bytes=export.size_bytes,
+            export_status=export.export_status,
+            discovered_at=export.discovered_at,
+            last_verified_at=export.last_verified_at,
+        )
+        for export in exports
+    ]
     return ForensicExportListResponse(
-        exports=exports,
-        total=len(exports)
+        exports=items,
+        total=len(items)
     )
 
 
@@ -68,9 +85,26 @@ async def list_all_exports(
         List of all forensic exports
     """
     exports = ForensicExportService.list_all_exports(db)
+    items = [
+        ForensicExportListItem(
+            gid=export.gid,
+            case_gid=export.case.gid if export.case else None,
+            case_name=export.case.name if export.case else None,
+            folder_name=export.folder_name,
+            export_uuid=export.export_uuid,
+            total_records=export.total_records,
+            exported_records=export.exported_records,
+            num_attachments=export.num_attachments,
+            size_bytes=export.size_bytes,
+            export_status=export.export_status,
+            discovered_at=export.discovered_at,
+            last_verified_at=export.last_verified_at,
+        )
+        for export in exports
+    ]
     return ForensicExportListResponse(
-        exports=exports,
-        total=len(exports)
+        exports=items,
+        total=len(items)
     )
 
 
@@ -104,7 +138,30 @@ async def get_export(
             detail=f"Forensic export {export_gid} not found"
         )
 
-    return export
+    return ForensicExportResponse(
+        gid=export.gid,
+        case_gid=export.case.gid if export.case else None,
+        case_name=export.case.name if export.case else None,
+        folder_path=export.folder_path,
+        folder_name=export.folder_name,
+        export_uuid=export.export_uuid,
+        axiom_version=export.axiom_version,
+        total_records=export.total_records,
+        exported_records=export.exported_records,
+        num_attachments=export.num_attachments,
+        export_start_date=export.export_start_date,
+        export_end_date=export.export_end_date,
+        export_duration=export.export_duration,
+        size_bytes=export.size_bytes,
+        export_status=export.export_status,
+        case_directory=export.case_directory,
+        case_storage_location=export.case_storage_location,
+        summary_json=export.summary_json,
+        export_options_json=export.export_options_json,
+        problems_json=export.problems_json,
+        discovered_at=export.discovered_at,
+        last_verified_at=export.last_verified_at,
+    )
 
 
 @router.post(

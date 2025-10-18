@@ -129,10 +129,10 @@ export interface ForensicExportListResponse {
  * Individual forensic export item from API
  */
 export interface ForensicExportItem {
-  id: number
+  gid: string
   folder_name: string
   export_uuid?: string
-  case_id: number
+  case_gid: string
   case_name?: string
   total_records?: number
   num_attachments?: number
@@ -418,10 +418,10 @@ export function useSharedData() {
 
       // Enrich exports with case names from the cases cache
       const enriched = (response.exports || []).map((exp: any) => {
-        const caseItem = casesData.value?.cases?.find((c: any) => c.id === exp.case_id)
+        const caseItem = casesData.value?.cases?.find((c: any) => c.gid === exp.case_gid)
         return {
           ...exp,
-          case_name: caseItem?.name || `Case ${exp.case_id}`
+          case_name: exp.case_name || caseItem?.name || `Case ${exp.case_gid}`
         }
       })
 
