@@ -350,6 +350,14 @@ defineExpose({
 let resizeObserver: ResizeObserver | null = null
 let timelineObserver: ResizeObserver | null = null
 
+// Optimized: Throttle canvas redraws to avoid excessive rendering during resize
+const throttledRedraw = useThrottleFn(() => {
+  drawSegmentTimeline()
+  drawKeyMomentsOverlay()
+}, 100)
+
+const throttledTimelineRedraw = useThrottleFn(drawSegmentTimeline, 100)
+
 onMounted(async () => {
   if (isVideo.value) {
     await nextTick()
@@ -368,15 +376,12 @@ onMounted(async () => {
 
   await nextTick()
   if (waveformRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      drawSegmentTimeline()
-      drawKeyMomentsOverlay()
-    })
+    resizeObserver = new ResizeObserver(throttledRedraw)
     resizeObserver.observe(waveformRef.value)
   }
 
   if (timelineCanvasRef.value) {
-    timelineObserver = new ResizeObserver(drawSegmentTimeline)
+    timelineObserver = new ResizeObserver(throttledTimelineRedraw)
     timelineObserver.observe(timelineCanvasRef.value)
   }
 })

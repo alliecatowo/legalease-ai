@@ -51,7 +51,16 @@ const videoSize = ref<'small' | 'theater'>('theater')
 const videoPlayerRef = ref<any>(null)
 
 // Perform smart search using backend API
+// Optimized: Add abort controller to cancel stale requests
+let searchAbortController: AbortController | null = null
+
 async function performSmartSearch() {
+  // Cancel any previous pending search request
+  if (searchAbortController) {
+    searchAbortController.abort()
+  }
+  searchAbortController = new AbortController()
+
   if (!transcript.value || !searchQuery.value.trim()) {
     searchResults.value = new Set()
     return
@@ -73,7 +82,9 @@ async function performSmartSearch() {
       searchRequest.document_gids = [docId]
     }
 
-    const response = await api.search.hybrid(searchRequest)
+    const response = await api.search.hybrid(searchRequest, {
+      signal: searchAbortController.signal
+    })
 
     const segmentIndices = new Set<number>()
     response.results?.forEach((result: any) => {
@@ -85,6 +96,9 @@ async function performSmartSearch() {
 
     searchResults.value = segmentIndices
   } catch (err: any) {
+    // Ignore aborted requests
+    if (err.name === 'AbortError') return
+
     console.error('Smart search failed:', err)
     if (process.dev) {
       console.error('Error details:', err.response?._data || err.message)
@@ -92,6 +106,7 @@ async function performSmartSearch() {
     searchResults.value = new Set()
   } finally {
     isSearching.value = false
+    searchAbortController = null
   }
 }
 
@@ -126,46 +141,66 @@ watch([searchQuery, searchMode], () => {
 })
 
 // Auto-scroll to follow active segment
+// Optimized: Use Map for O(1) segment lookup instead of O(n) findIndex
 watch(activeSegmentId, (newSegmentId) => {
   if (!autoScrollEnabled.value || !newSegmentId || !transcript.value) return
 
-  const index = filteredSegments.value.findIndex(s => s.id === newSegmentId)
+  const index = segmentIndexMap.value.get(newSegmentId)
 
-  if (index !== -1 && rowVirtualizer.value) {
+  if (index !== undefined && rowVirtualizer.value) {
     // Use 'center' alignment for better visibility of context
     rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 })
 
 // Computed
+// Optimized: Pre-compute segment ID to index map for O(1) lookups
+const segmentIndexMap = computed(() => {
+  const map = new Map<string, number>()
+  filteredSegments.value.forEach((seg, index) => {
+    map.set(seg.id, index)
+  })
+  return map
+})
+
+// Optimized: Pre-compute searchable text for fast filtering
+const searchableSegments = computed(() => {
+  if (!transcript.value) return []
+  return transcript.value.segments.map((seg, index) => ({
+    segment: seg,
+    index,
+    searchText: `${seg.text} ${getSpeaker(seg.speaker)?.name || ''}`.toLowerCase()
+  }))
+})
+
 const filteredSegments = computed(() => {
   if (!transcript.value) return []
 
-  let segments = transcript.value.segments
+  let filtered = searchableSegments.value
 
+  // Apply search filter
   if (searchQuery.value.trim()) {
     if (searchMode.value === 'smart') {
       if (!isSearching.value) {
-        segments = segments.filter((s, index) => searchResults.value.has(index))
+        filtered = filtered.filter(item => searchResults.value.has(item.index))
       }
     } else {
       const query = searchQuery.value.toLowerCase()
-      segments = segments.filter(s =>
-        s.text.toLowerCase().includes(query) ||
-        (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
-      )
+      filtered = filtered.filter(item => item.searchText.includes(query))
     }
   }
 
+  // Apply speaker filter
   if (selectedSpeaker.value) {
-    segments = segments.filter(s => s.speaker === selectedSpeaker.value)
+    filtered = filtered.filter(item => item.segment.speaker === selectedSpeaker.value)
   }
 
+  // Apply key moments filter
   if (showOnlyKeyMoments.value) {
-    segments = segments.filter(s => s.isKeyMoment)
+    filtered = filtered.filter(item => item.segment.isKeyMoment)
   }
 
-  return segments
+  return filtered.map(item => item.segment)
 })
 
 // TanStack Virtual Setup
@@ -196,19 +231,32 @@ const keyMoments = computed(() => {
   return transcript.value.segments.filter(s => s.isKeyMoment)
 })
 
+// Optimized: Cache word counts to avoid repeated string splitting
 const transcriptStats = computed(() => {
   if (!transcript.value) return null
 
-  const totalWords = transcript.value.segments.reduce((acc, seg) => {
-    return acc + seg.text.split(/\s+/).length
-  }, 0)
+  // Pre-compute word counts per segment to avoid re-splitting strings
+  const segmentWordCounts = new Map<string, number>()
+  const segmentsBySpeaker = new Map<string, typeof transcript.value.segments>()
+  let totalWords = 0
 
+  // Single pass through segments to compute word counts and group by speaker
+  transcript.value.segments.forEach(seg => {
+    const wordCount = seg.text.split(/\s+/).filter(w => w.length > 0).length
+    segmentWordCounts.set(seg.id, wordCount)
+    totalWords += wordCount
+
+    if (!segmentsBySpeaker.has(seg.speaker)) {
+      segmentsBySpeaker.set(seg.speaker, [])
+    }
+    segmentsBySpeaker.get(seg.speaker)!.push(seg)
+  })
+
+  // Compute speaker stats using cached data
   const speakerStats = transcript.value.speakers.map(speaker => {
-    const speakerSegments = transcript.value!.segments.filter(s => s.speaker === speaker.id)
+    const speakerSegments = segmentsBySpeaker.get(speaker.id) || []
     const speakingTime = speakerSegments.reduce((acc, seg) => acc + (seg.end - seg.start), 0)
-    const wordCount = speakerSegments.reduce((acc, seg) => {
-      return acc + seg.text.split(/\s+/).length
-    }, 0)
+    const wordCount = speakerSegments.reduce((acc, seg) => acc + (segmentWordCounts.get(seg.id) || 0), 0)
 
     return {
       speaker,
