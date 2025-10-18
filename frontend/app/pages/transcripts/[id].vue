@@ -303,6 +303,74 @@ async function downloadFile(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+async function downloadAudio() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Downloading...', description: 'Fetching original audio file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/audio`)
+    if (!response.ok) throw new Error('Download failed')
+    const blob = await response.blob()
+    await downloadFile(blob, transcript.value.title)
+    toast.add({ title: 'Download complete', description: 'Audio file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Download failed', description: error.message || 'Failed to download audio', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function exportDOCX() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Exporting...', description: 'Generating DOCX file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/docx`)
+    if (!response.ok) throw new Error('Export failed')
+    const blob = await response.blob()
+    await downloadFile(blob, `${transcript.value.title}_transcription.docx`)
+    toast.add({ title: 'Export complete', description: 'DOCX file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function exportSRT() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Exporting...', description: 'Generating SRT file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/srt`)
+    if (!response.ok) throw new Error('Export failed')
+    const blob = await response.blob()
+    await downloadFile(blob, `${transcript.value.title}_transcription.srt`)
+    toast.add({ title: 'Export complete', description: 'SRT file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function exportVTT() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Exporting...', description: 'Generating VTT file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/vtt`)
+    if (!response.ok) throw new Error('Export failed')
+    const blob = await response.blob()
+    await downloadFile(blob, `${transcript.value.title}_transcription.vtt`)
+    toast.add({ title: 'Export complete', description: 'VTT file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
 async function toggleKeyMoment(segmentId: string) {
   if (!transcript.value) return
 
@@ -631,105 +699,23 @@ onMounted(async () => {
             @click="copyTranscriptToClipboard"
           />
 
-          <UDropdownMenu
-            :items="[
-              [
-                {
-                  label: 'Download Original Audio',
-                  icon: 'i-lucide-music',
-                  onSelect: async () => {
-                    if (!transcript.value) return
-                    isExporting.value = true
-                    toast.add({ title: 'Downloading...', description: 'Fetching original audio file', color: 'primary' })
-                    try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/audio`)
-                      if (!response.ok) throw new Error('Download failed')
-                      const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.value.title}`)
-                      toast.add({ title: 'Download complete', description: 'Audio file downloaded', color: 'success' })
-                    } catch (error: any) {
-                      toast.add({ title: 'Download failed', description: error.message || 'Failed to download audio', color: 'error' })
-                    } finally {
-                      isExporting.value = false
-                      showExportMenu.value = false
-                    }
-                  }
-                },
-                {
-                  label: 'Export as DOCX',
-                  icon: 'i-lucide-file-text',
-                  onSelect: async () => {
-                    if (!transcript.value) return
-                    isExporting.value = true
-                    toast.add({ title: 'Exporting...', description: 'Generating DOCX file', color: 'primary' })
-                    try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/docx`)
-                      if (!response.ok) throw new Error('Export failed')
-                      const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.value.title}_transcription.docx`)
-                      toast.add({ title: 'Export complete', description: 'DOCX file downloaded', color: 'success' })
-                    } catch (error: any) {
-                      toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
-                    } finally {
-                      isExporting.value = false
-                      showExportMenu.value = false
-                    }
-                  }
-                },
-                {
-                  label: 'Export as SRT',
-                  icon: 'i-lucide-subtitles',
-                  onSelect: async () => {
-                    if (!transcript.value) return
-                    isExporting.value = true
-                    toast.add({ title: 'Exporting...', description: 'Generating SRT file', color: 'primary' })
-                    try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/srt`)
-                      if (!response.ok) throw new Error('Export failed')
-                      const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.value.title}_transcription.srt`)
-                      toast.add({ title: 'Export complete', description: 'SRT file downloaded', color: 'success' })
-                    } catch (error: any) {
-                      toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
-                    } finally {
-                      isExporting.value = false
-                      showExportMenu.value = false
-                    }
-                  }
-                },
-                {
-                  label: 'Export as VTT',
-                  icon: 'i-lucide-captions',
-                  onSelect: async () => {
-                    if (!transcript.value) return
-                    isExporting.value = true
-                    toast.add({ title: 'Exporting...', description: 'Generating VTT file', color: 'primary' })
-                    try {
-                      const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/vtt`)
-                      if (!response.ok) throw new Error('Export failed')
-                      const blob = await response.blob()
-                      await downloadFile(blob, `${transcript.value.title}_transcription.vtt`)
-                      toast.add({ title: 'Export complete', description: 'VTT file downloaded', color: 'success' })
-                    } catch (error: any) {
-                      toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
-                    } finally {
-                      isExporting.value = false
-                      showExportMenu.value = false
-                    }
-                  }
-                }
-              ],
-              [
-                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', onSelect: deleteTranscription, class: 'text-error' }
-              ]
-            ]"
-          >
+          <UDropdownMenu>
             <UButton
               icon="i-lucide-download"
               color="primary"
               :loading="isExporting"
               label="Export"
             />
+            <template #content>
+              <div class="p-1">
+                <UButton label="Download Original Audio" icon="i-lucide-music" block variant="ghost" @click="downloadAudio" />
+                <UButton label="Export as DOCX" icon="i-lucide-file-text" block variant="ghost" @click="exportDOCX" />
+                <UButton label="Export as SRT" icon="i-lucide-subtitles" block variant="ghost" @click="exportSRT" />
+                <UButton label="Export as VTT" icon="i-lucide-captions" block variant="ghost" @click="exportVTT" />
+                <UDivider />
+                <UButton label="Delete Transcription" icon="i-lucide-trash-2" color="error" block variant="ghost" @click="deleteTranscription" />
+              </div>
+            </template>
           </UDropdownMenu>
 
           <UButton
