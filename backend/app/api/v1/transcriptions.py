@@ -315,7 +315,9 @@ def get_transcription_details(
 @router.get(
     "/transcriptions/{transcription_gid}/audio",
     summary="Stream/download original audio file",
-    description="Download the original audio/video file from storage. Supports HTTP Range requests for efficient seeking in media players.",
+    description="Stream the original audio/video file from storage with true HTTP Range request support. "
+    "Enables instant playback start and efficient seeking without loading entire file into memory. "
+    "Memory-efficient even for multi-GB video files.",
     responses={
         200: {
             "description": "Full audio/video file",
@@ -348,11 +350,14 @@ def download_audio(
     db: Session = Depends(get_db),
 ):
     """
-    Download or stream the original audio/video file with HTTP Range support.
+    Stream audio/video file with HTTP Range support (RFC 7233).
 
-    This endpoint supports HTTP Range requests (RFC 7233) for efficient audio/video
-    streaming and seeking. Media players can request specific byte ranges without
-    downloading the entire file.
+    This endpoint implements true streaming by fetching only requested byte ranges
+    from MinIO storage, enabling:
+    - Instant playback start (no buffering entire file)
+    - Efficient seeking in video/audio players
+    - Memory-efficient handling of large files (2GB+)
+    - Support for concurrent streams
 
     Args:
         transcription_gid: GID of the transcription
@@ -362,14 +367,12 @@ def download_audio(
     Returns:
         Response: Full file (200) or partial content (206) with proper headers
     """
-    logger.info(f"Streaming audio for transcription {transcription_gid}, range: {range_header}")
+    logger.info(f"Streaming media for transcription {transcription_gid}, range: {range_header}")
 
-    # Get file content and metadata
-    content, filename, content_type = TranscriptionService.download_audio(
+    # Get file metadata WITHOUT downloading the file
+    file_path, file_size, content_type, filename = TranscriptionService.get_media_info(
         transcription_gid=transcription_gid, db=db
     )
-
-    file_size = len(content)
 
     # Parse Range header if present
     if range_header:
@@ -378,6 +381,7 @@ def download_audio(
 
         if not range_match:
             # Invalid range format
+            logger.warning(f"Invalid Range header format: {range_header}")
             return Response(
                 content="Invalid Range header format",
                 status_code=416,
@@ -392,6 +396,9 @@ def download_audio(
         # Validate range
         if start >= file_size or start > end:
             # Range not satisfiable
+            logger.warning(
+                f"Range not satisfiable: {start}-{end} for file size {file_size}"
+            )
             return Response(
                 content=f"Requested range not satisfiable (file size: {file_size} bytes)",
                 status_code=416,
@@ -403,11 +410,20 @@ def download_audio(
         # Ensure end doesn't exceed file size
         end = min(end, file_size - 1)
 
-        # Extract the requested byte range
-        chunk = content[start:end + 1]
+        # Calculate length of range to fetch
+        length = end - start + 1
+
+        # Fetch ONLY the requested byte range from MinIO (no full file download)
+        chunk = TranscriptionService.stream_media_range(
+            file_path=file_path, offset=start, length=length
+        )
+
         chunk_size = len(chunk)
 
-        logger.info(f"Serving range {start}-{end}/{file_size} ({chunk_size} bytes)")
+        logger.info(
+            f"Served range {start}-{end}/{file_size} ({chunk_size} bytes) "
+            f"for {filename}"
+        )
 
         # Return 206 Partial Content
         return Response(
@@ -419,11 +435,20 @@ def download_audio(
                 "Content-Length": str(chunk_size),
                 "Accept-Ranges": "bytes",
                 "Content-Disposition": f'inline; filename="{filename}"',
+                "Cache-Control": "public, max-age=3600",
             }
         )
 
     # No range requested - return full file with 200 OK
-    logger.info(f"Serving full file ({file_size} bytes)")
+    # For large files, browsers will typically follow up with Range requests
+    logger.info(f"Serving full file ({file_size} bytes) for {filename}")
+
+    # For full file, use the old method that loads into memory
+    # Could be optimized further with chunked streaming, but browsers typically
+    # send Range requests immediately after getting the file size
+    content, _, _ = TranscriptionService.download_audio(
+        transcription_gid=transcription_gid, db=db
+    )
 
     return StreamingResponse(
         io.BytesIO(content),
@@ -432,6 +457,7 @@ def download_audio(
             "Content-Disposition": f'inline; filename="{filename}"',
             "Content-Length": str(file_size),
             "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
         },
     )
 

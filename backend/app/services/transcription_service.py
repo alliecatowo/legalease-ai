@@ -230,6 +230,9 @@ class TranscriptionService:
         """
         Download the original audio/video file from MinIO.
 
+        WARNING: This loads the entire file into memory. Use get_media_info() and
+        stream_media_range() for large files to support streaming and Range requests.
+
         Args:
             transcription_gid: GID of the transcription
             db: Database session
@@ -261,6 +264,95 @@ class TranscriptionService:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to download audio: {str(e)}",
+            )
+
+    @staticmethod
+    def get_media_info(transcription_gid: str, db: Session) -> tuple[str, int, str, str]:
+        """
+        Get media file information for streaming without downloading the file.
+
+        This enables efficient Range request support by getting file metadata
+        without loading the entire file into memory.
+
+        Args:
+            transcription_gid: GID of the transcription
+            db: Database session
+
+        Returns:
+            tuple: (file_path, file_size, content_type, filename)
+
+        Raises:
+            HTTPException: If transcription not found or file info unavailable
+        """
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
+
+        try:
+            file_size = minio_client.get_object_size(transcription.file_path)
+            logger.info(
+                f"Retrieved media info for transcription {transcription_gid}: "
+                f"{transcription.filename} ({file_size} bytes)"
+            )
+
+            return (
+                transcription.file_path,
+                file_size,
+                transcription.mime_type or "application/octet-stream",
+                transcription.filename,
+            )
+
+        except S3Error as e:
+            logger.error(
+                f"MinIO error getting media info for transcription {transcription_gid}: {str(e)}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get media information from storage: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(
+                f"Error getting media info for transcription {transcription_gid}: {str(e)}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get media information: {str(e)}",
+            )
+
+    @staticmethod
+    def stream_media_range(file_path: str, offset: int, length: int) -> bytes:
+        """
+        Stream a specific byte range from a media file without loading the entire file.
+
+        This enables true HTTP Range request support for video/audio streaming,
+        allowing instant playback start and efficient seeking.
+
+        Args:
+            file_path: MinIO object path
+            offset: Starting byte position
+            length: Number of bytes to read
+
+        Returns:
+            bytes: Requested byte range
+
+        Raises:
+            HTTPException: If range request fails
+        """
+        try:
+            logger.debug(
+                f"Streaming media range from {file_path}: offset={offset}, length={length}"
+            )
+            return minio_client.get_object_range(file_path, offset, length)
+
+        except S3Error as e:
+            logger.error(f"MinIO error streaming media range from {file_path}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to stream media range from storage: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(f"Error streaming media range from {file_path}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to stream media range: {str(e)}",
             )
 
     @staticmethod

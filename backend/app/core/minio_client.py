@@ -158,6 +158,63 @@ class MinIOClient:
             logger.error(f"Error writing file to {local_path}: {e}")
             raise
 
+    def get_object_range(self, object_name: str, offset: int, length: int) -> bytes:
+        """
+        Get a specific byte range from a MinIO object without loading the entire file.
+
+        This enables true HTTP Range request support for video/audio streaming,
+        allowing instant playback start and efficient seeking.
+
+        Args:
+            object_name: Name/path of the object in MinIO
+            offset: Starting byte position (0-indexed)
+            length: Number of bytes to read
+
+        Returns:
+            bytes: Requested byte range
+
+        Raises:
+            S3Error: If range request fails
+        """
+        self._initialize()
+        try:
+            logger.debug(f"Fetching range from MinIO: {object_name} (offset={offset}, length={length})")
+            response = self.client.get_object(
+                self.bucket_name,
+                object_name,
+                offset=offset,
+                length=length
+            )
+
+            data = response.read()
+            response.close()
+            response.release_conn()
+            return data
+        except S3Error as e:
+            logger.error(f"Error fetching range from MinIO: {e}")
+            raise
+
+    def get_object_size(self, object_name: str) -> int:
+        """
+        Get the size of an object in MinIO without downloading it.
+
+        Args:
+            object_name: Name/path of the object in MinIO
+
+        Returns:
+            int: Object size in bytes
+
+        Raises:
+            S3Error: If stat fails
+        """
+        self._initialize()
+        try:
+            stat = self.client.stat_object(self.bucket_name, object_name)
+            return stat.size
+        except S3Error as e:
+            logger.error(f"Error getting object size from MinIO: {e}")
+            raise
+
     def delete_file(self, object_name: str) -> None:
         """
         Delete a file from MinIO.
