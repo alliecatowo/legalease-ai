@@ -934,7 +934,7 @@ async function deleteBulk() {
                 <div class="space-y-2">
                   <div
                     v-for="item in scanResults.found"
-                    :key="item.id"
+                    :key="item.gid"
                     class="p-3 bg-success/10 border border-success/20 rounded-lg text-sm"
                   >
                     <p class="font-medium">{{ item.name }}</p>

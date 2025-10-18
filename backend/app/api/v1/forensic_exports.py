@@ -298,7 +298,7 @@ async def delete_export(
     try:
         export = ForensicExportService.delete_export(export_gid, db)
         return DeleteForensicExportResponse(
-            id=export.id,
+            gid=export.gid,
             folder_path=export.folder_path,
             message=f"Export record deleted (files remain at {export.folder_path})"
         )
