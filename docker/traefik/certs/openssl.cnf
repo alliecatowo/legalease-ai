@@ -1,0 +1,22 @@
+[req]
+default_bits = 2048
+distinguished_name = req_distinguished_name
+req_extensions = req_ext
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = Local
+L = Local
+O = LegalEase
+OU = Development
+CN = app.localhost
+
+[req_ext]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = app.localhost
+DNS.2 = auth.localhost
+DNS.3 = api.localhost
+DNS.4 = localhost

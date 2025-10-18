@@ -21,11 +21,8 @@ http:
           - X-CSRF-Token
           - X-Requested-With
         accessControlAllowOriginList:
-          - http://app.localhost
           - https://app.localhost
-          - http://api.localhost
           - https://api.localhost
-          - http://auth.localhost
           - https://auth.localhost
     keycloak-headers:
       headers:
@@ -34,4 +31,6 @@ http:
         customResponseHeaders:
           X-Frame-Options: "SAMEORIGIN"
 tls:
-  certificates: []
+  certificates:
+    - certFile: /etc/traefik/certs/local.crt
+      keyFile: /etc/traefik/certs/local.key

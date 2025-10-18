@@ -8,7 +8,9 @@ interface CaseListResponse {
 
 export const useApi = () => {
   const config = useRuntimeConfig()
-  const baseURL = config.public.apiBase
+  const baseURL = import.meta.server
+    ? (config.apiBase || config.public.apiBase)
+    : config.public.apiBase
 
   const session = useUserSession()
 

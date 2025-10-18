@@ -176,6 +176,16 @@ export interface CacheState<T> {
  */
 export function useSharedData() {
   const api = useApi()
+  const isServer = import.meta.server
+
+  const toPlainError = (error: unknown): Error => {
+    if (error && typeof error === 'object' && 'message' in (error as any)) {
+      const { message, stack } = error as { message?: string; stack?: string }
+      return { message: message || 'Unknown error', stack } as Error
+    }
+
+    return { message: String(error ?? 'Unknown error') } as Error
+  }
 
   // ==========================================================================
   // Singleton State Management (SSR-Safe)
@@ -237,8 +247,10 @@ export function useSharedData() {
       casesData.value = response
       casesLastUpdated.value = Date.now()
     } catch (err) {
-      casesError.value = err instanceof Error ? err : new Error('Failed to fetch cases')
-      console.error('Error fetching cases:', err)
+      casesError.value = toPlainError(err)
+      if (import.meta.client) {
+        console.error('Error fetching cases:', err)
+      }
     } finally {
       casesLoading.value = false
     }
@@ -265,6 +277,7 @@ export function useSharedData() {
    * Refresh cases data - always fetches fresh data
    */
   const refreshCases = async (): Promise<void> => {
+    if (isServer) return
     await fetchCases()
   }
 
@@ -273,6 +286,7 @@ export function useSharedData() {
    * Fetches only if cache is empty or stale
    */
   const getCases = async (forceRefresh: boolean = false): Promise<void> => {
+    if (isServer) return
     if (forceRefresh || !casesData.value || isCasesStale()) {
       await fetchCases()
     }
@@ -297,8 +311,10 @@ export function useSharedData() {
       documentsData.value = response
       documentsLastUpdated.value = Date.now()
     } catch (err) {
-      documentsError.value = err instanceof Error ? err : new Error('Failed to fetch documents')
-      console.error('Error fetching documents:', err)
+      documentsError.value = toPlainError(err)
+      if (import.meta.client) {
+        console.error('Error fetching documents:', err)
+      }
     } finally {
       documentsLoading.value = false
     }
@@ -325,6 +341,7 @@ export function useSharedData() {
    * Refresh documents data - always fetches fresh data
    */
   const refreshDocuments = async (): Promise<void> => {
+    if (isServer) return
     await fetchDocuments()
   }
 
@@ -333,6 +350,7 @@ export function useSharedData() {
    * Fetches only if cache is empty or stale
    */
   const getDocuments = async (forceRefresh: boolean = false): Promise<void> => {
+    if (isServer) return
     if (forceRefresh || !documentsData.value || isDocumentsStale()) {
       await fetchDocuments()
     }
@@ -358,8 +376,10 @@ export function useSharedData() {
       transcriptionsData.value = response
       transcriptionsLastUpdated.value = Date.now()
     } catch (err) {
-      transcriptionsError.value = err instanceof Error ? err : new Error('Failed to fetch transcriptions')
-      console.error('Error fetching transcriptions:', err)
+      transcriptionsError.value = toPlainError(err)
+      if (import.meta.client) {
+        console.error('Error fetching transcriptions:', err)
+      }
     } finally {
       transcriptionsLoading.value = false
     }
@@ -386,6 +406,7 @@ export function useSharedData() {
    * Refresh transcriptions data - always fetches fresh data
    */
   const refreshTranscriptions = async (): Promise<void> => {
+    if (isServer) return
     await fetchTranscriptions()
   }
 
@@ -394,6 +415,7 @@ export function useSharedData() {
    * Fetches only if cache is empty or stale
    */
   const getTranscriptions = async (forceRefresh: boolean = false): Promise<void> => {
+    if (isServer) return
     if (forceRefresh || !transcriptionsData.value || isTranscriptionsStale()) {
       await fetchTranscriptions()
     }
@@ -428,8 +450,10 @@ export function useSharedData() {
       forensicExportsData.value = enriched
       forensicExportsLastUpdated.value = Date.now()
     } catch (err) {
-      forensicExportsError.value = err instanceof Error ? err : new Error('Failed to fetch forensic exports')
-      console.error('Error fetching forensic exports:', err)
+      forensicExportsError.value = toPlainError(err)
+      if (import.meta.client) {
+        console.error('Error fetching forensic exports:', err)
+      }
     } finally {
       forensicExportsLoading.value = false
     }
@@ -456,6 +480,7 @@ export function useSharedData() {
    * Refresh forensic exports data - always fetches fresh data
    */
   const refreshForensicExports = async (): Promise<void> => {
+    if (isServer) return
     await fetchForensicExports()
   }
 
@@ -464,6 +489,7 @@ export function useSharedData() {
    * Fetches only if cache is empty or stale
    */
   const getForensicExports = async (forceRefresh: boolean = false): Promise<void> => {
+    if (isServer) return
     if (forceRefresh || !forensicExportsData.value || isForensicExportsStale()) {
       await fetchForensicExports()
     }

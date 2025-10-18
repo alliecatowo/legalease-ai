@@ -22,6 +22,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
+    apiBase: process.env.NUXT_API_BASE_INTERNAL || 'https://api.localhost',
     session: {
       name: process.env.NUXT_SESSION_NAME || 'legalease-session',
       password: process.env.NUXT_SESSION_PASSWORD || 'please-change-this-session-password-32-chars',
@@ -36,7 +37,7 @@ export default defineNuxtConfig({
     },
     public: {
       appUrl: process.env.NUXT_PUBLIC_APP_URL || 'https://app.localhost',
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'https://api.localhost',
       keycloak: {
         baseUrl: process.env.NUXT_PUBLIC_KEYCLOAK_URL || 'https://auth.localhost',
         realm: process.env.NUXT_PUBLIC_KEYCLOAK_REALM || 'legalease',
@@ -52,7 +53,7 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    '/api/**': {
+    '/api/v1/**': {
       cors: true,
       proxy: {
         to: `${process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000'}/api/**`

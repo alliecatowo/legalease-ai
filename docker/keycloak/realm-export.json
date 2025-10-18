@@ -62,16 +62,10 @@
       "publicClient": true,
       "protocol": "openid-connect",
       "redirectUris": [
-        "https://app.localhost/api/auth/callback",
-        "http://app.localhost/api/auth/callback",
-        "http://localhost:3000/api/auth/callback",
-        "https://localhost:3000/api/auth/callback"
+        "https://app.localhost/api/auth/callback"
       ],
       "webOrigins": [
-        "https://app.localhost",
-        "http://app.localhost",
-        "http://localhost:3000",
-        "+"
+        "https://app.localhost"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
