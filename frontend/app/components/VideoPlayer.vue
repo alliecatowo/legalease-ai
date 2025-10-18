@@ -41,6 +41,7 @@ const volume = ref(1)
 const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
+const lastEmittedTime = ref(0) // Track last time we emitted to avoid feedback loops
 
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
@@ -159,6 +160,7 @@ async function initializeWaveSurfer() {
   // Throttle audioprocess to 100ms instead of 60fps for better performance
   const throttledAudioProcess = useThrottleFn((time: number) => {
     emit('update:currentTime', time)
+    lastEmittedTime.value = time
   }, 100)
 
   wavesurfer.value.on('audioprocess', throttledAudioProcess)
@@ -166,6 +168,7 @@ async function initializeWaveSurfer() {
   wavesurfer.value.on('seek', (progress) => {
     const time = progress * duration.value
     emit('update:currentTime', time)
+    lastEmittedTime.value = time
   })
 
   wavesurfer.value.on('play', () => {
@@ -374,10 +377,11 @@ function formatTime(seconds: number): string {
 // Watch for external currentTime updates
 watch(() => props.currentTime, (newTime) => {
   if (newTime !== undefined && wavesurfer.value) {
-    const currentWavesurferTime = wavesurfer.value.getCurrentTime()
-    // Only seek if the difference is significant (>0.5s) to avoid feedback loops
-    if (Math.abs(newTime - currentWavesurferTime) > 0.5) {
+    // Only seek if this is a real user action (not our own emission)
+    // Check if the new time is different from what we last emitted
+    if (Math.abs(newTime - lastEmittedTime.value) > 0.1) {
       seekTo(newTime)
+      lastEmittedTime.value = newTime
     }
   }
 })
