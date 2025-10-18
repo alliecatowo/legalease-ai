@@ -523,8 +523,8 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Video Player Container (for video files) -->
-    <div v-if="isVideo" :class="videoContainerClass">
-      <div class="relative w-full bg-black rounded-lg overflow-hidden group">
+    <div v-if="isVideo" :class="videoContainerClass" class="group">
+      <div class="relative w-full bg-black rounded-lg overflow-hidden">
         <!-- Video Element -->
         <video
           ref="videoRef"
@@ -536,7 +536,7 @@ onBeforeUnmount(() => {
 
         <!-- Center Play/Pause Button (on hover) -->
         <div
-          class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+          class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30"
         >
           <UButton
             :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
