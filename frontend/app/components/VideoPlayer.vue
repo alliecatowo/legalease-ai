@@ -42,6 +42,7 @@ const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
 const isExternalSeek = ref(false) // Track when we're seeking from external prop change
+let clearSeekTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
@@ -177,9 +178,8 @@ async function initializeWaveSurfer() {
     if (!isExternalSeek.value) {
       const time = progress * duration.value
       emit('update:currentTime', time)
-    } else {
-      isExternalSeek.value = false
     }
+    // Don't clear the flag here - let the timeout handle it
   })
 
   wavesurfer.value.on('play', () => {
@@ -396,10 +396,19 @@ watch(() => props.currentTime, (newTime) => {
     console.log('Seek request:', { newTime, currentTime: currentWavesurferTime, timeDiff, willSeek: timeDiff > 0.01 })
     // Only seek if different (very small threshold to avoid rounding errors but allow all intentional seeks)
     if (timeDiff > 0.01) {
+      // Clear any existing timeout
+      if (clearSeekTimeout) clearTimeout(clearSeekTimeout)
+
       isExternalSeek.value = true
       const progress = newTime / duration.value
       console.log('Seeking to:', { time: newTime, progress })
       wavesurfer.value.seekTo(progress)
+
+      // Clear the flag after a delay to allow seek to complete and prevent emissions
+      clearSeekTimeout = setTimeout(() => {
+        isExternalSeek.value = false
+        clearSeekTimeout = null
+      }, 200)
     }
   }
 })
@@ -437,10 +446,19 @@ function handleTimelineClick(event: MouseEvent) {
   const clickX = event.clientX - rect.left
   const clickTime = (clickX / rect.width) * duration.value
 
+  // Clear any existing timeout
+  if (clearSeekTimeout) clearTimeout(clearSeekTimeout)
+
   // Seek directly to the clicked time
   isExternalSeek.value = true
   const progress = clickTime / duration.value
   wavesurfer.value?.seekTo(progress)
+
+  // Clear the flag after a delay
+  clearSeekTimeout = setTimeout(() => {
+    isExternalSeek.value = false
+    clearSeekTimeout = null
+  }, 200)
 }
 
 // Expose methods
