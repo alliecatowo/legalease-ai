@@ -24,9 +24,20 @@ class KeycloakOIDCVerifier:
         self._jwt = JsonWebToken(["RS256", "ES256"])
 
     @property
-    def issuer(self) -> str:
-        """Return the issuer URL for the configured realm."""
+    def metadata_base_url(self) -> str:
+        """URL to fetch OIDC metadata from (internal Keycloak URL)."""
         return f"{settings.KEYCLOAK_BASE_URL.rstrip('/')}/realms/{settings.KEYCLOAK_REALM}"
+
+    @property
+    def issuer(self) -> str:
+        """Return the issuer URL for token validation.
+
+        Note: Keycloak's issuer is based on its hostname config (KEYCLOAK_HOSTNAME),
+        not the internal URL we use to fetch metadata. We need to match what Keycloak
+        actually puts in the tokens.
+        """
+        # Keycloak uses auth.localhost as its hostname, so tokens have that issuer
+        return "http://auth.localhost:8080/realms/legalease"
 
     @property
     def audience(self) -> Optional[str]:
@@ -35,7 +46,8 @@ class KeycloakOIDCVerifier:
 
     async def _fetch_openid_configuration(self) -> Dict[str, Any]:
         async with httpx.AsyncClient(timeout=settings.KEYCLOAK_TIMEOUT_SECONDS) as client:
-            response = await client.get(f"{self.issuer}/.well-known/openid-configuration")
+            # Fetch from internal URL, not the issuer URL
+            response = await client.get(f"{self.metadata_base_url}/.well-known/openid-configuration")
             response.raise_for_status()
             return response.json()
 
@@ -54,6 +66,10 @@ class KeycloakOIDCVerifier:
 
             if self._jwks is None or now >= self._jwks_expires_at:
                 jwks_uri = self._openid_configuration["jwks_uri"]
+                # Rewrite jwks_uri to use internal Keycloak URL for container-to-container requests
+                # Keycloak returns URLs with its external hostname, but we need to use the internal one
+                jwks_uri = jwks_uri.replace("auth.localhost:8080", "keycloak:8080")
+                jwks_uri = jwks_uri.replace("auth.localhost", "keycloak:8080")
                 self._jwks = await self._fetch_jwks(jwks_uri)
                 self._jwks_expires_at = now + settings.KEYCLOAK_JWKS_CACHE_SECONDS
 

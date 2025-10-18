@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Identity & Auth
-    KEYCLOAK_BASE_URL: str = "http://auth.localhost"
+    KEYCLOAK_BASE_URL: str = "http://keycloak:8080"
     KEYCLOAK_REALM: str = "legalease"
     KEYCLOAK_BACKEND_CLIENT_ID: str = "fastapi-backend"
     KEYCLOAK_BACKEND_CLIENT_SECRET: str = "change-me"
