@@ -41,7 +41,7 @@ const volume = ref(1)
 const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
-const isInternalUpdate = ref(false) // Track when updates come from wavesurfer itself
+const isExternalSeek = ref(false) // Track when we're seeking from external prop change
 
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
@@ -159,18 +159,19 @@ async function initializeWaveSurfer() {
 
   // Throttle audioprocess to 100ms instead of 60fps for better performance
   const throttledAudioProcess = useThrottleFn((time: number) => {
-    isInternalUpdate.value = true
     emit('update:currentTime', time)
-    setTimeout(() => { isInternalUpdate.value = false }, 50)
   }, 100)
 
   wavesurfer.value.on('audioprocess', throttledAudioProcess)
 
   wavesurfer.value.on('seek', (progress) => {
-    const time = progress * duration.value
-    isInternalUpdate.value = true
-    emit('update:currentTime', time)
-    setTimeout(() => { isInternalUpdate.value = false }, 50)
+    // Only emit if this wasn't an external seek from parent
+    if (!isExternalSeek.value) {
+      const time = progress * duration.value
+      emit('update:currentTime', time)
+    } else {
+      isExternalSeek.value = false
+    }
   })
 
   wavesurfer.value.on('play', () => {
@@ -378,11 +379,12 @@ function formatTime(seconds: number): string {
 
 // Watch for external currentTime updates
 watch(() => props.currentTime, (newTime) => {
-  if (newTime !== undefined && wavesurfer.value && duration.value > 0 && !isInternalUpdate.value) {
+  if (newTime !== undefined && wavesurfer.value && duration.value > 0) {
     const currentWavesurferTime = wavesurfer.value.getCurrentTime()
     const timeDiff = Math.abs(newTime - currentWavesurferTime)
     // Only seek if the difference is significant (0.5s threshold to avoid jitter)
     if (timeDiff > 0.5) {
+      isExternalSeek.value = true
       const progress = newTime / duration.value
       wavesurfer.value.seekTo(progress)
     }
