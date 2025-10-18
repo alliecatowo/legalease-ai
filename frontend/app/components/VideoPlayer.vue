@@ -309,14 +309,7 @@ function handleWaveformClick(event: MouseEvent) {
 
 // Draw segment timeline on canvas
 function drawSegmentTimeline() {
-  if (!timelineCanvasRef.value || !props.segments || !duration.value) {
-    console.log('drawSegmentTimeline skipped:', {
-      hasCanvas: !!timelineCanvasRef.value,
-      hasSegments: !!props.segments,
-      duration: duration.value
-    })
-    return
-  }
+  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
 
   const canvas = timelineCanvasRef.value
   const ctx = canvas.getContext('2d')
@@ -326,18 +319,8 @@ function drawSegmentTimeline() {
   const displayHeight = isVideo.value ? 12 : canvas.getBoundingClientRect().height
   const rect = canvas.getBoundingClientRect()
 
-  console.log('Drawing segment timeline:', {
-    width: rect.width,
-    height: displayHeight,
-    segments: props.segments.length,
-    duration: duration.value
-  })
-
   // Don't draw if canvas is too small (likely not rendered yet)
-  if (rect.width < 100) {
-    console.log('Canvas too small, skipping draw')
-    return
-  }
+  if (rect.width < 100) return
 
   canvas.width = rect.width * window.devicePixelRatio
   canvas.height = displayHeight * window.devicePixelRatio
@@ -548,11 +531,7 @@ onBeforeUnmount(() => {
           class="w-full h-auto"
           preload="metadata"
           crossorigin="anonymous"
-          @loadedmetadata="() => {
-            isMediaReady = true
-            // Force redraw after video loads and has dimensions
-            setTimeout(() => drawSegmentTimeline(), 100)
-          }"
+          @loadedmetadata="isMediaReady = true"
         />
 
         <!-- Center Play/Pause Button (on hover) -->
@@ -569,15 +548,6 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <!-- Segment Timeline - Always Visible (bigger bar at bottom) -->
-        <canvas
-          v-if="segments && segments.length > 0"
-          ref="timelineCanvasRef"
-          class="absolute bottom-0 left-0 right-0 cursor-pointer z-30"
-          style="height: 12px; display: block !important;"
-          @click="handleTimelineClick"
-        />
-
         <!-- Waveform Overlay (on hover) -->
         <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent py-2 pb-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
           <div class="relative w-full h-10 pointer-events-auto px-3">
@@ -592,6 +562,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <!-- Segment Timeline - Always Visible below video -->
+      <canvas
+        v-if="segments && segments.length > 0"
+        ref="timelineCanvasRef"
+        class="w-full cursor-pointer mt-1"
+        style="height: 12px;"
+        @click="handleTimelineClick"
+      />
 
       <!-- Video Controls Bar -->
       <div v-if="!hideControls" class="flex items-center justify-between gap-3 px-1">
