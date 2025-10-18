@@ -394,41 +394,30 @@ defineExpose({
 })
 
 onMounted(async () => {
-  // For video files, wait for video element to be ready
+  // For video files, wait for video element to be in DOM
   if (isVideo.value) {
-    // Wait for next tick and then check for video element
+    // Wait for next tick to ensure video element is rendered
     await nextTick()
 
-    // Give Vue time to render the video element
+    // Give Vue time to render the video element (short polling)
     let attempts = 0
     const maxAttempts = 10
 
     while (!videoRef.value && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise(resolve => setTimeout(resolve, 50))
       attempts++
     }
 
     if (!videoRef.value) {
-      console.error('VideoPlayer: Failed to get video element after', attempts, 'attempts')
+      console.error('VideoPlayer: Failed to get video element reference after', attempts, 'attempts')
       isLoading.value = false
       return
     }
 
-    // Wait for video element to have basic metadata
-    if (videoRef.value.readyState === 0) {
-      await new Promise<void>((resolve) => {
-        const onLoadedMetadata = () => {
-          videoRef.value?.removeEventListener('loadedmetadata', onLoadedMetadata)
-          resolve()
-        }
-        videoRef.value?.addEventListener('loadedmetadata', onLoadedMetadata)
-        // Timeout after 10 seconds
-        setTimeout(() => resolve(), 10000)
-      })
-    }
-
+    console.log('VideoPlayer: Video element is ready, initializing WaveSurfer')
     initializeWaveSurfer()
   } else {
+    // For audio, initialize immediately
     initializeWaveSurfer()
   }
 
@@ -472,7 +461,6 @@ onBeforeUnmount(() => {
         ref="videoRef"
         class="w-full h-auto"
         :class="{ 'opacity-0': !isReady }"
-        :src="mediaUrl"
         preload="metadata"
         crossorigin="anonymous"
         @loadedmetadata="isMediaReady = true"
