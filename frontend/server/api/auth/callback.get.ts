@@ -1,6 +1,5 @@
-import { clearCookie, createError, getCookie, getQuery, H3Event, sendRedirect, setCookie } from 'h3'
+import { deleteCookie, createError, getCookie, getQuery, H3Event, sendRedirect, setCookie } from 'h3'
 import { URLSearchParams } from 'node:url'
-import { setUserSession } from '#auth-utils'
 
 interface TokenResponse {
   access_token: string
@@ -53,8 +52,8 @@ export default defineEventHandler(async (event) => {
   const storedState = getCookie(event, 'kc_oauth_state')
   const verifier = getCookie(event, 'kc_pkce_verifier')
 
-  clearCookie(event, 'kc_oauth_state', { path: '/' })
-  clearCookie(event, 'kc_pkce_verifier', { path: '/' })
+  deleteCookie(event, 'kc_oauth_state', { path: '/' })
+  deleteCookie(event, 'kc_pkce_verifier', { path: '/' })
 
   if (!code || !state || !verifier || state !== storedState) {
     throw createError({ statusCode: 400, message: 'Invalid authorization response' })
@@ -125,8 +124,8 @@ export default defineEventHandler(async (event) => {
   })
 
   // Clear initial auth cookies explicitly
-  setCookie(event, 'kc_oauth_state', '', { path: '/', maxAge: 0 })
-  setCookie(event, 'kc_pkce_verifier', '', { path: '/', maxAge: 0 })
+  deleteCookie(event, 'kc_oauth_state', { path: '/' })
+  deleteCookie(event, 'kc_pkce_verifier', { path: '/' })
 
   return sendRedirect(event, appUrl)
 })

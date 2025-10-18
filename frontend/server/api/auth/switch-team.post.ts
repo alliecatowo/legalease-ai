@@ -1,5 +1,4 @@
 import { createError, readValidatedBody } from 'h3'
-import { getUserSession, requireUserSession, setUserSession } from '#auth-utils'
 import { z } from 'zod'
 
 const bodySchema = z.object({
