@@ -145,6 +145,14 @@ class TranscriptionDeleteResponse(BaseModel):
     message: str = Field(..., description="Deletion confirmation message")
 
 
+class TranscriptionReprocessResponse(BaseModel):
+    """Schema for transcription reprocess responses."""
+
+    message: str = Field(..., description="Reprocess confirmation message")
+    transcription_gid: str = Field(..., description="Transcription global identifier")
+    status: str = Field(..., description="Current processing status")
+
+
 class TranscriptionUploadResponse(BaseModel):
     """Schema for transcription upload response."""
 

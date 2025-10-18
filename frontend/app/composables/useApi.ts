@@ -92,6 +92,11 @@ export const useApi = () => {
       upload: (caseId: string, formData: FormData) =>
         api(`/api/v1/cases/${caseId}/transcriptions`, { method: 'POST', body: formData }),
       delete: (id: string) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
+      reprocess: (id: string, options?: any) =>
+        api(`/api/v1/transcriptions/${id}/reprocess`, {
+          method: 'POST',
+          body: options || {}
+        }),
       download: (id: string, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') =>
         api(`/api/v1/transcriptions/${id}/download/${format}`),
 

@@ -317,6 +317,64 @@ class TranscriptionService:
         }
 
     @staticmethod
+    def reprocess_transcription(
+        transcription_gid: str,
+        db: Session,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Transcription:
+        """
+        Reset and re-queue a transcription for processing.
+
+        Args:
+            transcription_gid: GID of the transcription
+            db: Database session
+            options: Optional dict of transcription options to pass to the worker
+
+        Returns:
+            Transcription: Updated transcription record queued for processing
+        """
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
+
+        logger.info("Reprocessing transcription %s", transcription_gid)
+
+        # Clear existing metadata so the UI reflects processing state immediately
+        transcription.status = DocumentStatus.PENDING
+        transcription.duration = None
+        transcription.segments = []
+        transcription.speakers = []
+        transcription.waveform_data = None
+        transcription.executive_summary = None
+        transcription.key_moments = None
+        transcription.timeline = None
+        transcription.speaker_stats = None
+        transcription.action_items = None
+        transcription.topics = None
+        transcription.entities = None
+        transcription.summary_generated_at = None
+
+        # Remove persisted segment metadata
+        db.query(TranscriptSegment).filter(
+            TranscriptSegment.transcript_id == transcription.id
+        ).delete(synchronize_session=False)
+
+        db.commit()
+        db.refresh(transcription)
+
+        # Queue worker
+        from app.workers.tasks.transcription import transcribe_audio
+
+        worker_options = options or {}
+        transcribe_audio.delay(transcription.gid, options=worker_options)
+
+        logger.info(
+            "Queued reprocessing task for transcription %s with options: %s",
+            transcription_gid,
+            json.dumps(worker_options),
+        )
+
+        return transcription
+
+    @staticmethod
     def export_as_json(transcription: Transcription, db: Session) -> bytes:
         """Export transcription as JSON."""
         data = {

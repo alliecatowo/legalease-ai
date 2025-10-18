@@ -202,7 +202,7 @@ def process_uploaded_document(self, document_gid: str) -> Dict[str, Any]:
                 collection_name=collection_name,
                 scroll_filter={
                     "must": [
-                        {"key": "document_id", "match": {"value": document.id}}
+                        {"key": "document_id", "match": {"value": str(document.id)}}
                     ]
                 },
                 limit=1000,

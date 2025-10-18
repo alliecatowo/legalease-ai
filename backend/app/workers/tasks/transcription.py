@@ -594,7 +594,8 @@ class SpeakerNameInferencer:
             semaphore = get_ollama_semaphore()
 
             # Prepare conversation context (first ~10 segments)
-            context_segments = segments[:min(10, len(segments))]
+            max_context_segments = min(30, len(segments))
+            context_segments = segments[:max_context_segments]
             conversation_text = "\n".join([
                 f"{seg.get('speaker', 'UNKNOWN')}: {seg.get('text', '')}"
                 for seg in context_segments
@@ -623,6 +624,8 @@ Guidelines:
 - Only include speakers you can confidently identify
 - Confidence score: 0.0 to 1.0 (only suggest names with confidence > 0.8)
 - Use first names only unless full name is clear
+- Treat statements like 'Jane, how are you?' as one speaker addressing another; do not assign the addressed name to the current speaker unless they explicitly identify themselves
+- Prioritize phrases such as \"I'm <name>\", \"This is <name>\", \"My name is <name>\" for self-identification
 - If unsure, do not include that speaker"""
 
             potential_names_str = ""

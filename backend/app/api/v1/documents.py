@@ -108,7 +108,22 @@ async def upload_documents(
         db=db,
     )
 
-    return documents
+    document_responses = [
+        DocumentResponse(
+            gid=doc.gid,
+            case_gid=doc.case.gid if doc.case else case_gid,
+            filename=doc.filename,
+            file_path=doc.file_path,
+            mime_type=doc.mime_type,
+            size=doc.size,
+            status=doc.status,
+            meta_data=doc.meta_data,
+            uploaded_at=doc.uploaded_at,
+        )
+        for doc in documents
+    ]
+
+    return document_responses
 
 
 @router.get(

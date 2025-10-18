@@ -34,6 +34,7 @@ const cases = computed(() => {
     lastActivity: c.updated_at,
     parties: [c.client], // TODO: Add proper parties to backend
     documents: c.document_count || 0,
+    transcripts: c.transcript_count || 0,
     deadlines: 0, // TODO: Add to backend
     description: c.matter_type ? `${c.matter_type} case` : 'Legal case',
     tags: c.matter_type ? [c.matter_type.toLowerCase()] : [],
@@ -73,7 +74,8 @@ const stats = computed(() => ({
   active: cases.value.filter((c: any) => c.status === 'active').length,
   pending: cases.value.filter((c: any) => c.status === 'staging').length,
   closed: cases.value.filter((c: any) => c.status === 'unloaded').length,
-  totalDocuments: cases.value.reduce((acc: number, c: any) => acc + c.documents, 0)
+  totalDocuments: cases.value.reduce((acc: number, c: any) => acc + c.documents, 0),
+  totalTranscripts: cases.value.reduce((acc: number, c: any) => acc + (c.transcripts || 0), 0)
 }))
 
 const statusColors: Record<string, string> = {
@@ -109,7 +111,7 @@ async function onCaseCreated(caseData: any) {
     <template #body>
       <div class="max-w-7xl mx-auto space-y-6">
         <!-- Stats Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
           <UCard :ui="{ body: 'p-4' }">
             <div class="flex items-center gap-3">
               <div class="p-2 bg-primary/10 rounded-lg">
@@ -166,6 +168,18 @@ async function onCaseCreated(caseData: any) {
               <div>
                 <p class="text-xs text-muted">Documents</p>
                 <p class="text-2xl font-bold">{{ stats.totalDocuments }}</p>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard :ui="{ body: 'p-4' }">
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-primary/10 rounded-lg">
+                <UIcon name="i-lucide-mic" class="size-5 text-primary" />
+              </div>
+              <div>
+                <p class="text-xs text-muted">Transcripts</p>
+                <p class="text-2xl font-bold">{{ stats.totalTranscripts }}</p>
               </div>
             </div>
           </UCard>
@@ -265,9 +279,15 @@ async function onCaseCreated(caseData: any) {
                 </div>
 
                 <div class="flex items-center justify-between pt-3 border-t border-default">
-                  <div class="flex items-center gap-2 text-sm text-muted">
-                    <UIcon name="i-lucide-file-text" class="size-4" />
-                    <span>{{ case_.documents }} docs</span>
+                  <div class="flex items-center gap-3 text-sm text-muted">
+                    <span class="flex items-center gap-1.5">
+                      <UIcon name="i-lucide-file-text" class="size-4" />
+                      {{ case_.documents }} docs
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                      <UIcon name="i-lucide-mic" class="size-4" />
+                      {{ case_.transcripts }} transcripts
+                    </span>
                   </div>
                   <div class="flex items-center gap-2 text-xs text-muted">
                     <UIcon name="i-lucide-clock" class="size-3.5" />
@@ -313,6 +333,10 @@ async function onCaseCreated(caseData: any) {
                       <span class="flex items-center gap-1.5 text-muted">
                         <UIcon name="i-lucide-file-text" class="size-4" />
                         {{ case_.documents }} docs
+                      </span>
+                      <span class="flex items-center gap-1.5 text-muted">
+                        <UIcon name="i-lucide-mic" class="size-4" />
+                        {{ case_.transcripts }} transcripts
                       </span>
                       <span class="flex items-center gap-1.5 text-muted">
                         <UIcon name="i-lucide-clock" class="size-4" />

@@ -114,7 +114,7 @@ class DocumentService:
                     file.content_type.startswith("audio/") or
                     file.content_type.startswith("video/")
                 ):
-                    process_uploaded_document.delay(document.id)
+                    process_uploaded_document.delay(document.gid)
                     logger.info(f"Enqueued document processing task for {document.gid}")
                 else:
                     logger.info(f"Skipping document processing for audio/video file {document.gid}")

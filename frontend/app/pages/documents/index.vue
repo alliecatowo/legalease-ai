@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const api = useApi()
+const toast = useToast()
 
 // Use shared data cache
 const { documents: documentsCache, cases: casesCache } = useSharedData()
@@ -43,6 +44,7 @@ const showUploadModal = ref(false)
 const showBulkActionsModal = ref(false)
 const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
+const selectedCaseForUpload = ref<string | null>(null)
 
 const typeOptions = [
   { label: 'All Documents', value: 'all' },
@@ -121,6 +123,28 @@ const stats = computed(() => {
   }
 })
 
+const caseOptions = computed(() =>
+  (casesCache.data.value?.cases || []).map((c: any) => ({
+    label: c.name,
+    value: c.id ?? c.gid
+  }))
+)
+
+watch(
+  () => casesCache.data.value?.cases,
+  (caseList) => {
+    if (!caseList || caseList.length === 0) {
+      selectedCaseForUpload.value = null
+      return
+    }
+
+    if (!selectedCaseForUpload.value) {
+      selectedCaseForUpload.value = caseList[0].id ?? caseList[0].gid
+    }
+  },
+  { immediate: true }
+)
+
 // Bulk selection
 const allSelected = computed(() => {
   return filteredDocuments.value.length > 0 &&
@@ -151,18 +175,24 @@ async function uploadDocuments() {
 
   // Get the first available case ID (or show error if no cases exist)
   if (!casesCache.data.value?.cases || casesCache.data.value.cases.length === 0) {
-    if (import.meta.client) {
-      const toast = useToast()
-      toast.add({
-        title: 'No Case Available',
-        description: 'Please create a case first before uploading documents',
-        color: 'error'
-      })
-    }
+    toast.add({
+      title: 'No Case Available',
+      description: 'Please create a case first before uploading documents',
+      color: 'error'
+    })
     return
   }
 
-  const caseId = casesCache.data.value.cases[0].id
+  if (!selectedCaseForUpload.value) {
+    toast.add({
+      title: 'Select a Case',
+      description: 'Choose a case to associate these documents with.',
+      color: 'warning'
+    })
+    return
+  }
+
+  const caseId = selectedCaseForUpload.value
   uploadProgress.value = 0
 
   const formData = new FormData()
@@ -181,14 +211,11 @@ async function uploadDocuments() {
     uploadProgress.value = 100
 
     // Success feedback
-    if (import.meta.client) {
-      const toast = useToast()
-      toast.add({
-        title: 'Upload Successful',
-        description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
-        color: 'success'
-      })
-    }
+    toast.add({
+      title: 'Upload Successful',
+      description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
+      color: 'success'
+    })
 
     // Close modal and refresh
     showUploadModal.value = false
@@ -598,6 +625,17 @@ const documentTypeIcons: Record<string, string> = {
       <UModal v-model:open="showUploadModal" title="Upload Documents" :ui="{ content: 'max-w-2xl' }">
       <template #body>
         <div class="space-y-4">
+          <UFormField label="Associate with Case" name="case" required>
+            <USelectMenu
+              v-model="selectedCaseForUpload"
+              :items="caseOptions"
+              placeholder="Select a case..."
+              size="lg"
+              value-key="value"
+              :disabled="caseOptions.length === 0"
+            />
+          </UFormField>
+
           <!-- File Upload Component -->
           <UFileUpload
             v-model="uploadingFiles"
@@ -637,7 +675,7 @@ const documentTypeIcons: Record<string, string> = {
             label="Upload"
             icon="i-lucide-upload"
             color="primary"
-            :disabled="!uploadingFiles || uploadingFiles.length === 0"
+            :disabled="!selectedCaseForUpload || !uploadingFiles || uploadingFiles.length === 0"
             @click="uploadDocuments"
           />
         </div>

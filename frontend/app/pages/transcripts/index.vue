@@ -41,15 +41,23 @@ const selectedStatus = ref<string | null>(null)
 const selectedCase = ref<string | null>(null)
 const selectedDateRange = ref<string>('all')
 const sortBy = ref<string>('recent')
+const reprocessingIds = ref<Set<string>>(new Set())
 
 // Case options for filter dropdown
-const caseOptions = computed(() => [
+const caseFilterOptions = computed(() => [
   { label: 'All Cases', value: null },
   ...(cases.data.value?.cases || []).map((c: any) => ({
     label: c.name,
     value: c.gid
   }))
 ])
+
+const caseUploadOptions = computed(() =>
+  (cases.data.value?.cases || []).map((c: any) => ({
+    label: c.name,
+    value: c.gid
+  }))
+)
 
 // Loading state from shared cache
 const loadingTranscriptions = computed(() => transcriptions.loading.value)
@@ -68,6 +76,21 @@ const transcriptionsData = computed(() => {
 const refreshTranscriptions = async () => {
   await transcriptions.refresh()
 }
+
+watch(
+  () => caseUploadOptions.value,
+  (options) => {
+    if (!options.length) {
+      selectedCaseForUpload.value = null
+      return
+    }
+
+    if (!selectedCaseForUpload.value) {
+      selectedCaseForUpload.value = options[0].value
+    }
+  },
+  { immediate: true }
+)
 
 // Filtered and sorted transcriptions
 const filteredTranscriptions = computed(() => {
@@ -133,7 +156,7 @@ const stats = computed(() => {
   return {
     total: data.length || 0,
     completed: data.filter((t: any) => t.status === 'completed').length || 0,
-    processing: data.filter((t: any) => t.status === 'processing' || t.status === 'queued').length || 0,
+    processing: data.filter((t: any) => ['processing', 'queued', 'pending'].includes(t.status)).length || 0,
     totalDuration: data.reduce((acc: number, t: any) => acc + (t.duration || 0), 0) || 0
   }
 })
@@ -143,13 +166,14 @@ const statusColors = {
   completed: 'success',
   processing: 'warning',
   failed: 'error',
-  queued: 'info'
+  queued: 'info',
+  pending: 'info'
 } as const
 
 // Real-time polling for processing transcriptions
 const processingTranscriptions = computed(() => {
   const data = transcriptionsData.value || []
-  return data.filter((t: any) => t.status === 'processing' || t.status === 'queued')
+  return data.filter((t: any) => ['processing', 'queued', 'pending'].includes(t.status))
 })
 
 let pollInterval: NodeJS.Timeout | null = null
@@ -195,6 +219,11 @@ function formatDate(dateStr: string) {
   })
 }
 
+const isTranscriptionBusy = (trans: any) =>
+  ['processing', 'queued', 'pending'].includes(trans.status)
+
+const isReprocessing = (gid: string) => reprocessingIds.value.has(gid)
+
 // Delete transcription
 async function deleteTranscription(gid: string) {
   try {
@@ -211,6 +240,36 @@ async function deleteTranscription(gid: string) {
       description: error.message || 'Failed to delete transcription',
       color: 'error'
     })
+  }
+}
+
+async function reprocessTranscription(gid: string) {
+  if (isReprocessing(gid)) {
+    return
+  }
+
+  const next = new Set(reprocessingIds.value)
+  next.add(gid)
+  reprocessingIds.value = next
+
+  try {
+    await api.transcriptions.reprocess(gid)
+    toast.add({
+      title: 'Reprocessing queued',
+      description: 'We will reprocess this transcript shortly.',
+      color: 'primary'
+    })
+    await refreshTranscriptions()
+  } catch (error: any) {
+    toast.add({
+      title: 'Error',
+      description: error?.data?.detail || error?.message || 'Failed to reprocess transcription',
+      color: 'error'
+    })
+  } finally {
+    const updated = new Set(reprocessingIds.value)
+    updated.delete(gid)
+    reprocessingIds.value = updated
   }
 }
 
@@ -430,7 +489,7 @@ async function uploadTranscript() {
               <!-- Case Filter -->
               <USelectMenu
                 v-model="selectedCase"
-                :items="caseOptions"
+                :items="caseFilterOptions"
                 placeholder="Filter by case"
                 value-key="value"
                 class="w-full md:w-64"
@@ -478,7 +537,7 @@ async function uploadTranscript() {
                 <UButton icon="i-lucide-x" size="xs" color="primary" variant="ghost" @click="selectedStatus = null" />
               </UBadge>
               <UBadge v-if="selectedCase" color="primary" variant="soft">
-                Case: {{ caseOptions.find(c => c.value === selectedCase)?.label }}
+                Case: {{ caseFilterOptions.find(c => c.value === selectedCase)?.label }}
                 <UButton icon="i-lucide-x" size="xs" color="primary" variant="ghost" @click="selectedCase = null" />
               </UBadge>
               <UBadge v-if="selectedDateRange !== 'all'" color="primary" variant="soft">
@@ -538,7 +597,19 @@ async function uploadTranscript() {
                     {{ trans.case_name }}
                   </UBadge>
                 </div>
-                <UTooltip text="Delete Transcription">
+              <div class="flex items-center gap-2">
+                <UTooltip text="Reprocess transcription">
+                  <UButton
+                    icon="i-lucide-refresh-cw"
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    :loading="isReprocessing(trans.gid)"
+                    :disabled="isTranscriptionBusy(trans) || isReprocessing(trans.gid)"
+                    @click.stop="reprocessTranscription(trans.gid)"
+                  />
+                </UTooltip>
+                <UTooltip text="Delete transcription">
                   <UButton
                     icon="i-lucide-trash-2"
                     color="error"
@@ -547,6 +618,7 @@ async function uploadTranscript() {
                     @click.stop="deleteTranscription(trans.gid)"
                   />
                 </UTooltip>
+              </div>
               </div>
             </template>
 
@@ -642,15 +714,28 @@ async function uploadTranscript() {
 
               <span class="text-sm text-muted">{{ formatDate(trans.created_at) }}</span>
 
-              <UTooltip text="Delete Transcription">
-                <UButton
-                  icon="i-lucide-trash-2"
-                  color="error"
-                  variant="ghost"
-                  size="sm"
-                  @click.stop="deleteTranscription(trans.gid)"
-                />
-              </UTooltip>
+              <div class="flex items-center gap-1.5">
+                <UTooltip text="Reprocess transcription">
+                  <UButton
+                    icon="i-lucide-refresh-cw"
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    :loading="isReprocessing(trans.gid)"
+                    :disabled="isTranscriptionBusy(trans) || isReprocessing(trans.gid)"
+                    @click.stop="reprocessTranscription(trans.gid)"
+                  />
+                </UTooltip>
+                <UTooltip text="Delete transcription">
+                  <UButton
+                    icon="i-lucide-trash-2"
+                    color="error"
+                    variant="ghost"
+                    size="sm"
+                    @click.stop="deleteTranscription(trans.gid)"
+                  />
+                </UTooltip>
+              </div>
             </div>
           </UCard>
         </div>
@@ -719,10 +804,11 @@ async function uploadTranscript() {
             <UFormField label="Associate with Case" name="case" required>
               <USelectMenu
                 v-model="selectedCaseForUpload"
-                :items="caseOptions"
+                :items="caseUploadOptions"
                 placeholder="Select a case..."
                 size="lg"
                 value-key="value"
+                :disabled="caseUploadOptions.length === 0"
               />
             </UFormField>
           </UCard>

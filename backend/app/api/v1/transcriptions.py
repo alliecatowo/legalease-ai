@@ -21,6 +21,7 @@ from app.schemas.transcription import (
     TranscriptionOptions,
     UpdateSpeakerRequest,
     SpeakerResponse,
+    TranscriptionReprocessResponse,
 )
 from app.services.transcription_service import TranscriptionService
 from app.workers.tasks.summarization import (
@@ -579,6 +580,35 @@ def download_transcription(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(len(content)),
         },
+    )
+
+
+@router.post(
+    "/transcriptions/{transcription_gid}/reprocess",
+    response_model=TranscriptionReprocessResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Reprocess a transcription",
+    description="Reset the transcription data and re-queue processing in the background.",
+)
+def reprocess_transcription_endpoint(
+    transcription_gid: str = Path(..., description="GID of the transcription to reprocess"),
+    options: Optional[dict] = Body(None, description="Optional transcription worker options"),
+    db: Session = Depends(get_db),
+):
+    """
+    Reprocess an existing transcription by resetting its state and re-queueing the worker.
+    """
+    logger.info("API request: reprocess transcription %s", transcription_gid)
+    transcription = TranscriptionService.reprocess_transcription(
+        transcription_gid=transcription_gid,
+        db=db,
+        options=options,
+    )
+
+    return TranscriptionReprocessResponse(
+        message="Transcription reprocessing queued",
+        transcription_gid=transcription.gid,
+        status=transcription.status.value.lower() if transcription.status else "pending",
     )
 
 
