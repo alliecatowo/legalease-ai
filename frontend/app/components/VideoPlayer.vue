@@ -298,14 +298,16 @@ function drawSegmentTimeline() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // Set canvas dimensions to match display size
+  // For video, use a fixed small height; for audio, use the element's height
+  const displayHeight = isVideo.value ? 6 : canvas.getBoundingClientRect().height
   const rect = canvas.getBoundingClientRect()
+
   canvas.width = rect.width * window.devicePixelRatio
-  canvas.height = rect.height * window.devicePixelRatio
+  canvas.height = displayHeight * window.devicePixelRatio
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
 
   // Clear canvas
-  ctx.clearRect(0, 0, rect.width, rect.height)
+  ctx.clearRect(0, 0, rect.width, displayHeight)
 
   // Draw each segment
   props.segments.forEach((segment) => {
@@ -315,11 +317,11 @@ function drawSegmentTimeline() {
     // Set color based on segment type and selection
     const isSelected = segment.id === props.selectedSegmentId
     const baseColor = segment.isKeyMoment ? '#F59E0B' : '#3B82F6'
-    const opacity = isSelected ? 1.0 : 0.6
+    const opacity = isSelected ? 1.0 : 0.7
 
     ctx.fillStyle = baseColor
     ctx.globalAlpha = opacity
-    ctx.fillRect(left, 0, width, rect.height)
+    ctx.fillRect(left, 0, width, displayHeight)
   })
 
   ctx.globalAlpha = 1.0
@@ -487,14 +489,23 @@ onBeforeUnmount(() => {
         />
 
         <!-- Waveform Overlay at Bottom (Always Visible) -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 py-2">
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 py-2 group/waveform">
           <div class="relative w-full">
             <div ref="waveformRef" class="w-full cursor-pointer" @click="handleWaveformClick" />
+
             <!-- Key Moments Overlay Canvas -->
             <canvas
               v-if="keyMoments && keyMoments.length > 0"
               ref="keyMomentsCanvasRef"
               class="absolute top-0 left-0 w-full h-full pointer-events-none"
+            />
+
+            <!-- Segment Timeline Overlay (on hover) -->
+            <canvas
+              v-if="segments && segments.length > 0"
+              ref="timelineCanvasRef"
+              class="absolute bottom-0 left-0 w-full h-1.5 cursor-pointer opacity-0 group-hover/waveform:opacity-100 transition-opacity duration-200"
+              @click="handleTimelineClick"
             />
           </div>
         </div>
@@ -662,9 +673,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Segment Timeline (Canvas-based for better performance) -->
+    <!-- Segment Timeline for Audio (only show for audio files) -->
     <canvas
-      v-if="segments && segments.length > 0"
+      v-if="!isVideo && segments && segments.length > 0"
       ref="timelineCanvasRef"
       class="w-full h-2 bg-muted/20 rounded-full cursor-pointer"
       @click="handleTimelineClick"
