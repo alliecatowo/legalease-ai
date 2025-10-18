@@ -206,8 +206,9 @@ services:
     command: >
       uv run celery -A app.workers.celery_app worker
       --loglevel=info
-      --autoscale=${CELERY_WORKER_AUTOSCALE:-4,1}
-      --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD:-8000000}
+      --autoscale=${CELERY_WORKER_AUTOSCALE:-2,1}
+      --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD:-6000000}
+      --max-tasks-per-child=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-5}
     environment:
       DATABASE_URL: postgresql://legalease:legalease_dev@postgres:5432/legalease
       REDIS_URL: redis://redis:6379/0
@@ -251,14 +252,14 @@ services:
     networks:
       - legalease-network
     restart: unless-stopped
-    # GPU support for transcription
+    # GPU support for transcription and document processing
     deploy:
       resources:
         limits:
-          memory: 12G
+          memory: 6G  # Reduced from 12G to force proper cleanup and prevent OOM
           cpus: '8.0'
         reservations:
-          memory: 6G
+          memory: 2G  # Reduced from 6G - only reserve what's needed
           cpus: '2.0'
           devices:
             - driver: nvidia

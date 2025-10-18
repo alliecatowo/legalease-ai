@@ -111,10 +111,9 @@ async function initializeWaveSurfer() {
     barRadius: 2,
     height: isVideo.value ? 40 : 80,
     normalize: true,
-    backend: 'MediaElement',
     mediaControls: false,
     interact: true,
-    media: mediaElement
+    media: mediaElement // Pass media element directly (v7+ default)
   })
 
   // Enable controls after short delay
@@ -180,26 +179,16 @@ async function initializeWaveSurfer() {
   const waveformData = await fetchWaveformData()
 
   if (waveformData?.peaks && waveformData?.duration) {
-    // CRITICAL: For large video files, load media and waveform SEPARATELY
-    // to avoid browser OOM crashes from WaveSurfer trying to buffer entire file
-    console.log('[VideoPlayer] Using pre-computed waveform data, loading media separately')
+    // CRITICAL: For large video files, use pre-computed peaks to avoid decoding entire file
+    console.log('[VideoPlayer] Using pre-computed waveform data with streaming playback')
 
-    // 1. Load the media element directly (uses HTTP Range requests efficiently)
-    if (isVideo.value && videoRef.value) {
-      videoRef.value.src = props.mediaUrl
-      videoRef.value.load()
-    } else if (mediaElement) {
-      mediaElement.src = props.mediaUrl
-      mediaElement.load()
-    }
-
-    // 2. Load ONLY the waveform visualization (no media loading by WaveSurfer)
-    // Use a silent 1-second audio blob to prevent WaveSurfer from loading the actual media
-    const silentBlob = await createSilentAudioBlob(waveformData.duration)
     const peaksArray = [waveformData.peaks]
 
-    wavesurfer.value.load(URL.createObjectURL(silentBlob), peaksArray, waveformData.duration).catch((error) => {
-      console.error('[VideoPlayer] Error loading waveform:', error)
+    // Load media with pre-computed peaks
+    // WaveSurfer v7+ will use the media element we passed and set its src
+    // This enables HTTP Range streaming without downloading the entire file
+    await wavesurfer.value.load(props.mediaUrl, peaksArray, waveformData.duration).catch((error) => {
+      console.error('[VideoPlayer] Error loading media with waveform:', error)
       isLoading.value = false
       isMediaReady.value = false
     })
