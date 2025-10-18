@@ -72,7 +72,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Identity & Auth
+    # KEYCLOAK_PUBLIC_URL: Public-facing URL for Keycloak (used in token issuer validation)
+    # This is the URL that Keycloak advertises in tokens (matches KEYCLOAK_HOSTNAME)
+    KEYCLOAK_PUBLIC_URL: str = "https://auth.localhost"
+
+    # KEYCLOAK_INTERNAL_URL: Internal container-to-container URL for fetching JWKS
+    # Used by backend to communicate with Keycloak within the Docker network
+    KEYCLOAK_INTERNAL_URL: str = "http://keycloak:8080"
+
+    # KEYCLOAK_BASE_URL: Legacy/alias for internal URL, kept for backwards compatibility
+    # New code should use KEYCLOAK_INTERNAL_URL instead
     KEYCLOAK_BASE_URL: str = "http://keycloak:8080"
+
     KEYCLOAK_REALM: str = "legalease"
     KEYCLOAK_BACKEND_CLIENT_ID: str = "fastapi-backend"
     KEYCLOAK_BACKEND_CLIENT_SECRET: str = "change-me"

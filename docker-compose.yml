@@ -190,7 +190,7 @@ services:
       KC_FEATURES: token-exchange,admin-fine-grained-authz
       KC_HTTP_RESPONSE_HEADER_X_FRAME_OPTIONS: ""
       KC_IMPORT: /opt/keycloak/data/import/realm-export.json
-      KC_IMPORT_STRATEGY: IGNORE_EXISTING
+      KC_IMPORT_STRATEGY: OVERWRITE_EXISTING
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro

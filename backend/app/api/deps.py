@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Optional
 
@@ -15,6 +16,7 @@ from app.models.user import Team, User
 from app.services.auth.sync import TeamSynchronizer
 
 
+logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 team_syncer = TeamSynchronizer(cache_ttl=300)
 
@@ -27,22 +29,22 @@ async def get_bearer_token(
     token: Optional[str] = None
     if credentials:
         token = credentials.credentials
-        print(f"[AUTH DEBUG] Got token from credentials: {token[:20]}...")
+        logger.debug("Token extracted from bearer credentials (prefix: %s...)", token[:20])
     elif "Authorization" in request.headers:
         # Support raw tokens without the HTTP bearer helper
         header_value = request.headers.get("Authorization")
         if header_value and header_value.lower().startswith("bearer "):
             token = header_value[7:].strip()
-            print(f"[AUTH DEBUG] Got token from header: {token[:20]}...")
+            logger.debug("Token extracted from Authorization header (prefix: %s...)", token[:20])
 
     if not token:
         # Allow token propagation via cookie (SSO with BFF)
         token = request.cookies.get("kc_access_token")
         if token:
-            print(f"[AUTH DEBUG] Got token from cookie: {token[:20]}...")
+            logger.debug("Token extracted from kc_access_token cookie (prefix: %s...)", token[:20])
 
     if not token:
-        print(f"[AUTH DEBUG] No token found! Headers: {list(request.headers.keys())}, Cookies: {list(request.cookies.keys())}")
+        logger.warning("No access token found - Headers: %s, Cookies: %s", list(request.headers.keys()), list(request.cookies.keys()))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing access token",
@@ -56,87 +58,66 @@ async def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     """Validate the bearer token and ensure a local user exists."""
-    print(f"[AUTH DEBUG] get_current_user called with token: {token[:50]}...")
+    logger.debug("Validating bearer token (prefix: %s...)", token[:20])
     try:
-        print(f"[AUTH DEBUG] About to verify token...")
+        logger.debug("Verifying token with OIDC verifier")
         claims = await oidc_verifier.verify_token(token)
-        print(f"[AUTH DEBUG] Token verified! All claims: {claims}")
+        logger.info("Token verified successfully - subject: %s, email: %s", claims.get("sub"), claims.get("email"))
     except TokenVerificationError as exc:
-        print(f"[AUTH DEBUG] Token verification failed: {exc}")
+        logger.warning("Token verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        print(f"[AUTH DEBUG] Unexpected error during token verification: {type(exc).__name__}: {exc}")
+        logger.error("Unexpected error during token verification: %s: %s", type(exc).__name__, exc, exc_info=True)
         raise
 
-    # Try to get subject - Keycloak should include 'sub' but fallback to email
+    # Require valid 'sub' claim with UUID format
     subject = claims.get("sub")
-    email = claims.get("email")
-    print(f"[AUTH DEBUG] Subject: {subject}, Email: {email}")
-
-    if not subject and not email:
-        print(f"[AUTH DEBUG] ERROR: No subject or email in claims!")
+    if not subject:
+        logger.error("Token missing required 'sub' claim")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token missing subject claim",
+            detail="Token missing required 'sub' claim - ensure Keycloak client has 'sub' claim mapper configured",
         )
 
-    # Try to find user by keycloak_id (UUID) or by email
-    user = None
-    if subject:
-        try:
-            identity_id = uuid.UUID(subject)
-            print(f"[AUTH DEBUG] Looking up user with keycloak_id: {identity_id}")
-            user = db.query(User).filter(User.keycloak_id == identity_id).first()
-        except ValueError:
-            print(f"[AUTH DEBUG] Subject is not a UUID: {subject}")
+    try:
+        keycloak_id = uuid.UUID(subject)
+        logger.debug("Parsed keycloak_id from 'sub' claim: %s", keycloak_id)
+    except ValueError as exc:
+        logger.error("'sub' claim is not a valid UUID: %s", subject)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token 'sub' claim is not a valid UUID: {subject}",
+        ) from exc
 
-    # Fallback to email lookup
-    if not user and email:
-        print(f"[AUTH DEBUG] Looking up user by email: {email}")
-        user = db.query(User).filter(User.email == email).first()
+    # Look up user by keycloak_id
+    logger.debug("Looking up user with keycloak_id: %s", keycloak_id)
+    user = db.query(User).filter(User.keycloak_id == keycloak_id).first()
 
-    print(f"[AUTH DEBUG] User found: {user is not None}")
     if not user:
-        # Create new user - use subject as keycloak_id if it's a UUID, otherwise generate one from email
-        import hashlib
-
-        if subject:
-            try:
-                kc_id = uuid.UUID(subject)
-                print(f"[AUTH DEBUG] Using subject as keycloak_id: {kc_id}")
-            except ValueError:
-                # Subject is not a UUID, generate one based on email
-                email_for_hash = email or "unknown"
-                email_hash = hashlib.sha256(email_for_hash.encode()).hexdigest()
-                kc_id = uuid.UUID(email_hash[:32])
-                print(f"[AUTH DEBUG] Generated keycloak_id from email: {kc_id}")
-        else:
-            # No subject claim, generate from email
-            email_for_hash = email or "unknown"
-            email_hash = hashlib.sha256(email_for_hash.encode()).hexdigest()
-            kc_id = uuid.UUID(email_hash[:32])
-            print(f"[AUTH DEBUG] No subject, generated keycloak_id from email: {kc_id}")
-
+        # JIT create new user with keycloak_id from 'sub' claim
+        email = claims.get("email")
         user = User(
-            keycloak_id=kc_id,
+            keycloak_id=keycloak_id,
             email=email or "unknown@example.com",
             full_name=claims.get("name") or claims.get("preferred_username"),
         )
         db.add(user)
-        print(f"[AUTH DEBUG] Created new user with keycloak_id: {kc_id}")
+        logger.info("Created new user with keycloak_id: %s, email: %s", keycloak_id, email)
     else:
         updated = False
         email = claims.get("email")
         if email and user.email != email:
             user.email = email
             updated = True
+            logger.debug("Updated email for user %s", keycloak_id)
         full_name = claims.get("name") or claims.get("preferred_username")
         if full_name and user.full_name != full_name:
             user.full_name = full_name
             updated = True
+            logger.debug("Updated full_name for user %s", keycloak_id)
         if updated:
             db.add(user)
 
