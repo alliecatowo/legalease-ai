@@ -45,7 +45,8 @@ const flashSegmentId = ref<string | null>(null)
 // Metadata sidebar defaults: visible and expanded
 const metadataSidebarOpen = ref(true)
 const metadataSidebarCollapsed = ref(false)
-// Video player size (for video files only)
+// Video player state
+const videoPlayerOpen = ref(true)
 const videoSize = ref<'small' | 'theater'>('theater')
 
 // Perform smart search using backend API
@@ -707,22 +708,87 @@ onMounted(async () => {
         <!-- Video Player (Collapsible for video files) -->
         <UCollapsible
           v-if="isVideoFile"
-          :default-open="true"
+          v-model:open="videoPlayerOpen"
           :unmount-on-hide="false"
           class="flex-shrink-0 border-b border-default"
         >
-          <UButton
-            class="group w-full !rounded-none"
-            label="Video Player"
-            icon="i-lucide-video"
-            trailing-icon="i-lucide-chevron-down"
-            color="neutral"
-            variant="ghost"
-            :ui="{
-              trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200'
-            }"
-            block
-          />
+          <!-- Custom header with video controls -->
+          <div class="flex items-center justify-between gap-3 px-4 py-2 bg-elevated border-b border-default">
+            <div class="flex items-center gap-3">
+              <!-- Collapse toggle -->
+              <UButton
+                :icon="videoPlayerOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                @click="videoPlayerOpen = !videoPlayerOpen"
+              />
+
+              <UIcon name="i-lucide-video" class="size-4 text-muted" />
+              <span class="text-sm font-medium">Video Player</span>
+            </div>
+
+            <!-- Video controls (always visible) -->
+            <div class="flex items-center gap-2">
+              <!-- Skip back -->
+              <UTooltip text="Skip back 10s">
+                <UButton
+                  icon="i-lucide-skip-back"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!isPlaying && currentTime === 0"
+                  @click="currentTime = Math.max(0, currentTime - 10)"
+                />
+              </UTooltip>
+
+              <!-- Play/Pause -->
+              <UButton
+                :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
+                color="primary"
+                size="sm"
+                @click="isPlaying = !isPlaying"
+              />
+
+              <!-- Skip forward -->
+              <UTooltip text="Skip forward 10s">
+                <UButton
+                  icon="i-lucide-skip-forward"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  @click="currentTime = currentTime + 10"
+                />
+              </UTooltip>
+
+              <!-- Time display -->
+              <div class="text-xs text-muted min-w-[80px] text-center">
+                {{ formatTime(currentTime) }} / {{ formatTime(transcript.duration || 0) }}
+              </div>
+
+              <!-- Size controls -->
+              <UFieldGroup size="sm">
+                <UTooltip text="Compact view">
+                  <UButton
+                    icon="i-lucide-minimize-2"
+                    :color="videoSize === 'small' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'small' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'small'"
+                  />
+                </UTooltip>
+                <UTooltip text="Theater view">
+                  <UButton
+                    icon="i-lucide-rectangle-horizontal"
+                    :color="videoSize === 'theater' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'theater'"
+                  />
+                </UTooltip>
+              </UFieldGroup>
+            </div>
+          </div>
 
           <template #content>
             <div class="p-4 sm:p-6">
@@ -736,6 +802,7 @@ onMounted(async () => {
                 :selected-segment-id="selectedSegment?.id"
                 :key-moments="keyMoments"
                 :size="videoSize"
+                :hide-controls="true"
                 @update:current-time="currentTime = $event"
                 @update:is-playing="isPlaying = $event"
                 @segment-click="seekToSegment"
@@ -847,28 +914,6 @@ onMounted(async () => {
                   </div>
                 </template>
               </UCheckbox>
-
-              <!-- Video Size Controls (only for video files) -->
-              <UFieldGroup v-if="isVideoFile">
-                <UTooltip text="Compact view">
-                  <UButton
-                    icon="i-lucide-minimize-2"
-                    :color="videoSize === 'small' ? 'primary' : 'neutral'"
-                    :variant="videoSize === 'small' ? 'soft' : 'ghost'"
-                    size="sm"
-                    @click="videoSize = 'small'"
-                  />
-                </UTooltip>
-                <UTooltip text="Theater view">
-                  <UButton
-                    icon="i-lucide-rectangle-horizontal"
-                    :color="videoSize === 'theater' ? 'primary' : 'neutral'"
-                    :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
-                    size="sm"
-                    @click="videoSize = 'theater'"
-                  />
-                </UTooltip>
-              </UFieldGroup>
             </div>
 
             <!-- Active Filters -->

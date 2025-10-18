@@ -13,8 +13,10 @@ const props = withDefaults(defineProps<{
   selectedSegmentId?: string | null
   keyMoments?: TranscriptSegment[]
   size?: 'small' | 'theater' | 'fullscreen' // Video size mode (controlled by parent)
+  hideControls?: boolean // Hide the built-in controls (when parent provides them)
 }>(), {
-  size: 'theater'
+  size: 'theater',
+  hideControls: false
 })
 
 const emit = defineEmits<{
@@ -482,7 +484,7 @@ onBeforeUnmount(() => {
         <video
           ref="videoRef"
           class="w-full h-auto"
-          :class="{ 'invisible': !isReady }"
+          :class="{ 'opacity-0': !isMediaReady }"
           preload="metadata"
           crossorigin="anonymous"
           @loadedmetadata="isMediaReady = true"
@@ -527,7 +529,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Video Controls Bar -->
-      <div class="flex items-center justify-between gap-3 px-1">
+      <div v-if="!hideControls" class="flex items-center justify-between gap-3 px-1">
         <!-- Left: Playback Controls -->
         <div class="flex items-center gap-1">
           <UTooltip text="Skip Back 10s">
