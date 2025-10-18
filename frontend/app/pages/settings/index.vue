@@ -124,6 +124,15 @@ async function switchTeam() {
     loading.value = false
   }
 }
+
+function createTeam() {
+  // For now, just show a toast - TODO: implement team creation modal
+  toast.add({
+    title: 'Team Creation',
+    description: 'Team creation UI coming soon. For now, teams are created automatically from Keycloak groups.',
+    color: 'info'
+  })
+}
 </script>
 
 <template>
@@ -161,7 +170,7 @@ async function switchTeam() {
             v-model="selectedTeamId"
             :options="teams"
             value-attribute="id"
-            :disabled="!teams.length || loading"
+            :disabled="loading"
             placeholder="Select a team"
             class="flex-1"
           >
@@ -169,8 +178,8 @@ async function switchTeam() {
               <span v-if="selectedTeamId">
                 {{ teams.find(t => t.id === selectedTeamId)?.name || 'Select a team' }}
               </span>
-              <span v-else-if="!teams.length" class="text-muted">
-                No teams available
+              <span v-else-if="!teams.length" class="text-muted-foreground">
+                No teams - click to create one
               </span>
               <span v-else>
                 Select a team
@@ -178,6 +187,17 @@ async function switchTeam() {
             </template>
             <template #option="{ option }">
               <span>{{ option.name }}</span>
+            </template>
+            <template v-if="!teams.length" #empty>
+              <div class="text-center py-4">
+                <p class="text-sm text-muted-foreground mb-2">You don't have any teams yet</p>
+                <UButton
+                  label="Create Your First Team"
+                  color="primary"
+                  size="sm"
+                  @click="createTeam"
+                />
+              </div>
             </template>
           </USelectMenu>
           <UButton
@@ -187,6 +207,15 @@ async function switchTeam() {
             :loading="loading"
             :disabled="loading"
             @click="switchTeam"
+          />
+          <UButton
+            v-else-if="teams.length > 0"
+            label="New Team"
+            icon="i-lucide-plus"
+            color="neutral"
+            variant="outline"
+            :disabled="loading"
+            @click="createTeam"
           />
         </div>
       </UFormField>

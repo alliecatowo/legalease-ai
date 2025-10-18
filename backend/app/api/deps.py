@@ -124,9 +124,12 @@ async def get_current_user(
     groups = claims.get("groups") or []
     active_team_claim = claims.get("active_team")
 
+    logger.info(f"Syncing memberships for user {user.email}: groups={groups}, active_team={active_team_claim}")
     team_syncer.sync_memberships(db, user, groups, active_team_claim)
 
     db.flush()
+    db.commit()  # Explicitly commit the transaction
+    logger.info(f"User {user.email} saved to database with {len(user.memberships)} memberships")
     return user
 
 
