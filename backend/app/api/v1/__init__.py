@@ -8,6 +8,12 @@ api_router = APIRouter()
 
 # Import and include sub-routers
 try:
+    from app.api.v1 import auth
+    api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+except ImportError as e:
+    print(f"Warning: Could not import auth router: {e}")
+
+try:
     from app.api.v1 import health
     api_router.include_router(health.router, tags=["health"])
 except ImportError as e:

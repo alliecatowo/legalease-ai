@@ -3,11 +3,14 @@ import * as z from 'zod'
 import type { FormSubmitEvent } from '@nuxt/ui'
 
 const fileRef = ref<HTMLInputElement>()
+const api = useApi()
+const session = useUserSession()
+const toast = useToast()
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Too short'),
   email: z.string().email('Invalid email'),
-  username: z.string().min(2, 'Too short'),
+  username: z.string().min(2, 'Too short').optional(),
   avatar: z.string().optional(),
   bio: z.string().optional()
 })
@@ -15,21 +18,54 @@ const profileSchema = z.object({
 type ProfileSchema = z.output<typeof profileSchema>
 
 const profile = reactive<Partial<ProfileSchema>>({
-  name: 'Benjamin Canac',
-  email: 'ben@nuxtlabs.com',
-  username: 'benjamincanac',
+  name: '',
+  email: '',
+  username: '',
   avatar: undefined,
   bio: undefined
 })
-const toast = useToast()
+
+const loading = ref(false)
+
+// Load profile on mount
+onMounted(async () => {
+  try {
+    const data = await api.user.getProfile()
+    profile.name = data.full_name || ''
+    profile.email = data.email || ''
+    profile.username = data.username || ''
+    profile.avatar = data.avatar_url || undefined
+    profile.bio = data.bio || undefined
+  } catch (error) {
+    console.error('Failed to load profile:', error)
+  }
+})
+
 async function onSubmit(event: FormSubmitEvent<ProfileSchema>) {
-  toast.add({
-    title: 'Success',
-    description: 'Your settings have been updated.',
-    icon: 'i-lucide-check',
-    color: 'success'
-  })
-  console.log(event.data)
+  loading.value = true
+  try {
+    const updatedProfile = await api.user.updateProfile({
+      full_name: event.data.name,
+      username: event.data.username,
+      avatar_url: event.data.avatar,
+      bio: event.data.bio
+    })
+
+    // Refresh the user session with updated data
+    await session.fetch()
+
+    toast.add({
+      title: 'Success',
+      description: 'Your settings have been updated.',
+      icon: 'i-lucide-check',
+      color: 'success'
+    })
+  } catch (error: any) {
+    // Error toast is already handled by useApi
+    console.error('Failed to update profile:', error)
+  } finally {
+    loading.value = false
+  }
 }
 
 function onFileChange(e: Event) {
@@ -66,6 +102,7 @@ function onFileClick() {
         label="Save changes"
         color="neutral"
         type="submit"
+        :loading="loading"
         class="w-fit lg:ms-auto"
       />
     </UPageCard>
@@ -87,7 +124,7 @@ function onFileClick() {
       <UFormField
         name="email"
         label="Email"
-        description="Used to sign in, for email receipts and product updates."
+        description="Email address from your identity provider (read-only)."
         required
         class="flex max-sm:flex-col justify-between items-start gap-4"
       >
@@ -95,6 +132,7 @@ function onFileClick() {
           v-model="profile.email"
           type="email"
           autocomplete="off"
+          disabled
         />
       </UFormField>
       <USeparator />
@@ -114,28 +152,22 @@ function onFileClick() {
       <USeparator />
       <UFormField
         name="avatar"
-        label="Avatar"
-        description="JPG, GIF or PNG. 1MB Max."
-        class="flex max-sm:flex-col justify-between sm:items-center gap-4"
+        label="Avatar URL"
+        description="Enter a URL to an image for your avatar."
+        class="flex max-sm:flex-col justify-between items-start gap-4"
       >
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-3 w-full">
           <UAvatar
             :src="profile.avatar"
             :alt="profile.name"
             size="lg"
           />
-          <UButton
-            label="Choose"
-            color="neutral"
-            @click="onFileClick"
+          <UInput
+            v-model="profile.avatar"
+            placeholder="https://example.com/avatar.jpg"
+            autocomplete="off"
+            class="flex-1"
           />
-          <input
-            ref="fileRef"
-            type="file"
-            class="hidden"
-            accept=".jpg, .jpeg, .png, .gif"
-            @change="onFileChange"
-          >
         </div>
       </UFormField>
       <USeparator />

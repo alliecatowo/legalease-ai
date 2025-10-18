@@ -21,8 +21,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Apply auth schema changes."""
-    teamrole_enum = postgresql.ENUM("OWNER", "ADMIN", "MEMBER", name="teamrole")
-    teamrole_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum type with proper idempotency
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE teamrole AS ENUM ('OWNER', 'ADMIN', 'MEMBER');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     op.create_table(
         "teams",
@@ -57,6 +63,8 @@ def upgrade() -> None:
         sa.Column("keycloak_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("email", sa.String(length=320), nullable=False),
         sa.Column("full_name", sa.String(length=255), nullable=True),
+        sa.Column("avatar_url", sa.String(length=512), nullable=True),
+        sa.Column("bio", sa.Text(), nullable=True),
         sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("active_team_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
@@ -75,7 +83,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("team_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("role", teamrole_enum, nullable=False, server_default="MEMBER"),
+        sa.Column("role", postgresql.ENUM("OWNER", "ADMIN", "MEMBER", name="teamrole", create_type=False), nullable=False, server_default="MEMBER"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.ForeignKeyConstraint(["team_id"], ["teams.id"], name="fk_team_memberships_team_id", ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_team_memberships_user_id", ondelete="CASCADE"),
@@ -150,5 +158,5 @@ def downgrade() -> None:
 
     op.drop_table("teams")
 
-    teamrole_enum = postgresql.ENUM("OWNER", "ADMIN", "MEMBER", name="teamrole")
-    teamrole_enum.drop(op.get_bind(), checkfirst=True)
+    # Drop enum type
+    op.execute("DROP TYPE IF EXISTS teamrole")

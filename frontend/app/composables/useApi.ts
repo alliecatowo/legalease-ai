@@ -67,6 +67,13 @@ export const useApi = () => {
   })
 
   return {
+    // User Profile
+    user: {
+      getProfile: () => api('/api/v1/auth/profile'),
+      updateProfile: (data: any) => api('/api/v1/auth/profile', { method: 'PATCH', body: data }),
+      getMe: () => api('/api/v1/auth/profile')  // Alias for getProfile
+    },
+
     // Cases
     cases: {
       list: () => api<CaseListResponse>('/api/v1/cases'),

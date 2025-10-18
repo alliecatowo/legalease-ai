@@ -10,6 +10,9 @@ declare module '#auth-utils' {
     id: string
     email: string
     fullName?: string | null
+    username?: string | null
+    avatarUrl?: string | null
+    bio?: string | null
     keycloakId?: string
     activeTeamId?: string | null
     teams?: TeamSummary[]

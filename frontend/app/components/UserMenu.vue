@@ -16,6 +16,7 @@ const neutrals = ['slate', 'gray', 'zinc', 'neutral', 'stone']
 
 const displayName = computed(() => session.user.value?.fullName || session.user.value?.email || 'Anonymous')
 const email = computed(() => session.user.value?.email || '')
+const avatarUrl = computed(() => session.user.value?.avatarUrl || undefined)
 
 async function handleLogout() {
   try {
@@ -132,8 +133,7 @@ const items = computed<DropdownMenuItem[][]>(() => [[{
     :ui="{ content: collapsed ? 'w-48' : 'w-(--reka-dropdown-menu-trigger-width)' }"
   >
     <UButton
-      :label="collapsed ? undefined : displayName.value"
-      icon="i-lucide-user"
+      :label="collapsed ? undefined : displayName"
       :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
       color="neutral"
       variant="ghost"
@@ -143,7 +143,15 @@ const items = computed<DropdownMenuItem[][]>(() => [[{
       :ui="{
         trailingIcon: 'text-dimmed'
       }"
-    />
+    >
+      <template #leading>
+        <UAvatar
+          :src="avatarUrl"
+          :alt="displayName"
+          size="xs"
+        />
+      </template>
+    </UButton>
 
     <template #chip-leading>
       <span class="ms-0.5 size-2 rounded-full bg-primary/50" />

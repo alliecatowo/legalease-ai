@@ -37,7 +37,9 @@ from app.schemas.user import (
     TeamMembershipResponse,
     TeamSummary,
     UpdateActiveTeamRequest,
+    UpdateUserProfileRequest,
     UserProfileResponse,
+    UserPublicProfile,
 )
 
 __all__ = [
@@ -70,6 +72,8 @@ __all__ = [
     "TranscriptionFormat",
     # User schemas
     "UserProfileResponse",
+    "UserPublicProfile",
+    "UpdateUserProfileRequest",
     "TeamSummary",
     "TeamMembershipResponse",
     "UpdateActiveTeamRequest",

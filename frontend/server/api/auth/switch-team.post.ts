@@ -22,6 +22,9 @@ export default defineEventHandler(async (event) => {
     keycloak_id: string
     email: string
     full_name?: string | null
+    username?: string | null
+    avatar_url?: string | null
+    bio?: string | null
     active_team?: { id: string; name: string; slug: string } | null
     memberships: Array<{
       team: { id: string; name: string; slug: string }
@@ -49,6 +52,9 @@ export default defineEventHandler(async (event) => {
       keycloakId: profile.keycloak_id,
       email: profile.email,
       fullName: profile.full_name ?? null,
+      username: profile.username ?? null,
+      avatarUrl: profile.avatar_url ?? null,
+      bio: profile.bio ?? null,
       activeTeamId: profile.active_team?.id ?? null,
       teams
     }

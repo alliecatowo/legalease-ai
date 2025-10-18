@@ -49,6 +49,9 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     active_team_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
