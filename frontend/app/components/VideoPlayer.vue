@@ -36,11 +36,30 @@ const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
 
+// Video size mode: 'small' | 'theater' | 'fullscreen'
+const videoSize = ref<'small' | 'theater' | 'fullscreen'>('theater')
+
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
 
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+// Video size classes
+const videoContainerClass = computed(() => {
+  if (!isVideo.value) return ''
+
+  switch (videoSize.value) {
+    case 'small':
+      return 'max-w-2xl mx-auto' // 672px max width, centered
+    case 'theater':
+      return 'max-w-5xl mx-auto' // 1024px max width, centered
+    case 'fullscreen':
+      return 'w-full' // Full width
+    default:
+      return 'max-w-5xl mx-auto'
+  }
+})
 
 // Fetch pre-computed waveform data from API
 async function fetchWaveformData(): Promise<{ peaks: number[], duration: number } | null> {
@@ -103,7 +122,7 @@ async function initializeWaveSurfer() {
     barWidth: 3,
     barGap: 1,
     barRadius: 2,
-    height: isVideo.value ? 60 : 80, // Smaller waveform for video overlay
+    height: isVideo.value ? 40 : 80, // Compact waveform for video overlay
     normalize: true,
     backend: 'MediaElement',
     mediaControls: false,
@@ -455,27 +474,29 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Video Player Container (for video files) -->
-    <div v-if="isVideo" class="relative w-full bg-black rounded-lg overflow-hidden">
-      <!-- Video Element -->
-      <video
-        ref="videoRef"
-        class="w-full h-auto"
-        :class="{ 'opacity-0': !isReady }"
-        preload="metadata"
-        crossorigin="anonymous"
-        @loadedmetadata="isMediaReady = true"
-      />
+    <div v-if="isVideo" :class="videoContainerClass">
+      <div class="relative w-full bg-black rounded-lg overflow-hidden">
+        <!-- Video Element -->
+        <video
+          ref="videoRef"
+          class="w-full h-auto"
+          :class="{ 'opacity-0': !isReady }"
+          preload="metadata"
+          crossorigin="anonymous"
+          @loadedmetadata="isMediaReady = true"
+        />
 
-      <!-- Waveform Overlay at Bottom -->
-      <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-        <div class="relative w-full">
-          <div ref="waveformRef" class="w-full cursor-pointer" @click="handleWaveformClick" />
-          <!-- Key Moments Overlay Canvas -->
-          <canvas
-            v-if="keyMoments && keyMoments.length > 0"
-            ref="keyMomentsCanvasRef"
-            class="absolute top-0 left-0 w-full h-full pointer-events-none"
-          />
+        <!-- Waveform Overlay at Bottom -->
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3">
+          <div class="relative w-full">
+            <div ref="waveformRef" class="w-full cursor-pointer" @click="handleWaveformClick" />
+            <!-- Key Moments Overlay Canvas -->
+            <canvas
+              v-if="keyMoments && keyMoments.length > 0"
+              ref="keyMomentsCanvasRef"
+              class="absolute top-0 left-0 w-full h-full pointer-events-none"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -537,6 +558,37 @@ onBeforeUnmount(() => {
 
       <!-- Additional Controls -->
       <div class="flex items-center gap-4">
+        <!-- Video Size Controls (only for video) -->
+        <UFieldGroup v-if="isVideo" size="sm">
+          <UTooltip text="Small">
+            <UButton
+              icon="i-lucide-minimize-2"
+              :variant="videoSize === 'small' ? 'soft' : 'ghost'"
+              :color="videoSize === 'small' ? 'primary' : 'neutral'"
+              size="sm"
+              @click="videoSize = 'small'"
+            />
+          </UTooltip>
+          <UTooltip text="Theater">
+            <UButton
+              icon="i-lucide-rectangle-horizontal"
+              :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
+              :color="videoSize === 'theater' ? 'primary' : 'neutral'"
+              size="sm"
+              @click="videoSize = 'theater'"
+            />
+          </UTooltip>
+          <UTooltip text="Fullscreen">
+            <UButton
+              icon="i-lucide-maximize-2"
+              :variant="videoSize === 'fullscreen' ? 'soft' : 'ghost'"
+              :color="videoSize === 'fullscreen' ? 'primary' : 'neutral'"
+              size="sm"
+              @click="videoSize = 'fullscreen'"
+            />
+          </UTooltip>
+        </UFieldGroup>
+
         <!-- Playback Rate -->
         <USelectMenu
           :model-value="playbackRate"

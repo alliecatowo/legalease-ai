@@ -128,6 +128,7 @@ watch(activeSegmentId, (newSegmentId) => {
   const index = filteredSegments.value.findIndex(s => s.id === newSegmentId)
 
   if (index !== -1 && rowVirtualizer.value) {
+    // Use 'center' alignment for better visibility of context
     rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 })
@@ -270,7 +271,8 @@ function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
 
   const index = filteredSegments.value.findIndex(s => s.id === segment.id)
   if (index !== -1 && rowVirtualizer.value) {
-    rowVirtualizer.value.scrollToIndex(index, { align: 'center' })
+    // Center the segment with smooth scrolling for better UX
+    rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 }
 
@@ -871,7 +873,8 @@ onMounted(async () => {
           <div>
             <div
               ref="scrollContainerRef"
-              class="overflow-y-auto max-h-[60vh]"
+              class="overflow-y-auto"
+              :class="isVideoFile ? 'max-h-[50vh]' : 'max-h-[60vh]'"
               data-transcript-container
             >
             <!-- Virtual list -->
