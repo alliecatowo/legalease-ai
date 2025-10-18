@@ -28,7 +28,6 @@ class KeycloakAdminService:
             client_secret_key=settings.KEYCLOAK_BACKEND_CLIENT_SECRET,
             user_realm_name=settings.KEYCLOAK_REALM,
             verify=True,
-            auto_refresh_token=["get", "put", "post", "delete"],
         )
 
     @property
@@ -57,7 +56,7 @@ class KeycloakAdminService:
     def get_group_by_path(self, path: str) -> Optional[Dict[str, Any]]:
         """Retrieve a group by its canonical path (/teams/<slug>)."""
         try:
-            return self.client.get_group_by_path(path=path, search_in_subgroups=True)
+            return self.client.get_group_by_path(path=path)
         except KeycloakGetError as exc:
             if exc.response_code == 404:
                 return None

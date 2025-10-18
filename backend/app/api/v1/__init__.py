@@ -54,3 +54,9 @@ try:
     api_router.include_router(forensic_exports.router, tags=["forensic-exports"])
 except ImportError as e:
     print(f"Warning: Could not import forensic_exports router: {e}")
+
+try:
+    from app.api.v1 import debug
+    api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
+except ImportError as e:
+    print(f"Warning: Could not import debug router: {e}")

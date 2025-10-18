@@ -60,42 +60,60 @@ class TeamSynchronizer:
         active_team_claim: Optional[str],
     ) -> None:
         """Ensure local memberships mirror the groups found in the access token."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[TeamSync] Starting sync for user {user.email}")
+        logger.info(f"[TeamSync] Raw group_paths: {list(group_paths)}")
+
         existing_memberships = {membership.team_id: membership for membership in user.memberships}
         retained_team_ids: set[uuid.UUID] = set()
 
         for path in group_paths:
+            logger.info(f"[TeamSync] Processing group path: {path}")
             if not path.startswith("/teams/"):
+                logger.info(f"[TeamSync] Skipping non-team group: {path}")
                 continue
 
-            group = self._get_group(path)
-            if not group:
-                continue
-
+            # Extract slug from path (e.g., /teams/default -> default)
             slug = path.split("/")[-1]
-            team_id = self._extract_team_id(group, path)
+            logger.info(f"[TeamSync] Extracted slug: {slug}")
+
+            # Try to get group details, but don't fail if we can't
+            group = self._get_group(path)
+            if group:
+                team_id = self._extract_team_id(group, path)
+            else:
+                # If we can't fetch group details, generate team_id from slug
+                logger.warning(f"[TeamSync] Could not fetch group details for {path}, using slug-based UUID")
+                team_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"legalease.team.{slug}")
             team = db.get(Team, team_id)
             if not team:
                 team = Team(
                     id=team_id,
-                    keycloak_group_id=group.get("id"),
-                    name=group.get("name") or slug.replace("-", " ").title(),
+                    keycloak_group_id=group.get("id") if group else None,
+                    name=group.get("name") if group else slug.replace("-", " ").title(),
                     slug=slug,
-                    description=(group.get("attributes") or {}).get("description", [None])[0],
+                    description=(group.get("attributes") or {}).get("description", [None])[0] if group else None,
                 )
                 db.add(team)
+                logger.info(f"[TeamSync] Created new team: {team.name} ({team.id})")
             else:
-                team.name = group.get("name") or team.name
-                team.keycloak_group_id = team.keycloak_group_id or group.get("id")
+                if group:
+                    team.name = group.get("name") or team.name
+                    team.keycloak_group_id = team.keycloak_group_id or group.get("id")
+                logger.info(f"[TeamSync] Team already exists: {team.name} ({team.id})")
 
             membership = existing_memberships.get(team_id)
             if membership is None:
+                role = self._derive_role(group) if group else TeamRole.MEMBER
                 membership = TeamMembership(
                     team=team,
                     user=user,
-                    role=self._derive_role(group),
+                    role=role,
                 )
                 db.add(membership)
                 user.memberships.append(membership)
+                logger.info(f"[TeamSync] Created membership: user={user.email}, team={team.name}, role={role}")
             else:
                 membership.role = self._derive_role(group)
 

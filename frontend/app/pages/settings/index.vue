@@ -30,12 +30,30 @@ const loading = ref(false)
 // Load profile on mount
 onMounted(async () => {
   try {
+    console.log('[Settings] Fetching profile from backend...')
     const data = await api.user.getProfile()
+    console.log('[Settings] Profile response:', data)
     profile.name = data.full_name || ''
     profile.email = data.email || ''
     profile.username = data.username || ''
     profile.avatar = data.avatar_url || undefined
     profile.bio = data.bio || undefined
+
+    // Update session with fresh team data from backend
+    if (data.memberships) {
+      const teams = data.memberships.map((m: any) => ({
+        id: m.team.id,
+        name: m.team.name,
+        slug: m.team.slug,
+        role: m.role
+      }))
+      console.log('[Settings] Updating session teams:', teams)
+      session.user.value = {
+        ...session.user.value!,
+        teams,
+        activeTeamId: data.active_team?.id ?? null
+      }
+    }
   } catch (error) {
     console.error('Failed to load profile:', error)
   }
@@ -83,7 +101,11 @@ function onFileClick() {
 }
 
 // Team switching
-const teams = computed(() => session.user.value?.teams ?? [])
+const teams = computed(() => {
+  const userTeams = session.user.value?.teams ?? []
+  console.log('[Settings] Teams:', userTeams, 'User:', session.user.value)
+  return userTeams
+})
 const activeTeamId = computed(() => session.user.value?.activeTeamId ?? null)
 
 const selectedTeamId = ref(activeTeamId.value)
@@ -172,7 +194,6 @@ function createTeam() {
               label="Create Your First Team"
               icon="i-lucide-plus"
               color="primary"
-              :disabled="loading"
               @click="createTeam"
               class="w-full justify-center"
             />
@@ -181,7 +202,6 @@ function createTeam() {
               v-model="selectedTeamId"
               :options="teams"
               value-attribute="id"
-              :disabled="loading"
               placeholder="Select a team"
               class="w-full"
             >
@@ -203,7 +223,6 @@ function createTeam() {
             label="Switch"
             color="primary"
             :loading="loading"
-            :disabled="loading"
             @click="switchTeam"
           />
           <UButton
@@ -212,7 +231,6 @@ function createTeam() {
             icon="i-lucide-plus"
             color="neutral"
             variant="outline"
-            :disabled="loading"
             @click="createTeam"
           />
         </div>

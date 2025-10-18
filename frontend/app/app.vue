@@ -39,16 +39,24 @@ useSeoMeta({
     <UApp>
       <NuxtLoadingIndicator />
 
-      <!-- Show loading spinner until session is ready -->
-      <div v-if="!session.ready.value" class="flex items-center justify-center min-h-screen">
-        <UIcon name="i-lucide-loader-circle" class="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <ClientOnly fallback-tag="div" fallback-class="flex items-center justify-center min-h-screen">
+        <!-- Show loading spinner until session is ready -->
+        <div v-if="!session.ready.value" class="flex items-center justify-center min-h-screen">
+          <UIcon name="i-lucide-loader-circle" class="w-8 h-8 animate-spin text-primary" />
+        </div>
 
-      <NuxtLayout v-else>
-        <KeepAlive :max="5">
-          <NuxtPage />
-        </KeepAlive>
-      </NuxtLayout>
+        <NuxtLayout v-else>
+          <KeepAlive :max="5">
+            <NuxtPage />
+          </KeepAlive>
+        </NuxtLayout>
+
+        <template #fallback>
+          <div class="flex items-center justify-center min-h-screen">
+            <UIcon name="i-lucide-loader-circle" class="w-8 h-8 animate-spin text-primary" />
+          </div>
+        </template>
+      </ClientOnly>
     </UApp>
   </ConfigProvider>
 </template>

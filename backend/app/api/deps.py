@@ -124,6 +124,9 @@ async def get_current_user(
     groups = claims.get("groups") or []
     active_team_claim = claims.get("active_team")
 
+    logger.info(f"[AUTH] Token claims keys: {list(claims.keys())}")
+    logger.info(f"[AUTH] Groups from token: {groups}")
+    logger.info(f"[AUTH] Active team from token: {active_team_claim}")
     logger.info(f"Syncing memberships for user {user.email}: groups={groups}, active_team={active_team_claim}")
     team_syncer.sync_memberships(db, user, groups, active_team_claim)
 

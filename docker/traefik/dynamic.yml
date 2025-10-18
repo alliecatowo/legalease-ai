@@ -8,6 +8,7 @@ http:
         contentTypeNosniff: true
         referrerPolicy: "strict-origin-when-cross-origin"
         permissionsPolicy: "geolocation=()"
+        accessControlAllowCredentials: true
         accessControlAllowMethods:
           - GET
           - POST
