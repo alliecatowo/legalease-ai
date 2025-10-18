@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { today, getLocalTimeZone, type DateValue } from '@internationalized/date'
 
 const open = defineModel<boolean>('open')
 const emit = defineEmits<{
@@ -19,8 +20,8 @@ const caseData = ref({
   description: '',
   tags: [] as string[],
   parties: [] as Array<{ name: string; role: string; type: 'plaintiff' | 'defendant' | 'witness' | 'other' }>,
-  documents: [] as string[],
-  timeline: [] as Array<{ date: Date; event: string; description: string }>,
+  documents: [] as File[],
+  timeline: [] as Array<{ date: DateValue; event: string; description: string }>,
   analysisTypes: [] as string[]
 })
 
@@ -69,7 +70,7 @@ const steps = [
 ]
 
 const newParty = ref({ name: '', role: 'plaintiff', type: 'plaintiff' as const })
-const newEvent = ref({ date: new Date(), event: '', description: '' })
+const newEvent = ref({ date: today(getLocalTimeZone()), event: '', description: '' })
 
 function addParty() {
   if (newParty.value.name.trim()) {
@@ -85,7 +86,7 @@ function removeParty(index: number) {
 function addEvent() {
   if (newEvent.value.event.trim()) {
     caseData.value.timeline.push({ ...newEvent.value })
-    newEvent.value = { date: new Date(), event: '', description: '' }
+    newEvent.value = { date: today(getLocalTimeZone()), event: '', description: '' }
   }
 }
 
@@ -242,16 +243,37 @@ function resetForm() {
 
         <!-- Step 3: Documents -->
         <div v-if="currentStep === 2" class="space-y-4">
-          <UFileUpload multiple accept=".pdf,.doc,.docx" class="w-full">
-            <template #default>
-              <div class="text-center py-12">
+          <UFileUpload v-model="caseData.documents" multiple accept=".pdf,.doc,.docx" class="w-full">
+            <template #default="{ attrs, open }">
+              <div class="text-center py-12 cursor-pointer" v-bind="attrs" @click="open">
                 <UIcon name="i-lucide-upload" class="size-12 text-primary mx-auto mb-4" />
                 <h3 class="font-medium mb-2">Upload Documents</h3>
                 <p class="text-sm text-muted mb-4">Drag and drop files or click to browse</p>
-                <UButton label="Browse Files" color="primary" />
+                <UButton label="Browse Files" color="primary" type="button" />
               </div>
             </template>
           </UFileUpload>
+
+          <div v-if="caseData.documents.length" class="space-y-2">
+            <UCard v-for="(file, idx) in caseData.documents" :key="idx" :ui="{ body: 'p-3' }">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <UIcon name="i-lucide-file-text" class="size-5 text-muted" />
+                  <div>
+                    <p class="font-medium text-sm">{{ file.name }}</p>
+                    <p class="text-xs text-muted">{{ (file.size / 1024).toFixed(1) }} KB</p>
+                  </div>
+                </div>
+                <UButton
+                  icon="i-lucide-x"
+                  color="error"
+                  variant="ghost"
+                  size="sm"
+                  @click="caseData.documents.splice(idx, 1)"
+                />
+              </div>
+            </UCard>
+          </div>
 
           <p class="text-sm text-dimmed text-center">
             Supported formats: PDF, Word (.doc, .docx)
@@ -280,7 +302,7 @@ function resetForm() {
               <div class="flex items-start justify-between">
                 <div class="flex-1">
                   <p class="font-medium">{{ event.event }}</p>
-                  <p class="text-sm text-muted">{{ new Date(event.date).toLocaleDateString() }}</p>
+                  <p class="text-sm text-muted">{{ event.date.toString() }}</p>
                   <p v-if="event.description" class="text-sm text-dimmed mt-1">{{ event.description }}</p>
                 </div>
                 <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="sm" @click="removeEvent(idx)" />
