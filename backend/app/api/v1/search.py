@@ -1,8 +1,15 @@
 """
 Search API endpoints for hybrid vector and keyword search.
 """
-from fastapi import APIRouter, Query, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Set
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_active_team
+from app.core.database import get_db
+from app.models.case import Case
+from app.models.document import Document
 
 from app.schemas.search import (
     HybridSearchRequest,
@@ -12,6 +19,62 @@ from app.schemas.search import (
 from app.services.search_service import get_search_engine
 
 router = APIRouter()
+
+
+def _get_team_case_ids(db: Session, team_id) -> Set[int]:
+    """Return set of case IDs accessible to the team."""
+    rows = db.query(Case.id).filter(Case.team_id == team_id).all()
+    return {row[0] for row in rows}
+
+
+def _sanitize_case_ids(
+    db: Session,
+    team_id,
+    requested: Optional[List[int]],
+) -> List[int]:
+    """Ensure requested case IDs belong to the active team."""
+    allowed = _get_team_case_ids(db, team_id)
+    if not allowed:
+        return []
+
+    if requested is None:
+        return list(allowed)
+
+    requested_set = set(requested)
+    if not requested_set.issubset(allowed):
+        raise HTTPException(
+            status_code=403,
+            detail="One or more requested cases are not accessible in the active team.",
+        )
+
+    return list(requested_set)
+
+
+def _sanitize_document_ids(
+    db: Session,
+    team_id,
+    document_ids: Optional[List[int]],
+) -> Optional[List[int]]:
+    """Ensure requested document IDs belong to the active team."""
+    if not document_ids:
+        return None
+
+    rows = (
+        db.query(Document.id)
+        .join(Case, Document.case_id == Case.id)
+        .filter(Document.id.in_(document_ids), Case.team_id == team_id)
+        .all()
+    )
+    valid_ids = {row[0] for row in rows}
+    requested_set = set(document_ids)
+
+    if not requested_set.issubset(valid_ids):
+        raise HTTPException(
+            status_code=403,
+            detail="One or more requested documents are not accessible in the active team.",
+        )
+
+    return list(requested_set)
 
 
 @router.get("/")
@@ -27,6 +90,8 @@ async def search_documents(
         le=1.0,
         description="Minimum score threshold. Use 0.0 for 'Show More Results' functionality"
     ),
+    db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Simple search endpoint using hybrid search.
@@ -54,6 +119,20 @@ async def search_documents(
         Search results with normalized scores and metadata
     """
     try:
+        sanitized_case_ids = _sanitize_case_ids(db, active_team.id, case_ids)
+        if not sanitized_case_ids:
+            return {
+                "query": q,
+                "results": [],
+                "total": 0,
+                "limit": limit,
+                "min_score": min_score,
+                "document_types": document_types,
+                "speakers": speakers,
+                "results_filtered": 0,
+                "search_time_ms": 0,
+            }
+
         # Determine chunk types based on document_types filter
         chunk_types = None
         if document_types:
@@ -67,7 +146,7 @@ async def search_documents(
         # Create search request
         request = HybridSearchRequest(
             query=q,
-            case_ids=case_ids,
+            case_ids=sanitized_case_ids,
             chunk_types=chunk_types,
             top_k=limit,
             score_threshold=min_score,
@@ -115,7 +194,11 @@ async def search_documents(
 
 
 @router.post("/hybrid", response_model=HybridSearchResponse)
-async def hybrid_search(request: HybridSearchRequest):
+async def hybrid_search(
+    request: HybridSearchRequest,
+    db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
+):
     """
     Advanced hybrid search combining BM25 and dense vector search.
 
@@ -145,6 +228,23 @@ async def hybrid_search(request: HybridSearchRequest):
         HybridSearchResponse with ranked results and metadata
     """
     try:
+        request.case_ids = _sanitize_case_ids(db, active_team.id, request.case_ids)
+
+        if not request.case_ids:
+            return HybridSearchResponse(
+                results=[],
+                total_results=0,
+                query=request.query,
+                search_metadata={"reason": "no accessible cases for active team"},
+            )
+
+        if request.document_ids:
+            request.document_ids = _sanitize_document_ids(
+                db,
+                active_team.id,
+                request.document_ids,
+            )
+
         search_engine = get_search_engine()
         response = search_engine.search(request)
         return response
@@ -163,6 +263,8 @@ async def keyword_search(
     chunk_types: Optional[List[str]] = Query(None, description="Filter by chunk types"),
     top_k: int = Query(10, ge=1, le=100, description="Number of results"),
     score_threshold: Optional[float] = Query(0.1, ge=0.0, le=1.0, description="Minimum BM25 score threshold"),
+    db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Pure BM25 keyword search (no dense vectors, no fusion, no reranking).
@@ -183,10 +285,24 @@ async def keyword_search(
     """
     try:
         # Create request with only BM25
+        sanitized_case_ids = _sanitize_case_ids(db, active_team.id, case_ids)
+
+        if not sanitized_case_ids:
+            return {
+                "query": query,
+                "results": [],
+                "total": 0,
+                "top_k": top_k,
+                "score_threshold": score_threshold,
+                "chunk_types": chunk_types,
+            }
+
+        sanitized_document_ids = _sanitize_document_ids(db, active_team.id, document_ids)
+
         request = HybridSearchRequest(
             query=query,
-            case_ids=case_ids,
-            document_ids=document_ids,
+            case_ids=sanitized_case_ids,
+            document_ids=sanitized_document_ids,
             chunk_types=chunk_types,
             top_k=top_k,
             score_threshold=score_threshold,

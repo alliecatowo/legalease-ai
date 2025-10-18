@@ -7,6 +7,7 @@ These endpoints are intended for administrative use.
 """
 
 from typing import List, Optional
+from uuid import UUID
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
@@ -17,12 +18,19 @@ from app.services.indexing_service import get_indexing_service, IndexingService
 from app.models.document import Document
 from app.models.case import Case
 from app.core.qdrant import get_qdrant_client
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from qdrant_client.models import Filter, FieldCondition, MatchAny, MatchValue
 from pydantic import BaseModel, Field
+from app.api.deps import require_active_team
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _get_team_case_ids(db: Session, team_id: UUID) -> List[int]:
+    """Return list of case IDs accessible to the active team."""
+    rows = db.query(Case.id).filter(Case.team_id == team_id).all()
+    return [row[0] for row in rows]
 
 
 # Response schemas
@@ -152,6 +160,7 @@ async def reindex_document(
     batch_size: int = Query(100, ge=1, le=1000, description="Batch size for uploading points"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Reindex a single document.
@@ -179,7 +188,12 @@ async def reindex_document(
 
     try:
         # Check if document exists
-        document = db.query(Document).filter(Document.id == document_id).first()
+        document = (
+            db.query(Document)
+            .join(Case, Document.case_id == Case.id)
+            .filter(Document.id == document_id, Case.team_id == active_team.id)
+            .first()
+        )
         if not document:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -191,11 +205,14 @@ async def reindex_document(
             document_id=document_id,
             db=db,
             batch_size=batch_size,
+            team_id=active_team.id,
         )
 
         logger.info(f"Successfully indexed document {document_id}: {result}")
         return IndexDocumentResponse(**result)
 
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -220,6 +237,7 @@ async def reindex_case(
     batch_size: int = Query(100, ge=1, le=1000, description="Batch size for uploading points"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Reindex all documents in a case.
@@ -250,7 +268,7 @@ async def reindex_case(
 
     try:
         # Check if case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        case = db.query(Case).filter(Case.id == case_id, Case.team_id == active_team.id).first()
         if not case:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -262,11 +280,14 @@ async def reindex_case(
             case_id=case_id,
             db=db,
             batch_size=batch_size,
+            team_id=active_team.id,
         )
 
         logger.info(f"Successfully indexed case {case_id}: {result}")
         return IndexCaseResponse(**result)
 
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -289,6 +310,7 @@ async def batch_index_documents(
     request: BatchIndexRequest = Body(..., description="Batch indexing request"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Index multiple documents in batch.
@@ -316,11 +338,14 @@ async def batch_index_documents(
             documents=request.document_ids,
             db=db,
             batch_size=request.batch_size,
+            team_id=active_team.id,
         )
 
         logger.info(f"Batch indexing completed: {result}")
         return BatchIndexResponse(**result)
 
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error in batch indexing: {e}", exc_info=True)
         raise HTTPException(
@@ -340,7 +365,9 @@ async def batch_index_documents(
 )
 async def delete_document_from_index(
     document_id: int = Path(..., description="ID of the document to remove from index", gt=0),
+    db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Remove a document from the vector index.
@@ -362,11 +389,19 @@ async def delete_document_from_index(
 
     try:
         # Delete from index
-        result = indexing_service.delete_from_index(document_id=document_id)
+        result = indexing_service.delete_from_index(
+            document_id=document_id,
+            db=db,
+            team_id=active_team.id,
+        )
 
         logger.info(f"Successfully deleted document {document_id} from index")
         return DeleteResponse(**result)
 
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error deleting document {document_id} from index: {e}", exc_info=True)
         raise HTTPException(
@@ -386,7 +421,9 @@ async def delete_document_from_index(
 )
 async def delete_case_from_index(
     case_id: int = Path(..., description="ID of the case to remove from index", gt=0),
+    db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Remove all documents of a case from the vector index.
@@ -409,11 +446,19 @@ async def delete_case_from_index(
 
     try:
         # Delete from index
-        result = indexing_service.delete_case_from_index(case_id=case_id)
+        result = indexing_service.delete_case_from_index(
+            case_id=case_id,
+            db=db,
+            team_id=active_team.id,
+        )
 
         logger.info(f"Successfully deleted case {case_id} from index")
         return DeleteResponse(**result)
 
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error deleting case {case_id} from index: {e}", exc_info=True)
         raise HTTPException(
@@ -436,6 +481,7 @@ async def update_document_index(
     batch_size: int = Query(100, ge=1, le=1000, description="Batch size for uploading points"),
     db: Session = Depends(get_db),
     indexing_service: IndexingService = Depends(get_indexing_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Update the vector index for a document.
@@ -466,7 +512,12 @@ async def update_document_index(
 
     try:
         # Check if document exists
-        document = db.query(Document).filter(Document.id == document_id).first()
+        document = (
+            db.query(Document)
+            .join(Case, Document.case_id == Case.id)
+            .filter(Document.id == document_id, Case.team_id == active_team.id)
+            .first()
+        )
         if not document:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -478,11 +529,14 @@ async def update_document_index(
             document_id=document_id,
             db=db,
             batch_size=batch_size,
+            team_id=active_team.id,
         )
 
         logger.info(f"Successfully updated index for document {document_id}: {result}")
         return IndexDocumentResponse(**result)
 
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -501,6 +555,8 @@ async def update_document_index(
 )
 async def debug_chunk_types(
     case_id: Optional[int] = Query(None, description="Filter by case ID"),
+    db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Debug endpoint to check chunk types in Qdrant.
@@ -521,16 +577,37 @@ async def debug_chunk_types(
         collection_name = settings.QDRANT_COLLECTION
 
         # Build filter if case_id provided
-        scroll_filter = None
-        if case_id:
-            scroll_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="case_id",
-                        match=MatchValue(value=case_id),
-                    )
-                ]
+        allowed_case_ids = _get_team_case_ids(db, active_team.id)
+        if not allowed_case_ids:
+            return {
+                "total_points": 0,
+                "chunk_type_counts": {},
+                "case_id_filter": [],
+                "collection": collection_name,
+            }
+
+        if case_id is not None and case_id not in allowed_case_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Case {case_id} is not accessible for the active team",
             )
+
+        case_filter_ids = [case_id] if case_id is not None else allowed_case_ids
+
+        match_condition = (
+            MatchValue(value=case_filter_ids[0])
+            if len(case_filter_ids) == 1
+            else MatchAny(any=case_filter_ids)
+        )
+
+        scroll_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="case_id",
+                    match=match_condition,
+                )
+            ]
+        )
 
         # Scroll through all points and count chunk types
         chunk_type_counts = {}
@@ -568,7 +645,7 @@ async def debug_chunk_types(
         return {
             "total_points": total_points,
             "chunk_type_counts": chunk_type_counts,
-            "case_id_filter": case_id,
+            "case_id_filter": case_filter_ids,
             "collection": collection_name,
         }
 
@@ -589,6 +666,8 @@ async def debug_chunk_types(
 async def debug_transcript_segments(
     case_id: Optional[int] = Query(None, description="Filter by case ID"),
     limit: int = Query(10, ge=1, le=100, description="Number of samples to return"),
+    db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Debug endpoint to check transcript segments in Qdrant.
@@ -610,6 +689,29 @@ async def debug_transcript_segments(
         collection_name = settings.QDRANT_COLLECTION
 
         # Build filter for transcript segments
+        allowed_case_ids = _get_team_case_ids(db, active_team.id)
+        if not allowed_case_ids:
+            return {
+                "total_samples": 0,
+                "case_id_filter": [],
+                "collection": collection_name,
+                "samples": [],
+            }
+
+        if case_id is not None and case_id not in allowed_case_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Case {case_id} is not accessible for the active team",
+            )
+
+        case_filter_ids = [case_id] if case_id is not None else allowed_case_ids
+
+        match_condition = (
+            MatchValue(value=case_filter_ids[0])
+            if len(case_filter_ids) == 1
+            else MatchAny(any=case_filter_ids)
+        )
+
         conditions = [
             FieldCondition(
                 key="chunk_type",
@@ -617,13 +719,12 @@ async def debug_transcript_segments(
             )
         ]
 
-        if case_id:
-            conditions.append(
-                FieldCondition(
-                    key="case_id",
-                    match=MatchValue(value=case_id),
-                )
+        conditions.append(
+            FieldCondition(
+                key="case_id",
+                match=match_condition,
             )
+        )
 
         scroll_filter = Filter(must=conditions)
 
@@ -656,7 +757,7 @@ async def debug_transcript_segments(
 
         return {
             "total_samples": len(samples),
-            "case_id_filter": case_id,
+            "case_id_filter": case_filter_ids,
             "collection": collection_name,
             "samples": samples,
         }

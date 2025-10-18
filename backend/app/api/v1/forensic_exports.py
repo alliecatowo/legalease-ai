@@ -18,6 +18,8 @@ from app.schemas.forensic_export import (
     DeleteForensicExportResponse,
 )
 from app.services.forensic_export_service import ForensicExportService
+from app.api.deps import require_active_team
+from app.models.case import Case
 
 router = APIRouter()
 
@@ -31,6 +33,7 @@ router = APIRouter()
 async def list_exports_for_case(
     case_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List all forensic exports for a specific case.
@@ -42,7 +45,22 @@ async def list_exports_for_case(
     Returns:
         List of forensic exports for the case
     """
-    exports = ForensicExportService.list_exports_for_case(case_id, db)
+    case = (
+        db.query(Case.id)
+        .filter(Case.id == case_id, Case.team_id == active_team.id)
+        .first()
+    )
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Case {case_id} not found",
+        )
+
+    exports = ForensicExportService.list_exports_for_case(
+        case_id,
+        db,
+        team_id=active_team.id,
+    )
     return ForensicExportListResponse(
         exports=exports,
         total=len(exports)
@@ -57,6 +75,7 @@ async def list_exports_for_case(
 )
 async def list_all_exports(
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List all forensic exports across all cases.
@@ -67,7 +86,10 @@ async def list_all_exports(
     Returns:
         List of all forensic exports
     """
-    exports = ForensicExportService.list_all_exports(db)
+    exports = ForensicExportService.list_all_exports(
+        db,
+        team_id=active_team.id,
+    )
     return ForensicExportListResponse(
         exports=exports,
         total=len(exports)
@@ -83,6 +105,7 @@ async def list_all_exports(
 async def get_export(
     export_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get detailed information about a forensic export.
@@ -97,7 +120,11 @@ async def get_export(
     Raises:
         HTTPException: If export not found
     """
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(
+        export_id,
+        db,
+        team_id=active_team.id,
+    )
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -118,6 +145,7 @@ async def scan_location(
     case_id: int,
     request: ScanLocationRequest,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Scan a directory for forensic exports.
@@ -138,8 +166,11 @@ async def scan_location(
         HTTPException: If case not found or path is invalid
     """
     # Validate case exists
-    from app.models.case import Case
-    case = db.query(Case).filter(Case.id == case_id).first()
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id, Case.team_id == active_team.id)
+        .first()
+    )
     if not case:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -182,6 +213,7 @@ async def scan_location(
 async def verify_export(
     export_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Verify that the export folder still exists on disk.
@@ -199,7 +231,11 @@ async def verify_export(
         HTTPException: If export not found
     """
     try:
-        exists, path = ForensicExportService.verify_export_exists(export_id, db)
+        exists, path = ForensicExportService.verify_export_exists(
+            export_id,
+            db,
+            team_id=active_team.id,
+        )
         return VerifyExportResponse(
             exists=exists,
             path=path,
@@ -221,6 +257,7 @@ async def verify_export(
 async def delete_export(
     export_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Delete a forensic export record from the database.
@@ -239,7 +276,11 @@ async def delete_export(
         HTTPException: If export not found
     """
     try:
-        export = ForensicExportService.delete_export(export_id, db)
+        export = ForensicExportService.delete_export(
+            export_id,
+            db,
+            team_id=active_team.id,
+        )
         return DeleteForensicExportResponse(
             id=export.id,
             folder_path=export.folder_path,
@@ -261,6 +302,7 @@ async def serve_export_file(
     export_id: int,
     file_path: str,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Serve any file from the forensic export folder.
@@ -279,7 +321,11 @@ async def serve_export_file(
     Raises:
         HTTPException: If export or file not found
     """
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(
+        export_id,
+        db,
+        team_id=active_team.id,
+    )
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -328,6 +374,7 @@ async def serve_export_file(
 async def get_export_report(
     export_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Serve the Report.html file from the forensic export.
@@ -347,7 +394,11 @@ async def get_export_report(
     """
     import re
 
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(
+        export_id,
+        db,
+        team_id=active_team.id,
+    )
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -408,6 +459,7 @@ async def list_export_files(
     export_id: int,
     subpath: str = "",
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List files and directories in the forensic export folder.
@@ -423,7 +475,11 @@ async def list_export_files(
     Raises:
         HTTPException: If export not found or path is invalid
     """
-    export = ForensicExportService.get_export(export_id, db)
+    export = ForensicExportService.get_export(
+        export_id,
+        db,
+        team_id=active_team.id,
+    )
     if not export:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

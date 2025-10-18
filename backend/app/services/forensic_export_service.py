@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,24 @@ class ForensicExportService:
     """Service for discovering, registering, and managing forensic exports."""
 
     MAX_SCAN_DEPTH = 10  # Safety limit for directory recursion
+
+    @staticmethod
+    def _export_query(db: Session, *, export_id: Optional[int] = None, team_id: Optional[UUID] = None):
+        """Build a query for forensic exports optionally restricted by team."""
+        query = db.query(ForensicExport).join(Case, ForensicExport.case_id == Case.id)
+        if export_id is not None:
+            query = query.filter(ForensicExport.id == export_id)
+        if team_id is not None:
+            query = query.filter(Case.team_id == team_id)
+        return query
+
+    @staticmethod
+    def _case_query(db: Session, *, case_id: int, team_id: Optional[UUID] = None):
+        """Build a query for cases optionally restricted by team."""
+        query = db.query(Case).filter(Case.id == case_id)
+        if team_id is not None:
+            query = query.filter(Case.team_id == team_id)
+        return query
 
     @staticmethod
     def is_forensic_export(path: Path) -> bool:
@@ -246,35 +265,53 @@ class ForensicExportService:
         return export
 
     @staticmethod
-    def get_export(export_id: int, db: Session) -> Optional[ForensicExport]:
-        """Get a forensic export by ID."""
-        return db.query(ForensicExport).filter(
-            ForensicExport.id == export_id
+    def get_export(
+        export_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Optional[ForensicExport]:
+        """Get a forensic export by ID, optionally restricted to a team."""
+        return ForensicExportService._export_query(
+            db,
+            export_id=export_id,
+            team_id=team_id,
         ).first()
 
     @staticmethod
-    def list_exports_for_case(case_id: int, db: Session) -> List[ForensicExport]:
-        """List all forensic exports for a case."""
-        return db.query(ForensicExport).filter(
+    def list_exports_for_case(
+        case_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> List[ForensicExport]:
+        """List all forensic exports for a case, restricted to the team if provided."""
+        query = ForensicExportService._export_query(db, team_id=team_id).filter(
             ForensicExport.case_id == case_id
-        ).order_by(ForensicExport.discovered_at.desc()).all()
+        )
+        return query.order_by(ForensicExport.discovered_at.desc()).all()
 
     @staticmethod
-    def list_all_exports(db: Session) -> List[ForensicExport]:
-        """List all forensic exports across all cases."""
-        return db.query(ForensicExport).order_by(
+    def list_all_exports(
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> List[ForensicExport]:
+        """List all forensic exports across all cases accessible to the team."""
+        return ForensicExportService._export_query(db, team_id=team_id).order_by(
             ForensicExport.discovered_at.desc()
         ).all()
 
     @staticmethod
-    def verify_export_exists(export_id: int, db: Session) -> Tuple[bool, str]:
+    def verify_export_exists(
+        export_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Tuple[bool, str]:
         """
         Verify that the export folder still exists on disk.
 
         Returns:
             Tuple of (exists: bool, path: str)
         """
-        export = ForensicExportService.get_export(export_id, db)
+        export = ForensicExportService.get_export(export_id, db, team_id=team_id)
         if not export:
             raise ValueError(f"Export {export_id} not found")
 
@@ -285,13 +322,17 @@ class ForensicExportService:
         return exists, export.folder_path
 
     @staticmethod
-    def delete_export(export_id: int, db: Session) -> ForensicExport:
+    def delete_export(
+        export_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> ForensicExport:
         """
         Delete a forensic export record from the database.
 
         Note: This does NOT delete files from disk, only the database record.
         """
-        export = ForensicExportService.get_export(export_id, db)
+        export = ForensicExportService.get_export(export_id, db, team_id=team_id)
         if not export:
             raise ValueError(f"Export {export_id} not found")
 

@@ -8,6 +8,7 @@ proper metadata for legal document retrieval.
 """
 
 from typing import List, Dict, Any, Optional
+from uuid import UUID
 import logging
 from datetime import datetime
 from collections import defaultdict
@@ -66,6 +67,34 @@ class IndexingService:
             f"IndexingService initialized with model: {embedding_model_name}, "
             f"collection: {self.collection_name}"
         )
+
+    def _get_document_for_team(
+        self,
+        db: Session,
+        document_id: int,
+        team_id: Optional[UUID] = None,
+    ) -> Optional[Document]:
+        """Fetch a document ensuring it belongs to the provided team."""
+        query = (
+            db.query(Document)
+            .join(Case, Document.case_id == Case.id)
+            .filter(Document.id == document_id)
+        )
+        if team_id is not None:
+            query = query.filter(Case.team_id == team_id)
+        return query.first()
+
+    def _get_case_for_team(
+        self,
+        db: Session,
+        case_id: int,
+        team_id: Optional[UUID] = None,
+    ) -> Optional[Case]:
+        """Fetch a case ensuring it belongs to the provided team."""
+        query = db.query(Case).filter(Case.id == case_id)
+        if team_id is not None:
+            query = query.filter(Case.team_id == team_id)
+        return query.first()
 
     def _generate_embeddings(self, text: str) -> Dict[str, List[float]]:
         """
@@ -252,6 +281,7 @@ class IndexingService:
         document_id: int,
         db: Session,
         batch_size: int = 100,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Index a single document's chunks into Qdrant.
@@ -277,9 +307,11 @@ class IndexingService:
         logger.info(f"Starting indexing for document {document_id}")
 
         try:
-            # Fetch document with chunks
-            document = db.query(Document).filter(Document.id == document_id).first()
+            # Fetch document with chunks, ensuring team access
+            document = self._get_document_for_team(db, document_id, team_id)
             if not document:
+                if team_id:
+                    raise PermissionError(f"Document {document_id} is not accessible for the active team")
                 raise ValueError(f"Document {document_id} not found")
 
             # Get chunks
@@ -362,6 +394,7 @@ class IndexingService:
         documents: List[int],
         db: Session,
         batch_size: int = 100,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Index multiple documents in batch.
@@ -389,12 +422,28 @@ class IndexingService:
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-        for doc_id in documents:
+        accessible_documents: List[int] = documents
+        if team_id is not None:
+            rows = (
+                db.query(Document.id)
+                .join(Case, Document.case_id == Case.id)
+                .filter(Document.id.in_(documents), Case.team_id == team_id)
+                .all()
+            )
+            accessible_set = {row[0] for row in rows}
+            requested_set = set(documents)
+            if not requested_set.issubset(accessible_set):
+                missing = requested_set.difference(accessible_set)
+                raise PermissionError(f"Documents not accessible for the active team: {sorted(missing)}")
+            accessible_documents = list(accessible_set)
+
+        for doc_id in accessible_documents:
             try:
                 doc_result = self.index_document(
                     document_id=doc_id,
                     db=db,
                     batch_size=batch_size,
+                    team_id=team_id,
                 )
 
                 results["successful_documents"] += 1
@@ -424,6 +473,7 @@ class IndexingService:
         document_id: int,
         db: Session,
         batch_size: int = 100,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Update the index for a document.
@@ -446,13 +496,18 @@ class IndexingService:
 
         try:
             # First, delete existing entries
-            delete_result = self.delete_from_index(document_id=document_id)
+            delete_result = self.delete_from_index(
+                document_id=document_id,
+                db=db,
+                team_id=team_id,
+            )
 
             # Then, re-index
             index_result = self.index_document(
                 document_id=document_id,
                 db=db,
                 batch_size=batch_size,
+                team_id=team_id,
             )
 
             result = {
@@ -473,6 +528,8 @@ class IndexingService:
     def delete_from_index(
         self,
         document_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Delete all chunks of a document from the index.
@@ -489,6 +546,12 @@ class IndexingService:
         logger.info(f"Deleting document {document_id} from index")
 
         try:
+            document = self._get_document_for_team(db, document_id, team_id)
+            if not document:
+                if team_id:
+                    raise PermissionError(f"Document {document_id} is not accessible for the active team")
+                raise ValueError(f"Document {document_id} not found")
+
             # Build filter for document
             filter_condition = Filter(
                 must=[
@@ -523,6 +586,7 @@ class IndexingService:
         case_id: int,
         db: Session,
         batch_size: int = 100,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Index all documents in a case.
@@ -544,8 +608,10 @@ class IndexingService:
 
         try:
             # Fetch case with documents
-            case = db.query(Case).filter(Case.id == case_id).first()
+            case = self._get_case_for_team(db, case_id, team_id)
             if not case:
+                if team_id:
+                    raise PermissionError(f"Case {case_id} is not accessible for the active team")
                 raise ValueError(f"Case {case_id} not found")
 
             # Get all document IDs for the case
@@ -569,6 +635,7 @@ class IndexingService:
                 documents=document_ids,
                 db=db,
                 batch_size=batch_size,
+                team_id=team_id,
             )
 
             # Add case information
@@ -590,6 +657,8 @@ class IndexingService:
     def delete_case_from_index(
         self,
         case_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Delete all documents of a case from the index.
@@ -606,6 +675,12 @@ class IndexingService:
         logger.info(f"Deleting case {case_id} from index")
 
         try:
+            case = self._get_case_for_team(db, case_id, team_id)
+            if not case:
+                if team_id:
+                    raise PermissionError(f"Case {case_id} is not accessible for the active team")
+                raise ValueError(f"Case {case_id} not found")
+
             # Build filter for case
             filter_condition = Filter(
                 must=[
