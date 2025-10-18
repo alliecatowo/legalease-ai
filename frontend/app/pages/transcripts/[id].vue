@@ -48,6 +48,7 @@ const metadataSidebarCollapsed = ref(false)
 // Video player state
 const videoPlayerOpen = ref(true)
 const videoSize = ref<'small' | 'theater'>('theater')
+const videoPlayerRef = ref<any>(null)
 
 // Perform smart search using backend API
 async function performSmartSearch() {
@@ -264,7 +265,7 @@ function formatDate(dateStr: string) {
 
 function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
   selectedSegment.value = segment
-  currentTime.value = segment.start
+  videoPlayerRef.value?.seekTo(segment.start)
 
   if (fromWaveform) {
     flashSegmentId.value = segment.id
@@ -274,7 +275,6 @@ function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
 
   const index = filteredSegments.value.findIndex(s => s.id === segment.id)
   if (index !== -1 && rowVirtualizer.value) {
-    // Center the segment with smooth scrolling for better UX
     rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 }
@@ -789,10 +789,10 @@ onMounted(async () => {
           <div v-show="videoPlayerOpen" class="p-4 sm:p-6">
             <LazyVideoPlayer
               v-if="transcript.audioUrl"
+              ref="videoPlayerRef"
               :media-url="transcript.audioUrl"
               media-type="video"
               :transcription-id="transcript.id"
-              :current-time="currentTime"
               :is-playing="isPlaying"
               :segments="transcript.segments"
               :selected-segment-id="selectedSegment?.id"
@@ -827,10 +827,10 @@ onMounted(async () => {
         <div v-else class="flex-shrink-0 p-4 sm:p-6 border-b border-default">
           <LazyVideoPlayer
             v-if="transcript.audioUrl"
+            ref="videoPlayerRef"
             :media-url="transcript.audioUrl"
             media-type="audio"
             :transcription-id="transcript.id"
-            :current-time="currentTime"
             :segments="transcript.segments"
             :selected-segment-id="selectedSegment?.id"
             :key-moments="keyMoments"
@@ -1020,7 +1020,7 @@ onMounted(async () => {
                     'animate-pulse bg-warning/20': filteredSegments[virtualRow.index].id === flashSegmentId
                   }
                 ]"
-                @click="currentTime = filteredSegments[virtualRow.index].start"
+                @click="seekToSegment(filteredSegments[virtualRow.index])"
               >
                 <!-- Header -->
                 <div class="flex items-start justify-between gap-2 mb-1">

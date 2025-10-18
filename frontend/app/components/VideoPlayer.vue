@@ -8,7 +8,6 @@ const props = withDefaults(defineProps<{
   mediaUrl: string
   mediaType?: 'video' | 'audio' // Explicitly specify media type
   transcriptionId?: string  // Optional transcription GID for fetching pre-computed waveform
-  currentTime?: number
   isPlaying?: boolean // External control of play/pause state
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
@@ -36,14 +35,12 @@ const isMediaReady = ref(false) // Media can play before waveform is drawn
 const isLoading = ref(false)
 const loadingProgress = ref(0)
 const duration = ref(0)
+const currentTime = ref(0) // Track current playback time internally
 const isPlaying = ref(false)
 const volume = ref(1)
 const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
-const isExternalSeek = ref(false) // Track when we're seeking from external prop change
-let clearSeekTimeout: ReturnType<typeof setTimeout> | null = null
-
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
 
@@ -68,51 +65,36 @@ const videoContainerClass = computed(() => {
 
 // Fetch pre-computed waveform data from API
 async function fetchWaveformData(): Promise<{ peaks: number[], duration: number } | null> {
-  if (!props.transcriptionId) {
-    return null
-  }
+  if (!props.transcriptionId) return null
 
   try {
     const response = await fetch(`/api/v1/transcriptions/${encodeURIComponent(props.transcriptionId)}/waveform`)
     if (response.ok) {
       const data = await response.json()
-      console.log('Fetched pre-computed waveform data:', data.peaks.length, 'peaks')
       return { peaks: data.peaks, duration: data.duration }
-    } else {
-      console.warn('Pre-computed waveform not available, will load media file')
-      return null
     }
+    return null
   } catch (error) {
-    console.warn('Failed to fetch waveform data:', error)
     return null
   }
 }
 
-// Initialize WaveSurfer with video element
+// Initialize WaveSurfer
 async function initializeWaveSurfer() {
-  if (!waveformRef.value) {
-    console.error('VideoPlayer: waveformRef is not available')
-    return
-  }
+  if (!waveformRef.value) return
 
   isLoading.value = true
   loadingProgress.value = 0
 
-  // For video, use the video element; for audio, create an audio element
+  // Create appropriate media element
   let mediaElement: HTMLMediaElement
-
   if (isVideo.value) {
     if (!videoRef.value) {
-      console.error('VideoPlayer: videoRef is not available for video file')
       isLoading.value = false
       return
     }
-    // Use existing video element
-    console.log('VideoPlayer: Using video element for media')
     mediaElement = videoRef.value
   } else {
-    // Create audio element for audio-only files
-    console.log('VideoPlayer: Creating audio element for media')
     const audio = document.createElement('audio')
     audio.preload = 'metadata'
     audio.crossOrigin = 'anonymous'
@@ -127,7 +109,7 @@ async function initializeWaveSurfer() {
     barWidth: 3,
     barGap: 1,
     barRadius: 2,
-    height: isVideo.value ? 40 : 80, // Compact waveform for video overlay
+    height: isVideo.value ? 40 : 80,
     normalize: true,
     backend: 'MediaElement',
     mediaControls: false,
@@ -135,10 +117,8 @@ async function initializeWaveSurfer() {
     media: mediaElement
   })
 
-  // Enable play button immediately - browser will buffer on play
-  setTimeout(() => {
-    isMediaReady.value = true
-  }, 100)
+  // Enable controls after short delay
+  setTimeout(() => { isMediaReady.value = true }, 100)
 
   // Loading progress
   wavesurfer.value.on('loading', (percent: number) => {
@@ -147,7 +127,7 @@ async function initializeWaveSurfer() {
     }
   })
 
-  // Ready event - waveform fully loaded
+  // Ready - waveform loaded
   wavesurfer.value.on('ready', () => {
     isReady.value = true
     isLoading.value = false
@@ -155,31 +135,24 @@ async function initializeWaveSurfer() {
     duration.value = wavesurfer.value!.getDuration()
     emit('ready', duration.value)
 
-    // Wait a tick for canvas to be properly sized
     nextTick(() => {
-      drawSegmentMarkers()
       drawKeyMomentsOverlay()
       drawSegmentTimeline()
     })
   })
 
-  // Throttle audioprocess to 100ms instead of 60fps for better performance
+  // Update time during playback (throttled)
   const throttledAudioProcess = useThrottleFn((time: number) => {
-    // Don't emit during external seeks
-    if (!isExternalSeek.value) {
-      emit('update:currentTime', time)
-    }
+    currentTime.value = time
+    emit('update:currentTime', time)
   }, 100)
 
   wavesurfer.value.on('audioprocess', throttledAudioProcess)
 
   wavesurfer.value.on('seek', (progress) => {
-    // Only emit if this wasn't an external seek from parent
-    if (!isExternalSeek.value) {
-      const time = progress * duration.value
-      emit('update:currentTime', time)
-    }
-    // Don't clear the flag here - let the timeout handle it
+    const time = progress * duration.value
+    currentTime.value = time
+    emit('update:currentTime', time)
   })
 
   wavesurfer.value.on('play', () => {
@@ -197,44 +170,26 @@ async function initializeWaveSurfer() {
     emit('update:isPlaying', false)
   })
 
-  // Error handling
-  wavesurfer.value.on('error', (error: string) => {
-    console.error('WaveSurfer error:', error)
+  wavesurfer.value.on('error', () => {
     isLoading.value = false
     isReady.value = false
   })
 
-  // Try to fetch pre-computed waveform data first
+  // Load waveform (pre-computed if available, otherwise generate)
   const waveformData = await fetchWaveformData()
 
-  if (waveformData && waveformData.peaks && waveformData.duration) {
-    // Use pre-computed waveform data for instant rendering
-    console.log('Using pre-computed waveform data - instant rendering!')
-
-    // WaveSurfer v7 expects an array of channels (even for mono)
+  if (waveformData?.peaks && waveformData?.duration) {
     const peaksArray = [waveformData.peaks]
-
-    // Load media URL for playback and set the peaks manually
-    wavesurfer.value.load(props.mediaUrl, peaksArray, waveformData.duration).catch((error) => {
-      console.error('Failed to load media with pre-computed waveform:', error)
+    wavesurfer.value.load(props.mediaUrl, peaksArray, waveformData.duration).catch(() => {
       isLoading.value = false
       isMediaReady.value = false
     })
   } else {
-    // Fallback: Load media and generate waveform on client
-    console.log('Falling back to client-side waveform generation')
-    wavesurfer.value.load(props.mediaUrl).catch((error) => {
-      console.error('Failed to load media:', error)
+    wavesurfer.value.load(props.mediaUrl).catch(() => {
       isLoading.value = false
       isMediaReady.value = false
     })
   }
-}
-
-// Draw segment markers on waveform
-function drawSegmentMarkers() {
-  if (!wavesurfer.value || !props.segments) return
-  // Segment markers are now handled by the timeline canvas below
 }
 
 // Draw key moments overlay on waveform
@@ -245,7 +200,6 @@ function drawKeyMomentsOverlay() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // Set canvas dimensions to match waveform container
   const waveformContainer = waveformRef.value
   if (!waveformContainer) return
 
@@ -254,33 +208,27 @@ function drawKeyMomentsOverlay() {
   canvas.height = rect.height * window.devicePixelRatio
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
 
-  // Clear canvas
   ctx.clearRect(0, 0, rect.width, rect.height)
 
-  // Draw key moment markers
   props.keyMoments.forEach((moment) => {
     const x = (moment.start / duration.value) * rect.width
 
-    // Draw vertical line
-    ctx.strokeStyle = '#F59E0B' // Warning color
+    // Draw dotted vertical line
+    ctx.strokeStyle = '#F59E0B'
     ctx.lineWidth = 2
     ctx.globalAlpha = 0.8
-
-    // Draw a dotted line
     ctx.setLineDash([4, 4])
     ctx.beginPath()
     ctx.moveTo(x, 0)
     ctx.lineTo(x, rect.height)
     ctx.stroke()
 
-    // Draw star icon at top
+    // Draw star marker
     ctx.globalAlpha = 1.0
     ctx.fillStyle = '#F59E0B'
-    ctx.setLineDash([]) // Reset to solid line
+    ctx.setLineDash([])
     const starSize = 6
     const starY = 8
-
-    // Simple star shape (triangle for performance)
     ctx.beginPath()
     ctx.moveTo(x, starY)
     ctx.lineTo(x - starSize / 2, starY + starSize)
@@ -292,7 +240,7 @@ function drawKeyMomentsOverlay() {
   ctx.globalAlpha = 1.0
 }
 
-// Handle waveform click - emit time and find segment
+// Handle waveform click
 function handleWaveformClick(event: MouseEvent) {
   if (!waveformRef.value || !duration.value) return
 
@@ -300,14 +248,11 @@ function handleWaveformClick(event: MouseEvent) {
   const clickX = event.clientX - rect.left
   const clickTime = (clickX / rect.width) * duration.value
 
-  // Emit waveform click event with time
   emit('waveform-click', clickTime)
-
-  // Also seek to that time
   seekTo(clickTime)
 }
 
-// Draw segment timeline on canvas
+// Draw segment timeline
 function drawSegmentTimeline() {
   if (!timelineCanvasRef.value || !props.segments || !duration.value) return
 
@@ -315,130 +260,73 @@ function drawSegmentTimeline() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // For video, use a fixed height; for audio, use the element's height
   const displayHeight = isVideo.value ? 12 : canvas.getBoundingClientRect().height
   const rect = canvas.getBoundingClientRect()
 
-  // Don't draw if canvas is too small (likely not rendered yet)
   if (rect.width < 100) return
 
   canvas.width = rect.width * window.devicePixelRatio
   canvas.height = displayHeight * window.devicePixelRatio
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
 
-  // Clear canvas
   ctx.clearRect(0, 0, rect.width, displayHeight)
 
-  // Draw each segment
   props.segments.forEach((segment) => {
     const left = (segment.start / duration.value) * rect.width
     const width = ((segment.end - segment.start) / duration.value) * rect.width
-
-    // Set color based on segment type and selection
     const isSelected = segment.id === props.selectedSegmentId
     const baseColor = segment.isKeyMoment ? '#F59E0B' : '#3B82F6'
-    const opacity = isSelected ? 1.0 : 0.7
 
     ctx.fillStyle = baseColor
-    ctx.globalAlpha = opacity
+    ctx.globalAlpha = isSelected ? 1.0 : 0.7
     ctx.fillRect(left, 0, width, displayHeight)
   })
 
   ctx.globalAlpha = 1.0
 }
 
-// Play/pause
 function togglePlayPause() {
-  if (!wavesurfer.value) return
-  wavesurfer.value.playPause()
+  wavesurfer.value?.playPause()
 }
 
-// Seek to time
 function seekTo(time: number) {
-  if (!wavesurfer.value || !duration.value) return
-  const progress = time / duration.value
-  wavesurfer.value.seekTo(progress)
+  wavesurfer.value?.setTime(time)
 }
 
-// Skip forward/backward
 function skip(seconds: number) {
   if (!wavesurfer.value) return
   const currentTime = wavesurfer.value.getCurrentTime()
   seekTo(currentTime + seconds)
 }
 
-// Set volume
 function setVolume(vol: number) {
   if (!wavesurfer.value) return
   volume.value = vol
   wavesurfer.value.setVolume(vol)
 }
 
-// Set playback rate
 function setPlaybackRate(rate: number) {
   if (!wavesurfer.value) return
   playbackRate.value = rate
   wavesurfer.value.setPlaybackRate(rate)
 }
 
-// Format time display
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
-// Watch for external currentTime updates
-watch(() => props.currentTime, (newTime) => {
-  if (newTime !== undefined && wavesurfer.value && duration.value > 0) {
-    const currentWavesurferTime = wavesurfer.value.getCurrentTime()
-    const timeDiff = Math.abs(newTime - currentWavesurferTime)
-    console.log('Seek request:', { newTime, currentTime: currentWavesurferTime, timeDiff, willSeek: timeDiff > 0.01 })
-    // Only seek if different (very small threshold to avoid rounding errors but allow all intentional seeks)
-    if (timeDiff > 0.01) {
-      // Clear any existing timeout
-      if (clearSeekTimeout) clearTimeout(clearSeekTimeout)
-
-      isExternalSeek.value = true
-      const progress = newTime / duration.value
-      console.log('Seeking to:', { time: newTime, progress })
-      wavesurfer.value.seekTo(progress)
-
-      // Clear the flag after a delay to allow seek to complete and prevent emissions
-      clearSeekTimeout = setTimeout(() => {
-        isExternalSeek.value = false
-        clearSeekTimeout = null
-      }, 200)
-    }
-  }
-})
-
-// Watch for external isPlaying updates
+// Sync external isPlaying prop with wavesurfer
 watch(() => props.isPlaying, (shouldPlay) => {
-  if (shouldPlay !== undefined && wavesurfer.value && isReady.value) {
-    const currentlyPlaying = isPlaying.value
-    // Only change state if different to avoid feedback loops
-    if (shouldPlay !== currentlyPlaying) {
-      if (shouldPlay) {
-        wavesurfer.value.play()
-      } else {
-        wavesurfer.value.pause()
-      }
-    }
+  if (shouldPlay !== undefined && wavesurfer.value && isReady.value && shouldPlay !== isPlaying.value) {
+    shouldPlay ? wavesurfer.value.play() : wavesurfer.value.pause()
   }
 })
 
-// Watch for changes that require redrawing the timeline
-watch([() => props.segments, () => props.selectedSegmentId, duration], () => {
-  drawSegmentTimeline()
-}, { deep: true })
+watch([() => props.segments, () => props.selectedSegmentId, duration], drawSegmentTimeline, { deep: true })
+watch([() => props.keyMoments, duration], drawKeyMomentsOverlay, { deep: true })
 
-// Watch for changes that require redrawing key moments
-watch([() => props.keyMoments, duration], () => {
-  drawKeyMomentsOverlay()
-}, { deep: true })
-
-// Handle canvas click
 function handleTimelineClick(event: MouseEvent) {
   if (!timelineCanvasRef.value || !duration.value) return
 
@@ -446,19 +334,7 @@ function handleTimelineClick(event: MouseEvent) {
   const clickX = event.clientX - rect.left
   const clickTime = (clickX / rect.width) * duration.value
 
-  // Clear any existing timeout
-  if (clearSeekTimeout) clearTimeout(clearSeekTimeout)
-
-  // Seek directly to the clicked time
-  isExternalSeek.value = true
-  const progress = clickTime / duration.value
-  wavesurfer.value?.seekTo(progress)
-
-  // Clear the flag after a delay
-  clearSeekTimeout = setTimeout(() => {
-    isExternalSeek.value = false
-    clearSeekTimeout = null
-  }, 200)
+  seekTo(clickTime)
 }
 
 // Expose methods
@@ -471,39 +347,25 @@ defineExpose({
   setPlaybackRate
 })
 
-// Store observers for cleanup
 let resizeObserver: ResizeObserver | null = null
 let timelineObserver: ResizeObserver | null = null
 
 onMounted(async () => {
-  // For video files, wait for video element to be in DOM
   if (isVideo.value) {
-    // Wait for next tick to ensure video element is rendered
     await nextTick()
-
-    // Give Vue time to render the video element (short polling)
     let attempts = 0
-    const maxAttempts = 10
-
-    while (!videoRef.value && attempts < maxAttempts) {
+    while (!videoRef.value && attempts < 10) {
       await new Promise(resolve => setTimeout(resolve, 50))
       attempts++
     }
-
     if (!videoRef.value) {
-      console.error('VideoPlayer: Failed to get video element reference after', attempts, 'attempts')
       isLoading.value = false
       return
     }
-
-    console.log('VideoPlayer: Video element is ready, initializing WaveSurfer')
-    initializeWaveSurfer()
-  } else {
-    // For audio, initialize immediately
-    initializeWaveSurfer()
   }
 
-  // Add resize observer to redraw canvases on window resize
+  initializeWaveSurfer()
+
   await nextTick()
   if (waveformRef.value) {
     resizeObserver = new ResizeObserver(() => {
@@ -513,11 +375,8 @@ onMounted(async () => {
     resizeObserver.observe(waveformRef.value)
   }
 
-  // Also observe timeline canvas for size changes
   if (timelineCanvasRef.value) {
-    timelineObserver = new ResizeObserver(() => {
-      drawSegmentTimeline()
-    })
+    timelineObserver = new ResizeObserver(drawSegmentTimeline)
     timelineObserver.observe(timelineCanvasRef.value)
   }
 })
