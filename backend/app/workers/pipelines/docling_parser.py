@@ -146,7 +146,16 @@ class DoclingParser:
                 tmp_path = tmp_file.name
 
             try:
-                # Convert document
+                # Estimate processing time based on file size
+                file_size_mb = len(file_content) / (1024 * 1024)
+                # Rough estimate: 1-2 seconds per MB on GPU, 5-10 seconds on CPU
+                est_time_sec = file_size_mb * (1.5 if device == "cuda" else 7)
+                logger.info(
+                    f"Converting {file_size_mb:.1f}MB PDF with {device.upper()} "
+                    f"(estimated ~{int(est_time_sec/60)} minutes)..."
+                )
+
+                # Convert document (this is the long-running operation with no progress callbacks)
                 result = converter.convert(tmp_path)
                 doc = result.document
 
