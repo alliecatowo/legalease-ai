@@ -491,9 +491,49 @@ async function loadTranscript() {
 
   try {
     const response = await api.transcriptions.get(transcriptId.value)
+
+    const statusMap: Record<string, Transcription['status']> = {
+      COMPLETED: 'completed',
+      PROCESSING: 'processing',
+      PENDING: 'processing',
+      FAILED: 'failed'
+    }
+
+    const fallbackSpeakerColors = [
+      '#3B82F6',
+      '#8B5CF6',
+      '#10B981',
+      '#F59E0B',
+      '#EF4444',
+      '#EC4899',
+      '#6366F1',
+      '#14B8A6'
+    ]
+
+    const normalizedSpeakers: Speaker[] = (response.speakers || []).map((speaker: any, index: number) => ({
+      id: speaker.id || `speaker-${index}`,
+      name: speaker.name || `Speaker ${index + 1}`,
+      role: speaker.role,
+      color: speaker.color || fallbackSpeakerColors[index % fallbackSpeakerColors.length]
+    }))
+
     transcript.value = {
-      ...response,
-      audioUrl: response.audio_url || null
+      id: response.gid,
+      title: response.filename || response.gid,
+      audioUrl: response.audio_url || null,
+      duration: response.duration || 0,
+      status: statusMap[String(response.status || '').toUpperCase()] || 'processing',
+      caseId: response.case_gid,
+      caseName: (response as any).case_name,
+      createdAt: response.created_at,
+      segments: response.segments || [],
+      speakers: normalizedSpeakers,
+      metadata: {
+        format: response.format,
+        fileSize: (response as any).size,
+        sampleRate: (response as any).sample_rate,
+        bitRate: (response as any).bit_rate
+      } as Transcription['metadata']
     }
   } catch (err: any) {
     error.value = err.message || 'Failed to load transcript'
