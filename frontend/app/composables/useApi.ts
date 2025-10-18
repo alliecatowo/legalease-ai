@@ -10,15 +10,33 @@ export const useApi = () => {
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase
 
+  const session = useUserSession()
+
   const api = $fetch.create({
     baseURL,
     onRequest({ options }) {
-      // Add any auth headers here in the future
-      options.headers = {
-        ...options.headers
+      options.credentials = 'include'
+
+      const token = session.user.value?.accessToken
+      if (token) {
+        options.headers = {
+          ...options.headers,
+          Authorization: `Bearer ${token}`
+        }
+      } else {
+        options.headers = {
+          ...options.headers
+        }
       }
     },
     onResponseError({ response }) {
+      if (response.status === 401 && import.meta.client) {
+        const session = useUserSession()
+        session.clear()
+        navigateTo('/login')
+        return
+      }
+
       // Show toast on client-side only to avoid SSR issues
       if (import.meta.client) {
         const toast = useToast()

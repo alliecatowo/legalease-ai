@@ -5,39 +5,62 @@ defineProps<{
   collapsed?: boolean
 }>()
 
-const teams = ref([{
-  label: 'Nuxt',
-  avatar: {
-    src: 'https://github.com/nuxt.png',
-    alt: 'Nuxt'
+const toast = useToast()
+const session = useUserSession()
+
+const teams = computed(() => session.user.value?.teams ?? [])
+const activeTeamId = computed(() => session.user.value?.activeTeamId ?? null)
+
+const selectedTeam = computed(() => {
+  if (!teams.value.length) {
+    return null
   }
-}, {
-  label: 'NuxtHub',
-  avatar: {
-    src: 'https://github.com/nuxt-hub.png',
-    alt: 'NuxtHub'
+  return teams.value.find(team => team.id === activeTeamId.value) ?? teams.value[0]
+})
+
+async function handleSwitch(teamId: string) {
+  if (teamId === activeTeamId.value) {
+    return
   }
-}, {
-  label: 'NuxtLabs',
-  avatar: {
-    src: 'https://github.com/nuxtlabs.png',
-    alt: 'NuxtLabs'
+
+  try {
+    await $fetch('/api/auth/switch-team', {
+      method: 'POST',
+      body: { teamId }
+    })
+    await session.fetch()
+    toast.add({
+      title: 'Team switched',
+      color: 'success'
+    })
+  } catch (error: any) {
+    console.error('Failed to switch team', error)
+    toast.add({
+      title: 'Failed to switch team',
+      description: error?.data?.message || error.message || 'Unexpected error',
+      color: 'error'
+    })
   }
-}])
-const selectedTeam = ref(teams.value[0])
+}
 
 const items = computed<DropdownMenuItem[][]>(() => {
-  return [teams.value.map(team => ({
-    ...team,
-    onSelect() {
-      selectedTeam.value = team
-    }
-  })), [{
-    label: 'Create team',
-    icon: 'i-lucide-circle-plus'
-  }, {
+  if (!teams.value.length) {
+    return [[{
+      label: 'No teams available',
+      disabled: true
+    }]]
+  }
+
+  const switchItems = teams.value.map(team => ({
+    label: team.name,
+    icon: team.id === activeTeamId.value ? 'i-lucide-check' : undefined,
+    onSelect: () => handleSwitch(team.id)
+  }))
+
+  return [switchItems, [{
     label: 'Manage teams',
-    icon: 'i-lucide-cog'
+    icon: 'i-lucide-cog',
+    to: '/settings'
   }]]
 })
 </script>
@@ -50,8 +73,8 @@ const items = computed<DropdownMenuItem[][]>(() => {
   >
     <UButton
       v-if="!collapsed"
-      :label="selectedTeam?.label"
-      :avatar="selectedTeam?.avatar"
+      :label="selectedTeam?.name || 'No teams'"
+      icon="i-lucide-building"
       :trailing-icon="'i-lucide-chevrons-up-down'"
       color="neutral"
       variant="ghost"
@@ -60,6 +83,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       :ui="{
         trailingIcon: 'text-dimmed'
       }"
+      :disabled="!teams.length"
     />
     <UButton
       v-else
@@ -68,6 +92,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       variant="ghost"
       square
       class="data-[state=open]:bg-elevated"
+      :disabled="!teams.length"
     />
   </UDropdownMenu>
 </template>

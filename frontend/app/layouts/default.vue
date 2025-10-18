@@ -4,6 +4,7 @@ import type { NavigationMenuItem } from '@nuxt/ui'
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const session = useUserSession()
 
 const open = ref(false)
 
@@ -135,7 +136,7 @@ onMounted(async () => {
       :ui="{ footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
-        <TeamsMenu :collapsed="collapsed" />
+        <TeamsMenu v-if="session.loggedIn.value" :collapsed="collapsed" />
       </template>
 
       <template #default="{ collapsed }">
@@ -167,7 +168,7 @@ onMounted(async () => {
       </template>
 
       <template #footer="{ collapsed }">
-        <UserMenu :collapsed="collapsed" />
+        <UserMenu v-if="session.loggedIn.value" :collapsed="collapsed" />
       </template>
     </UDashboardSidebar>
 

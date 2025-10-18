@@ -3,7 +3,8 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    '@vueuse/nuxt'
+    '@vueuse/nuxt',
+    'nuxt-auth-utils'
   ],
 
   app: {
@@ -21,9 +22,33 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
+    session: {
+      name: process.env.NUXT_SESSION_NAME || 'legalease-session',
+      password: process.env.NUXT_SESSION_PASSWORD || 'please-change-this-session-password-32-chars',
+      cookie: {
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production'
+      },
+      maxAge: 60 * 60 * 24 * 7
+    },
+    keycloak: {
+      clientSecret: process.env.KEYCLOAK_BACKEND_CLIENT_SECRET || ''
+    },
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000'
+      appUrl: process.env.NUXT_PUBLIC_APP_URL || 'https://app.localhost',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      keycloak: {
+        baseUrl: process.env.NUXT_PUBLIC_KEYCLOAK_URL || 'https://auth.localhost',
+        realm: process.env.NUXT_PUBLIC_KEYCLOAK_REALM || 'legalease',
+        clientId: process.env.NUXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'nuxt-dashboard',
+        redirectUri: process.env.NUXT_PUBLIC_KEYCLOAK_REDIRECT_URI
+          || `${process.env.NUXT_PUBLIC_APP_URL || 'https://app.localhost'}/api/auth/callback`
+      }
     }
+  },
+
+  auth: {
+    loadStrategy: 'client-only'
   },
 
   routeRules: {
