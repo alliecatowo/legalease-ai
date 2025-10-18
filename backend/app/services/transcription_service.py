@@ -5,17 +5,18 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import List, Optional, Dict, Any
-from fastapi import UploadFile, HTTPException
-from sqlalchemy.orm import Session
-from minio.error import S3Error
-from docx import Document as DocxDocument
-from docx.shared import Pt, Inches
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from app.models.transcription import Transcription, TranscriptSegment
-from app.models.document import DocumentStatus
-from app.models.case import Case
+from docx import Document as DocxDocument
+from fastapi import HTTPException, UploadFile
+from minio.error import S3Error
+from sqlalchemy.orm import Session, joinedload
+
 from app.core.minio_client import minio_client
+from app.models.case import Case
+from app.models.document import DocumentStatus
+from app.models.transcription import TranscriptSegment, Transcription
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class TranscriptionService:
         file: UploadFile,
         db: Session,
         options: Optional["TranscriptionOptions"] = None,
+        team_id: Optional[UUID] = None,
     ) -> Transcription:
         """
         Upload an audio/video file for transcription.
@@ -71,7 +73,10 @@ class TranscriptionService:
             HTTPException: If validation fails or upload fails
         """
         # Validate case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        query = db.query(Case).filter(Case.id == case_id)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+        case = query.first()
         if not case:
             logger.error(f"Case {case_id} not found")
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
@@ -144,7 +149,11 @@ class TranscriptionService:
         return transcription
 
     @staticmethod
-    def get_transcription(transcription_id: int, db: Session) -> Transcription:
+    def get_transcription(
+        transcription_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Transcription:
         """
         Get a transcription by ID.
 
@@ -158,11 +167,16 @@ class TranscriptionService:
         Raises:
             HTTPException: If transcription not found
         """
-        transcription = (
+        query = (
             db.query(Transcription)
+            .options(joinedload(Transcription.case))
+            .join(Case, Transcription.case_id == Case.id)
             .filter(Transcription.id == transcription_id)
-            .first()
         )
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+
+        transcription = query.first()
         if not transcription:
             logger.error(f"Transcription {transcription_id} not found")
             raise HTTPException(
@@ -172,7 +186,11 @@ class TranscriptionService:
         return transcription
 
     @staticmethod
-    def list_case_transcriptions(case_id: int, db: Session) -> List[Dict[str, Any]]:
+    def list_case_transcriptions(
+        case_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> List[Dict[str, Any]]:
         """
         List all transcriptions for a case.
 
@@ -187,7 +205,10 @@ class TranscriptionService:
             HTTPException: If case not found
         """
         # Validate case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        query = db.query(Case).filter(Case.id == case_id)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+        case = query.first()
         if not case:
             logger.error(f"Case {case_id} not found")
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
@@ -222,7 +243,11 @@ class TranscriptionService:
         return result
 
     @staticmethod
-    def download_audio(transcription_id: int, db: Session) -> tuple[bytes, str, str]:
+    def download_audio(
+        transcription_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> tuple[bytes, str, str]:
         """
         Download the original audio/video file from MinIO.
 
@@ -237,7 +262,11 @@ class TranscriptionService:
             HTTPException: If transcription not found or download fails
         """
         # Get transcription from database
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=team_id,
+        )
 
         try:
             # Download from MinIO
@@ -260,7 +289,11 @@ class TranscriptionService:
             )
 
     @staticmethod
-    def get_transcription_details(transcription_id: int, db: Session) -> Dict[str, Any]:
+    def get_transcription_details(
+        transcription_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Dict[str, Any]:
         """
         Get detailed transcription information.
 
@@ -274,7 +307,11 @@ class TranscriptionService:
         Raises:
             HTTPException: If transcription not found
         """
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=team_id,
+        )
 
         # Get key moment metadata for segments
         key_moment_metadata = (
@@ -447,7 +484,11 @@ class TranscriptionService:
         return "\n".join(txt_content).encode("utf-8")
 
     @staticmethod
-    def delete_transcription(transcription_id: int, db: Session) -> Transcription:
+    def delete_transcription(
+        transcription_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Transcription:
         """
         Delete a transcription.
 
@@ -461,7 +502,11 @@ class TranscriptionService:
         Raises:
             HTTPException: If transcription not found or deletion fails
         """
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=team_id,
+        )
 
         try:
             # Delete from database (cascade will handle related records)
@@ -507,7 +552,11 @@ class TranscriptionService:
 
     @staticmethod
     def toggle_key_moment(
-        transcription_id: int, segment_id: str, is_key_moment: bool, db: Session
+        transcription_id: int,
+        segment_id: str,
+        is_key_moment: bool,
+        db: Session,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Toggle key moment status for a transcript segment.
@@ -525,7 +574,11 @@ class TranscriptionService:
             HTTPException: If transcription or segment not found
         """
         # Verify transcription exists
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=team_id,
+        )
 
         # Verify segment exists in the transcription's JSON segments
         segment_exists = False
@@ -582,7 +635,11 @@ class TranscriptionService:
         }
 
     @staticmethod
-    def get_key_moments(transcription_id: int, db: Session) -> Dict[str, Any]:
+    def get_key_moments(
+        transcription_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Dict[str, Any]:
         """
         Get all key moments for a transcription.
 
@@ -597,7 +654,11 @@ class TranscriptionService:
             HTTPException: If transcription not found
         """
         # Verify transcription exists
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=team_id,
+        )
 
         # Get all key moment segment metadata
         key_moment_metadata = (
@@ -648,6 +709,7 @@ class TranscriptionService:
         name: str,
         role: Optional[str],
         db: Session,
+        team_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Update speaker information in a transcription.
@@ -666,7 +728,11 @@ class TranscriptionService:
             HTTPException: If transcription or speaker not found
         """
         # Verify transcription exists
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=team_id,
+        )
 
         # Verify speakers array exists
         if not transcription.speakers or not isinstance(transcription.speakers, list):

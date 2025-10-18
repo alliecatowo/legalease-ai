@@ -11,6 +11,7 @@ import io
 import re
 
 from app.core.database import get_db
+from app.api.deps import require_active_team
 from app.schemas.transcription import (
     TranscriptionResponse,
     TranscriptionListResponse,
@@ -124,6 +125,7 @@ def list_all_transcriptions(
     page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
     case_id: Optional[int] = Query(None, description="Optional case ID to filter transcriptions"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List all transcriptions with pagination.
@@ -140,8 +142,10 @@ def list_all_transcriptions(
     logger.info(f"Listing all transcriptions: page={page}, page_size={page_size}, case_id={case_id}")
 
     # Build base query with join to Case table to get case name
-    query = db.query(Transcription, Case.name.label('case_name')).join(
-        Case, Transcription.case_id == Case.id
+    query = (
+        db.query(Transcription, Case.name.label('case_name'))
+        .join(Case, Transcription.case_id == Case.id)
+        .filter(Case.team_id == active_team.id)
     )
 
     # Apply case filter if provided
@@ -197,6 +201,7 @@ async def upload_audio_for_transcription(
     file: UploadFile = File(..., description="Audio or video file to transcribe"),
     options: Optional[str] = Form(None, description="JSON string of transcription options"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Upload audio/video file for transcription with configurable options.
@@ -230,6 +235,7 @@ async def upload_audio_for_transcription(
         file=file,
         db=db,
         options=transcription_options,
+        team_id=active_team.id,
     )
 
     logger.info(f"Created transcription record {transcription.id} for case {case_id}")
@@ -250,6 +256,7 @@ async def upload_audio_for_transcription(
 def list_case_transcriptions(
     case_id: int = Path(..., description="ID of the case"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List all transcriptions for a case.
@@ -264,7 +271,9 @@ def list_case_transcriptions(
     logger.info(f"Listing transcriptions for case {case_id}")
 
     transcriptions_data = TranscriptionService.list_case_transcriptions(
-        case_id=case_id, db=db
+        case_id=case_id,
+        db=db,
+        team_id=active_team.id,
     )
 
     # Convert to list items
@@ -288,6 +297,7 @@ def list_case_transcriptions(
 def get_transcription_details(
     transcription_id: int = Path(..., description="ID of the transcription"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get transcription details by ID.
@@ -302,7 +312,9 @@ def get_transcription_details(
     logger.info(f"Getting transcription {transcription_id}")
 
     transcription_data = TranscriptionService.get_transcription_details(
-        transcription_id=transcription_id, db=db
+        transcription_id=transcription_id,
+        db=db,
+        team_id=active_team.id,
     )
 
     return TranscriptionResponse(**transcription_data)
@@ -342,6 +354,7 @@ def download_audio(
     transcription_id: int = Path(..., description="ID of the transcription"),
     range_header: Optional[str] = Header(None, alias="Range"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Download or stream the original audio/video file with HTTP Range support.
@@ -362,7 +375,9 @@ def download_audio(
 
     # Get file content and metadata
     content, filename, content_type = TranscriptionService.download_audio(
-        transcription_id=transcription_id, db=db
+        transcription_id=transcription_id,
+        db=db,
+        team_id=active_team.id,
     )
 
     file_size = len(content)
@@ -459,6 +474,7 @@ def download_audio(
 def get_waveform_data(
     transcription_id: int = Path(..., description="ID of the transcription"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get pre-computed waveform data for instant visualization.
@@ -475,14 +491,11 @@ def get_waveform_data(
     """
     logger.info(f"Getting waveform data for transcription {transcription_id}")
 
-    # Get transcription
-    transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
-
-    if not transcription:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transcription {transcription_id} not found"
-        )
+    transcription = TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     # Check if waveform data is available
     if not transcription.waveform_data:
@@ -515,6 +528,7 @@ def download_transcription(
     transcription_id: int = Path(..., description="ID of the transcription"),
     format: TranscriptionFormat = Path(..., description="Export format (json, docx, srt, vtt, txt)"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Download transcription in specified format.
@@ -529,7 +543,11 @@ def download_transcription(
     """
     logger.info(f"Downloading transcription {transcription_id} as {format}")
 
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     # Use transcription filename directly (no document needed)
     base_filename = transcription.filename.rsplit(".", 1)[0] if transcription.filename else "transcription"
@@ -588,6 +606,7 @@ def download_transcription(
 def delete_transcription(
     transcription_id: int = Path(..., description="ID of the transcription"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Delete a transcription.
@@ -602,7 +621,9 @@ def delete_transcription(
     logger.info(f"Deleting transcription {transcription_id}")
 
     transcription = TranscriptionService.delete_transcription(
-        transcription_id=transcription_id, db=db
+        transcription_id=transcription_id,
+        db=db,
+        team_id=active_team.id,
     )
 
     return TranscriptionDeleteResponse(
@@ -626,6 +647,7 @@ def start_summarization(
     transcription_id: int = Path(..., description="ID of the transcription"),
     request: SummarizeRequest = Body(default=SummarizeRequest()),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Start summarization task for a transcription.
@@ -641,7 +663,11 @@ def start_summarization(
     logger.info(f"Starting summarization for transcription {transcription_id}")
 
     # Verify transcription exists
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     # Queue summarization task
     task = summarize_transcript.delay(
@@ -671,6 +697,7 @@ def start_summarization(
 def get_summary(
     transcription_id: int = Path(..., description="ID of the transcription"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get summary for a transcription.
@@ -684,7 +711,11 @@ def get_summary(
     """
     logger.info(f"Getting summary for transcription {transcription_id}")
 
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     return SummaryResponse(
         transcription_id=transcription.id,
@@ -709,6 +740,7 @@ def regenerate_transcript_summary(
     transcription_id: int = Path(..., description="ID of the transcription"),
     components: Optional[List[str]] = Body(None, description="Specific components to regenerate"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Regenerate summary for a transcription.
@@ -724,7 +756,11 @@ def regenerate_transcript_summary(
     logger.info(f"Regenerating summary for transcription {transcription_id}")
 
     # Verify transcription exists
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     # Queue regeneration task
     task = regenerate_summary.delay(transcription_id, components)
@@ -748,6 +784,8 @@ def regenerate_transcript_summary(
 def get_summarization_status(
     transcription_id: int = Path(..., description="ID of the transcription"),
     task_id: str = Path(..., description="ID of the Celery task"),
+    db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get status of a summarization task.
@@ -760,6 +798,13 @@ def get_summarization_status(
         TaskStatusResponse: Task status and progress
     """
     logger.info(f"Checking status for task {task_id} (transcription {transcription_id})")
+
+    # Ensure requester has access to transcription
+    TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     # Get task result from Celery
     task = celery_app.AsyncResult(task_id)
@@ -801,6 +846,7 @@ def get_summarization_status(
 def start_quick_summary(
     transcription_id: int = Path(..., description="ID of the transcription"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Start quick summary task (executive summary only).
@@ -815,7 +861,11 @@ def start_quick_summary(
     logger.info(f"Starting quick summary for transcription {transcription_id}")
 
     # Verify transcription exists
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(
+        transcription_id,
+        db,
+        team_id=active_team.id,
+    )
 
     # Queue quick summary task
     task = quick_summary.delay(transcription_id)
@@ -838,6 +888,7 @@ def start_quick_summary(
 def start_batch_summarization(
     request: BatchSummarizeRequest = Body(...),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Start batch summarization for multiple transcriptions.
@@ -853,7 +904,11 @@ def start_batch_summarization(
 
     # Verify all transcriptions exist
     for transcription_id in request.transcription_ids:
-        TranscriptionService.get_transcription(transcription_id, db)
+        TranscriptionService.get_transcription(
+            transcription_id,
+            db,
+            team_id=active_team.id,
+        )
 
     # Queue batch summarization task
     task = batch_summarize_transcripts.delay(request.transcription_ids, request.options)
@@ -881,6 +936,7 @@ def toggle_key_moment(
     segment_id: str = Path(..., description="UUID of the segment"),
     request: KeyMomentToggleRequest = Body(...),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Toggle key moment status for a transcript segment.
@@ -903,6 +959,7 @@ def toggle_key_moment(
         segment_id=segment_id,
         is_key_moment=request.is_key_moment,
         db=db,
+        team_id=active_team.id,
     )
 
     return KeyMomentToggleResponse(**result)
@@ -918,6 +975,7 @@ def toggle_key_moment(
 def get_key_moments(
     transcription_id: int = Path(..., description="ID of the transcription"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get all key moments for a transcription.
@@ -932,7 +990,9 @@ def get_key_moments(
     logger.info(f"Getting key moments for transcription {transcription_id}")
 
     result = TranscriptionService.get_key_moments(
-        transcription_id=transcription_id, db=db
+        transcription_id=transcription_id,
+        db=db,
+        team_id=active_team.id,
     )
 
     return KeyMomentsResponse(**result)
@@ -952,6 +1012,7 @@ def update_speaker(
     speaker_id: str = Path(..., description="Speaker identifier (e.g., SPEAKER_00)"),
     request: UpdateSpeakerRequest = Body(...),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Update speaker information (name and role).
@@ -967,38 +1028,18 @@ def update_speaker(
     """
     logger.info(f"Updating speaker {speaker_id} in transcription {transcription_id}")
 
-    # Get transcription
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    result = TranscriptionService.update_speaker(
+        transcription_id=transcription_id,
+        speaker_id=speaker_id,
+        name=request.name,
+        role=request.role,
+        db=db,
+        team_id=active_team.id,
+    )
 
-    # Find speaker in speakers list
-    speaker_found = False
-    for speaker in transcription.speakers:
-        if speaker.get('id') == speaker_id:
-            speaker['name'] = request.name
-            if request.role is not None:
-                speaker['role'] = request.role
-            speaker_found = True
-            break
-
-    if not speaker_found:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Speaker {speaker_id} not found in transcription {transcription_id}"
-        )
-
-    # Mark as modified and commit
-    from sqlalchemy.orm.attributes import flag_modified
-    flag_modified(transcription, "speakers")
-    db.commit()
-    db.refresh(transcription)
-
-    logger.info(f"Successfully updated speaker {speaker_id}")
-
-    # Return updated speaker
-    updated_speaker = next(s for s in transcription.speakers if s.get('id') == speaker_id)
     return SpeakerResponse(
-        speaker_id=updated_speaker.get('id'),
-        name=updated_speaker.get('name'),
-        role=updated_speaker.get('role'),
-        color=updated_speaker.get('color')
+        speaker_id=result.get("speaker_id"),
+        name=result.get("name"),
+        role=result.get("role"),
+        color=result.get("color"),
     )
