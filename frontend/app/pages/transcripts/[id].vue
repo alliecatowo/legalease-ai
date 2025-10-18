@@ -786,7 +786,7 @@ onMounted(async () => {
           </div>
 
           <!-- Video player content (collapsible) -->
-          <div v-if="videoPlayerOpen" class="p-4 sm:p-6">
+          <div v-show="videoPlayerOpen" class="p-4 sm:p-6">
             <LazyVideoPlayer
               v-if="transcript.audioUrl"
               :media-url="transcript.audioUrl"
@@ -806,7 +806,7 @@ onMounted(async () => {
           </div>
 
           <!-- Segment Timeline - visible when collapsed -->
-          <div v-else class="h-3 bg-muted/20 cursor-pointer relative overflow-hidden">
+          <div v-show="!videoPlayerOpen" class="h-3 bg-muted/20 cursor-pointer relative overflow-hidden">
             <div
               v-for="segment in transcript.segments"
               :key="segment.id"
