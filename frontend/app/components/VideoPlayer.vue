@@ -484,7 +484,6 @@ onBeforeUnmount(() => {
         <video
           ref="videoRef"
           class="w-full h-auto"
-          :class="{ 'opacity-0': !isMediaReady }"
           preload="metadata"
           crossorigin="anonymous"
           @loadedmetadata="isMediaReady = true"
