@@ -174,7 +174,7 @@ const rowVirtualizerOptions = computed(() => {
   return {
     count: filteredSegments.value.length,
     getScrollElement: () => scrollContainerRef.value,
-    estimateSize: () => 128,
+    estimateSize: () => 80,
     overscan: 8,
   }
 })
@@ -992,13 +992,13 @@ onMounted(async () => {
                   left: 0,
                   transform: `translateY(${virtualRow.start}px)`,
                   width: '100%',
-                  height: '120px',
-                  marginBottom: '8px',
+                  height: '74px',
+                  marginBottom: '6px',
                 }"
                 :class="[
-                  'p-4 rounded-lg cursor-pointer overflow-hidden transition-colors duration-200',
+                  'p-2 rounded cursor-pointer overflow-hidden transition-colors duration-200',
                   {
-                    'bg-primary/10 border-l-4 border-primary shadow-sm': filteredSegments[virtualRow.index].id === activeSegmentId,
+                    'bg-primary/10 border-l-2 border-primary': filteredSegments[virtualRow.index].id === activeSegmentId,
                     'hover:bg-muted/30': filteredSegments[virtualRow.index].id !== activeSegmentId,
                     'animate-pulse bg-warning/20': filteredSegments[virtualRow.index].id === flashSegmentId
                   }
@@ -1006,20 +1006,13 @@ onMounted(async () => {
                 @click="currentTime = filteredSegments[virtualRow.index].start"
               >
                 <!-- Header -->
-                <div class="flex items-start justify-between gap-3 mb-3">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <UButton
-                      :label="formatTime(filteredSegments[virtualRow.index].start)"
-                      icon="i-lucide-clock"
-                      color="neutral"
-                      variant="soft"
-                      size="xs"
-                      @click.stop="seekToSegment(filteredSegments[virtualRow.index])"
-                    />
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs text-muted font-mono">{{ formatTime(filteredSegments[virtualRow.index].start) }}</span>
 
                     <div
                       v-if="getSpeaker(filteredSegments[virtualRow.index].speaker)"
-                      class="px-3 py-1 rounded-full text-sm font-medium"
+                      class="px-2 py-0.5 rounded-full text-xs font-medium"
                       :style="{
                         backgroundColor: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color + '20',
                         color: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color
@@ -1027,56 +1020,38 @@ onMounted(async () => {
                     >
                       {{ getSpeaker(filteredSegments[virtualRow.index].speaker)!.name }}
                     </div>
-                    <UBadge v-else label="Unknown Speaker" color="neutral" size="xs" variant="soft" />
 
-                    <UBadge v-if="filteredSegments[virtualRow.index].isKeyMoment" label="Key Moment" icon="i-lucide-star" color="warning" size="xs" />
-
-                    <UTooltip v-if="filteredSegments[virtualRow.index].confidence" :text="`Confidence: ${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`">
-                      <UBadge
-                        :label="`${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`"
-                        :color="filteredSegments[virtualRow.index].confidence > 0.9 ? 'success' : filteredSegments[virtualRow.index].confidence > 0.7 ? 'warning' : 'neutral'"
-                        size="xs"
-                        variant="subtle"
-                      />
-                    </UTooltip>
+                    <UIcon v-if="filteredSegments[virtualRow.index].isKeyMoment" name="i-lucide-star" class="size-3 text-warning" />
                   </div>
 
                   <!-- Actions -->
-                  <div class="flex items-center gap-1">
-                    <UTooltip :text="filteredSegments[virtualRow.index].isKeyMoment ? 'Remove Key Moment' : 'Mark as Key Moment'">
-                      <UButton
-                        icon="i-lucide-star"
-                        :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index].id)"
-                      />
-                    </UTooltip>
-
-                    <UTooltip text="Copy Segment">
-                      <UButton
-                        icon="i-lucide-copy"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
-                      />
-                    </UTooltip>
-
-                    <UTooltip text="Edit Text">
-                      <UButton
-                        icon="i-lucide-edit"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="startEdit(filteredSegments[virtualRow.index])"
-                      />
-                    </UTooltip>
+                  <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <UButton
+                      icon="i-lucide-star"
+                      :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index].id)"
+                    />
+                    <UButton
+                      icon="i-lucide-copy"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
+                    />
+                    <UButton
+                      icon="i-lucide-edit"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="startEdit(filteredSegments[virtualRow.index])"
+                    />
                   </div>
                 </div>
 
                 <!-- Text Content -->
-                <div class="mt-2">
+                <div>
                   <div v-if="editingSegmentId === filteredSegments[virtualRow.index].id" class="space-y-2" @click.stop>
                     <UTextarea
                       v-model="editText"
@@ -1105,22 +1080,10 @@ onMounted(async () => {
                   </div>
                   <p
                     v-else
-                    class="text-default leading-relaxed text-base line-clamp-3"
+                    class="text-sm leading-snug line-clamp-2"
                   >
                     {{ filteredSegments[virtualRow.index].text }}
                   </p>
-                </div>
-
-                <!-- Tags -->
-                <div v-if="filteredSegments[virtualRow.index].tags && filteredSegments[virtualRow.index].tags.length > 0" class="flex flex-wrap gap-1 mt-3">
-                  <UBadge
-                    v-for="tag in filteredSegments[virtualRow.index].tags"
-                    :key="tag"
-                    :label="tag"
-                    color="neutral"
-                    size="xs"
-                    variant="outline"
-                  />
                 </div>
               </div>
             </div>
