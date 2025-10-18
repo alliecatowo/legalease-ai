@@ -1020,12 +1020,10 @@ onMounted(async () => {
                     >
                       {{ getSpeaker(filteredSegments[virtualRow.index].speaker)!.name }}
                     </div>
-
-                    <UIcon v-if="filteredSegments[virtualRow.index].isKeyMoment" name="i-lucide-star" class="size-3 text-warning" />
                   </div>
 
                   <!-- Actions -->
-                  <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div class="flex items-center gap-0.5">
                     <UButton
                       icon="i-lucide-star"
                       :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
