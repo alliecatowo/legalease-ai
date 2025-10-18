@@ -31,8 +31,8 @@ interface BackendProfile {
 
 function buildKeycloakTokenURL(event: H3Event) {
   const config = useRuntimeConfig(event)
-  const { public: publicConfig } = config
-  const keycloak = publicConfig.keycloak
+  // Use internal Keycloak URL for server-side token exchange
+  const keycloak = config.keycloak
   if (!keycloak?.baseUrl || !keycloak?.realm) {
     throw createError({ statusCode: 500, message: 'Keycloak configuration missing' })
   }
@@ -89,7 +89,9 @@ export default defineEventHandler(async (event) => {
   // Fetch the user profile from the backend to bootstrap membership data
   let profile: BackendProfile | null = null
   try {
-    profile = await $fetch<BackendProfile>(`${publicConfig.apiBase}/api/v1/auth/profile`, {
+    // Use internal API base for server-side requests
+    const apiBase = config.apiBase || publicConfig.apiBase
+    profile = await $fetch<BackendProfile>(`${apiBase}/api/v1/auth/profile`, {
       headers: {
         Authorization: `Bearer ${tokenResponse.access_token}`
       }

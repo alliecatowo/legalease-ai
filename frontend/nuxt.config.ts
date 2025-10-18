@@ -22,7 +22,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
-    apiBase: process.env.NUXT_API_BASE_INTERNAL || 'https://api.localhost',
+    apiBase: process.env.NUXT_API_BASE_INTERNAL || 'http://backend:8000',
     session: {
       name: process.env.NUXT_SESSION_NAME || 'legalease-session',
       password: process.env.NUXT_SESSION_PASSWORD || 'please-change-this-session-password-32-chars',
@@ -33,7 +33,9 @@ export default defineNuxtConfig({
       maxAge: 60 * 60 * 24 * 7
     },
     keycloak: {
-      clientSecret: process.env.KEYCLOAK_BACKEND_CLIENT_SECRET || ''
+      clientSecret: process.env.KEYCLOAK_BACKEND_CLIENT_SECRET || '',
+      baseUrl: process.env.KEYCLOAK_INTERNAL_URL || 'http://keycloak:8080',
+      realm: process.env.NUXT_PUBLIC_KEYCLOAK_REALM || 'legalease'
     },
     public: {
       appUrl: process.env.NUXT_PUBLIC_APP_URL || 'https://app.localhost',
