@@ -161,7 +161,7 @@ async function initializeWaveSurfer() {
   const throttledAudioProcess = useThrottleFn((time: number) => {
     isInternalUpdate.value = true
     emit('update:currentTime', time)
-    nextTick(() => { isInternalUpdate.value = false })
+    setTimeout(() => { isInternalUpdate.value = false }, 50)
   }, 100)
 
   wavesurfer.value.on('audioprocess', throttledAudioProcess)
@@ -170,7 +170,7 @@ async function initializeWaveSurfer() {
     const time = progress * duration.value
     isInternalUpdate.value = true
     emit('update:currentTime', time)
-    nextTick(() => { isInternalUpdate.value = false })
+    setTimeout(() => { isInternalUpdate.value = false }, 50)
   })
 
   wavesurfer.value.on('play', () => {
@@ -381,8 +381,8 @@ watch(() => props.currentTime, (newTime) => {
   if (newTime !== undefined && wavesurfer.value && duration.value > 0 && !isInternalUpdate.value) {
     const currentWavesurferTime = wavesurfer.value.getCurrentTime()
     const timeDiff = Math.abs(newTime - currentWavesurferTime)
-    // Only seek if the difference is significant
-    if (timeDiff > 0.1) {
+    // Only seek if the difference is significant (0.5s threshold to avoid jitter)
+    if (timeDiff > 0.5) {
       const progress = newTime / duration.value
       wavesurfer.value.seekTo(progress)
     }
