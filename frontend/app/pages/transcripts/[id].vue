@@ -596,7 +596,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UDashboardPanel id="transcript-main" resizable>
+  <UDashboardPanel id="transcript-main" resizable :ui="{ body: 'flex flex-col flex-1 overflow-hidden' }">
     <template #header>
       <div class="h-16 px-4 sm:px-6 flex items-center justify-between gap-4 border-b border-default">
         <div class="flex items-center gap-4 min-w-0">
@@ -669,7 +669,7 @@ onMounted(async () => {
 
     <template #body>
       <!-- Loading State -->
-      <div v-if="isLoading" class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
+      <div v-if="isLoading" class="h-full flex items-center justify-center">
         <div class="flex items-center justify-center min-h-full p-6">
           <div class="text-center space-y-4">
             <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
@@ -682,7 +682,7 @@ onMounted(async () => {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
+      <div v-else-if="error" class="h-full flex items-center justify-center">
         <div class="flex items-center justify-center min-h-full p-6">
           <UCard class="max-w-md">
             <div class="text-center space-y-4">
@@ -703,7 +703,7 @@ onMounted(async () => {
       </div>
 
       <!-- Unified Layout for Video and Audio -->
-      <div v-else-if="transcript" class="h-full -m-4 sm:-m-6 flex flex-col overflow-hidden">
+      <div v-else-if="transcript" class="h-full flex flex-col overflow-hidden">
         <!-- Video Player (Collapsible for video files) -->
         <UCollapsible
           v-if="isVideoFile"
@@ -765,7 +765,7 @@ onMounted(async () => {
 
         <!-- Transcript Content Section (Shared by both video and audio) -->
         <div class="flex-1 overflow-hidden flex flex-col">
-          <div class="flex-1 flex flex-col min-h-0 p-4 sm:p-6 gap-2">
+          <div class="flex-1 flex flex-col min-h-0 gap-2 p-4 sm:p-6">
               <!-- Search and Filters -->
               <div class="space-y-1">
             <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
