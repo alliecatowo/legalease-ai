@@ -309,7 +309,14 @@ function handleWaveformClick(event: MouseEvent) {
 
 // Draw segment timeline on canvas
 function drawSegmentTimeline() {
-  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
+  if (!timelineCanvasRef.value || !props.segments || !duration.value) {
+    console.log('drawSegmentTimeline skipped:', {
+      hasCanvas: !!timelineCanvasRef.value,
+      hasSegments: !!props.segments,
+      duration: duration.value
+    })
+    return
+  }
 
   const canvas = timelineCanvasRef.value
   const ctx = canvas.getContext('2d')
@@ -318,6 +325,13 @@ function drawSegmentTimeline() {
   // For video, use a fixed height; for audio, use the element's height
   const displayHeight = isVideo.value ? 12 : canvas.getBoundingClientRect().height
   const rect = canvas.getBoundingClientRect()
+
+  console.log('Drawing segment timeline:', {
+    width: rect.width,
+    height: displayHeight,
+    segments: props.segments.length,
+    duration: duration.value
+  })
 
   canvas.width = rect.width * window.devicePixelRatio
   canvas.height = displayHeight * window.devicePixelRatio
@@ -449,6 +463,10 @@ defineExpose({
   setPlaybackRate
 })
 
+// Store observers for cleanup
+let resizeObserver: ResizeObserver | null = null
+let timelineObserver: ResizeObserver | null = null
+
 onMounted(async () => {
   // For video files, wait for video element to be in DOM
   if (isVideo.value) {
@@ -480,33 +498,26 @@ onMounted(async () => {
   // Add resize observer to redraw canvases on window resize
   await nextTick()
   if (waveformRef.value) {
-    const resizeObserver = new ResizeObserver(() => {
+    resizeObserver = new ResizeObserver(() => {
       drawSegmentTimeline()
       drawKeyMomentsOverlay()
     })
     resizeObserver.observe(waveformRef.value)
-
-    // Store observer for cleanup
-    onBeforeUnmount(() => {
-      resizeObserver.disconnect()
-    })
   }
 
   // Also observe timeline canvas for size changes
   if (timelineCanvasRef.value) {
-    const timelineObserver = new ResizeObserver(() => {
+    timelineObserver = new ResizeObserver(() => {
       drawSegmentTimeline()
     })
     timelineObserver.observe(timelineCanvasRef.value)
-
-    onBeforeUnmount(() => {
-      timelineObserver.disconnect()
-    })
   }
 })
 
 onBeforeUnmount(() => {
   wavesurfer.value?.destroy()
+  resizeObserver?.disconnect()
+  timelineObserver?.disconnect()
 })
 </script>
 
