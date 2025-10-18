@@ -548,7 +548,11 @@ onBeforeUnmount(() => {
           class="w-full h-auto"
           preload="metadata"
           crossorigin="anonymous"
-          @loadedmetadata="isMediaReady = true"
+          @loadedmetadata="() => {
+            isMediaReady = true
+            // Force redraw after video loads and has dimensions
+            setTimeout(() => drawSegmentTimeline(), 100)
+          }"
         />
 
         <!-- Center Play/Pause Button (on hover) -->
