@@ -46,7 +46,13 @@ Copy the file to `docker/.env.auth` and adjust values before running `docker com
    pnpm dev
    ```
 
-4. Visit `https://app.localhost/login` and authenticate with a Keycloak user that belongs to a `/teams/<slug>` group.
+4. Create a user in Keycloak and assign them to the `/teams/default` group:
+   - Visit `https://keycloak.localhost/admin` and login with admin credentials
+   - Navigate to Users > Add User
+   - Create a new user and set their email/password
+   - Go to the user's Groups tab and join them to `/teams/default`
+
+5. Visit `https://app.localhost/login` and authenticate with the Keycloak user.
 
 ## Testing
 
@@ -62,8 +68,15 @@ The suite currently includes coverage for the Keycloak team synchronizer (`tests
 For manual end-to-end validation:
 
 1. Sign in via the dashboard login page.
-2. Verify that the sidebar displays the correct team and that switching teams updates data.
-3. Confirm API calls carry a `Bearer` token (inspect network panel). Unauthorized calls should trigger a redirect to `/login`.
+2. Verify that the sidebar displays the correct team name (not "No teams").
+3. Navigate to Settings (General tab) and verify the team selector shows your available teams.
+4. Switch to a different team (if you have multiple teams) and verify:
+   - The UI updates to show the new active team
+   - The backend receives and persists the change
+   - Future page loads show the correct active team
+5. Confirm API calls carry a `Bearer` token (inspect network panel). Unauthorized calls should trigger a redirect to `/login`.
+
+**Note**: If you see "No teams" or the team selector is grayed out, ensure your Keycloak user is assigned to at least one `/teams/<slug>` group (e.g., `/teams/default`).
 
 ## Refresh Tokens & Sessions
 

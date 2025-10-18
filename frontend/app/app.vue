@@ -2,6 +2,7 @@
 import { ConfigProvider } from 'reka-ui'
 
 const colorMode = useColorMode()
+const session = useUserSession()
 
 const color = computed(() => colorMode.value === 'dark' ? '#1b1718' : 'white')
 
@@ -38,7 +39,12 @@ useSeoMeta({
     <UApp>
       <NuxtLoadingIndicator />
 
-      <NuxtLayout>
+      <!-- Show loading spinner until session is ready -->
+      <div v-if="!session.ready.value" class="flex items-center justify-center min-h-screen">
+        <UIcon name="i-lucide-loader-circle" class="w-8 h-8 animate-spin text-primary" />
+      </div>
+
+      <NuxtLayout v-else>
         <KeepAlive :max="5">
           <NuxtPage />
         </KeepAlive>

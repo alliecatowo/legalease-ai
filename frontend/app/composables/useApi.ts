@@ -74,6 +74,12 @@ export const useApi = () => {
       getMe: () => api('/api/v1/auth/profile')  // Alias for getProfile
     },
 
+    // Teams
+    teams: {
+      list: () => api('/api/v1/auth/teams'),
+      switchTeam: (teamId: string) => api('/api/v1/auth/switch-team', { method: 'POST', body: { team_id: teamId } })
+    },
+
     // Cases
     cases: {
       list: () => api<CaseListResponse>('/api/v1/cases'),

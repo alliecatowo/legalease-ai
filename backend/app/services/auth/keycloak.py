@@ -63,6 +63,18 @@ class KeycloakAdminService:
                 return None
             raise RuntimeError(f"Failed to load group {path}: {exc}") from exc
 
+    def update_user(self, keycloak_id: str, updates: Dict[str, Any]) -> None:
+        """Update user attributes in Keycloak.
+
+        Args:
+            keycloak_id: The Keycloak user ID
+            updates: Dictionary of user attributes to update (e.g., firstName, lastName, email)
+        """
+        try:
+            self.client.update_user(user_id=keycloak_id, payload=updates)
+        except KeycloakGetError as exc:
+            raise RuntimeError(f"Failed to update user {keycloak_id}: {exc}") from exc
+
     def health_check(self) -> bool:
         """Verify that the service account can authenticate."""
         try:

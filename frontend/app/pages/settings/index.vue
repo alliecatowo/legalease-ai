@@ -81,6 +81,49 @@ function onFileChange(e: Event) {
 function onFileClick() {
   fileRef.value?.click()
 }
+
+// Team switching
+const teams = computed(() => session.user.value?.teams ?? [])
+const activeTeamId = computed(() => session.user.value?.activeTeamId ?? null)
+
+const selectedTeamId = ref(activeTeamId.value)
+
+// Watch for changes in session active team
+watch(activeTeamId, (newId) => {
+  selectedTeamId.value = newId
+})
+
+async function switchTeam() {
+  if (!selectedTeamId.value || selectedTeamId.value === activeTeamId.value) {
+    return
+  }
+
+  loading.value = true
+  try {
+    await $fetch('/api/auth/switch-team', {
+      method: 'POST',
+      body: { teamId: selectedTeamId.value }
+    })
+    await session.fetch()
+    toast.add({
+      title: 'Team switched',
+      description: 'Your active team has been updated.',
+      icon: 'i-lucide-check',
+      color: 'success'
+    })
+  } catch (error: any) {
+    console.error('Failed to switch team:', error)
+    toast.add({
+      title: 'Failed to switch team',
+      description: error?.data?.message || error.message || 'Unexpected error',
+      color: 'error'
+    })
+    // Revert selection on error
+    selectedTeamId.value = activeTeamId.value
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -108,6 +151,46 @@ function onFileClick() {
     </UPageCard>
 
     <UPageCard variant="subtle">
+      <UFormField
+        label="Active Team"
+        description="Select which team's data you want to work with."
+        class="flex max-sm:flex-col justify-between items-start gap-4"
+      >
+        <div class="flex items-center gap-3 w-full">
+          <USelectMenu
+            v-model="selectedTeamId"
+            :options="teams"
+            value-attribute="id"
+            :disabled="!teams.length || loading"
+            placeholder="Select a team"
+            class="flex-1"
+          >
+            <template #label>
+              <span v-if="selectedTeamId">
+                {{ teams.find(t => t.id === selectedTeamId)?.name || 'Select a team' }}
+              </span>
+              <span v-else-if="!teams.length" class="text-muted">
+                No teams available
+              </span>
+              <span v-else>
+                Select a team
+              </span>
+            </template>
+            <template #option="{ option }">
+              <span>{{ option.name }}</span>
+            </template>
+          </USelectMenu>
+          <UButton
+            v-if="selectedTeamId && selectedTeamId !== activeTeamId"
+            label="Switch"
+            color="primary"
+            :loading="loading"
+            :disabled="loading"
+            @click="switchTeam"
+          />
+        </div>
+      </UFormField>
+      <USeparator />
       <UFormField
         name="name"
         label="Name"

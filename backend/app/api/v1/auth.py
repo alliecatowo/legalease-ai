@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import List
 from uuid import UUID
 
@@ -19,6 +20,10 @@ from app.schemas.user import (
     UserBasicInfoResponse,
     UserProfileResponse,
 )
+from app.services.auth.keycloak import KeycloakAdminService
+
+logger = logging.getLogger(__name__)
+keycloak_admin = KeycloakAdminService()
 
 router = APIRouter()
 
@@ -95,9 +100,18 @@ async def update_profile(
                 detail="Username already taken",
             )
 
+    # Track if we need to update Keycloak
+    keycloak_updates = {}
+
     # Update fields that were provided
     if request.full_name is not None:
         current_user.full_name = request.full_name
+        # Parse full_name into firstName and lastName for Keycloak
+        # Split on first space: "John Doe" -> firstName="John", lastName="Doe"
+        parts = request.full_name.strip().split(maxsplit=1)
+        keycloak_updates["firstName"] = parts[0] if parts else ""
+        keycloak_updates["lastName"] = parts[1] if len(parts) > 1 else ""
+
     if request.username is not None:
         current_user.username = request.username
     if request.bio is not None:
@@ -105,9 +119,30 @@ async def update_profile(
     if request.avatar_url is not None:
         current_user.avatar_url = request.avatar_url
 
+    # Update local database first
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
+
+    # Sync to Keycloak if full_name was changed
+    if keycloak_updates:
+        try:
+            logger.info(
+                "Syncing user profile to Keycloak for user %s: %s",
+                current_user.keycloak_id,
+                keycloak_updates,
+            )
+            keycloak_admin.update_user(str(current_user.keycloak_id), keycloak_updates)
+            logger.info("Successfully synced profile to Keycloak for user %s", current_user.keycloak_id)
+        except Exception as exc:
+            logger.error(
+                "Failed to sync profile to Keycloak for user %s: %s",
+                current_user.keycloak_id,
+                exc,
+                exc_info=True,
+            )
+            # Don't fail the request if Keycloak sync fails - the local DB is already updated
+            # This ensures the user can still update their profile even if Keycloak is down
 
     return _build_profile_response(current_user)
 
@@ -139,5 +174,31 @@ async def switch_active_team(
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
+
+    # Sync the active_team attribute to Keycloak so future tokens include it
+    try:
+        logger.info(
+            "Syncing active_team to Keycloak for user %s: %s",
+            current_user.keycloak_id,
+            request.team_id,
+        )
+        keycloak_admin.update_user(
+            str(current_user.keycloak_id),
+            {"attributes": {"active_team": str(request.team_id)}},
+        )
+        logger.info(
+            "Successfully synced active_team to Keycloak for user %s",
+            current_user.keycloak_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to sync active_team to Keycloak for user %s: %s",
+            current_user.keycloak_id,
+            exc,
+            exc_info=True,
+        )
+        # Don't fail the request if Keycloak sync fails - the local DB is already updated
+        # The user can still switch teams, but future tokens may not include the updated active_team
+        # until the next token refresh
 
     return _build_profile_response(current_user)
