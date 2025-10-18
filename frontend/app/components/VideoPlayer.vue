@@ -489,7 +489,7 @@ onBeforeUnmount(() => {
         />
 
         <!-- Waveform Overlay at Bottom (Always Visible) -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 py-2 group/waveform">
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 pb-2 pt-1 group/waveform">
           <div class="relative w-full">
             <div ref="waveformRef" class="w-full cursor-pointer" @click="handleWaveformClick" />
 
@@ -591,6 +591,32 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+
+          <!-- Bottom Controls (on hover) -->
+          <div class="absolute bottom-2 left-0 right-0 px-4 flex items-center justify-between pointer-events-auto">
+            <!-- Left: Skip/Play/Time -->
+            <div class="flex items-center gap-2 bg-black/50 rounded-lg px-3 py-2">
+              <UButton
+                icon="i-lucide-skip-back"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :disabled="!isMediaReady"
+                @click="skip(-10)"
+              />
+              <div class="text-xs text-white/80">
+                {{ formatTime(currentTime || 0) }} / {{ formatTime(duration) }}
+              </div>
+              <UButton
+                icon="i-lucide-skip-forward"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :disabled="!isMediaReady"
+                @click="skip(10)"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -607,8 +633,8 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <!-- Simplified Controls (below player) -->
-    <div class="flex items-center justify-between gap-4">
+    <!-- Controls below player (audio only) -->
+    <div v-if="!isVideo" class="flex items-center justify-between gap-4">
       <!-- Playback Controls -->
       <div class="flex items-center gap-2">
         <!-- Skip Backward -->
@@ -650,8 +676,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- Audio-only controls (volume, speed for audio files) -->
-      <div v-if="!isVideo" class="flex items-center gap-4">
+      <!-- Audio controls -->
+      <div class="flex items-center gap-4">
         <!-- Playback Rate -->
         <USelectMenu
           :model-value="playbackRate"

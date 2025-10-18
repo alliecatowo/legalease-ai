@@ -698,7 +698,7 @@ onMounted(async () => {
         </div>
 
         <!-- Main Content -->
-        <div v-else-if="transcript" class="space-y-6">
+        <div v-else-if="transcript" :class="isVideoFile ? 'space-y-2' : 'space-y-6'">
           <!-- Video Player (for video files) -->
           <LazyVideoPlayer
             v-if="transcript.audioUrl && isVideoFile"
@@ -731,8 +731,8 @@ onMounted(async () => {
           />
 
           <!-- Search and Filters -->
-          <div class="space-y-3">
-            <div class="flex items-center gap-3">
+          <div :class="isVideoFile ? 'space-y-1' : 'space-y-3'">
+            <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
               <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
                 <UButton
                   :icon="autoScrollEnabled ? 'i-lucide-radio' : 'i-lucide-circle'"
