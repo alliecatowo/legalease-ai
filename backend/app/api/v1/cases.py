@@ -178,7 +178,7 @@ async def get_case(
         HTTPException: If case not found
     """
     try:
-    case = case_service.get_case(case_id, team_id=active_team.id)
+        case = case_service.get_case(case_id, team_id=active_team.id)
         return case
     except CaseNotFoundError as e:
         raise HTTPException(

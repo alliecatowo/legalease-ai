@@ -2,7 +2,8 @@ http:
   middlewares:
     default-headers:
       headers:
-        frameDeny: true
+        frameDeny: false
+        customFrameOptionsValue: "SAMEORIGIN"
         browserXssFilter: true
         contentTypeNosniff: true
         referrerPolicy: "strict-origin-when-cross-origin"
@@ -26,6 +27,11 @@ http:
           - https://api.localhost
           - http://auth.localhost
           - https://auth.localhost
-
+    keycloak-headers:
+      headers:
+        frameDeny: false
+        customFrameOptionsValue: "SAMEORIGIN"
+        customResponseHeaders:
+          X-Frame-Options: "SAMEORIGIN"
 tls:
   certificates: []

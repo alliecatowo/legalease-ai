@@ -171,6 +171,7 @@ services:
     command:
       - start-dev
       - --import-realm
+      - -Dquarkus.http.header.X-Frame-Options=SAMEORIGIN
     env_file:
       - docker/.env.auth
     environment:
@@ -186,6 +187,7 @@ services:
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-auth.localhost}
       KC_HTTP_RELATIVE_PATH: /
       KC_FEATURES: token-exchange,admin-fine-grained-authz
+      KC_HTTP_RESPONSE_HEADER_X_FRAME_OPTIONS: ""
       KC_IMPORT: /opt/keycloak/data/import/realm-export.json
       KC_IMPORT_STRATEGY: IGNORE_EXISTING
     volumes:
@@ -202,7 +204,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME:-auth.localhost}`)"
       - "traefik.http.routers.keycloak.entrypoints=web"
-      - "traefik.http.routers.keycloak.middlewares=default-headers@file"
+      - "traefik.http.routers.keycloak.middlewares=keycloak-headers@file,default-headers@file"
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
     restart: unless-stopped
 
@@ -378,7 +380,6 @@ services:
       NITRO_PORT: 3000
     volumes:
       - ./frontend:/app
-      - /app/node_modules
       - /app/.nuxt
     depends_on:
       backend:
