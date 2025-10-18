@@ -1086,9 +1086,10 @@ onMounted(async () => {
       <!-- Audio Layout: Simple wrapper with audio player -->
       <div v-else-if="transcript && !isVideoFile" class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
         <div class="space-y-6">
-          <LazyWaveformPlayer
+          <LazyVideoPlayer
             v-if="transcript.audioUrl"
-            :audio-url="transcript.audioUrl"
+            :media-url="transcript.audioUrl"
+            media-type="audio"
             :transcription-id="transcript.id"
             :current-time="currentTime"
             :segments="transcript.segments"
@@ -1100,8 +1101,264 @@ onMounted(async () => {
             @waveform-click="handleWaveformClick"
           />
 
-          <!-- Copy all the search/filters/segments for audio here from video panel -->
-          <p class="text-muted">Audio transcript content goes here...</p>
+          <div class="space-y-2">
+            <!-- Search and Filters -->
+            <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
+                <UButton
+                  :icon="autoScrollEnabled ? 'i-lucide-radio' : 'i-lucide-circle'"
+                  :label="autoScrollEnabled ? 'Following' : 'Paused'"
+                  :color="autoScrollEnabled ? 'primary' : 'neutral'"
+                  :variant="autoScrollEnabled ? 'solid' : 'soft'"
+                  size="xs"
+                  @click="autoScrollEnabled = !autoScrollEnabled"
+                />
+              </UTooltip>
+
+              <div class="relative inline-flex items-center flex-1">
+                <UInput
+                  v-model="searchQuery"
+                  icon="i-lucide-search"
+                  trailing-icon="i-lucide-search"
+                  placeholder="Search in transcript... (Cmd+F)"
+                  class="flex-1"
+                  size="sm"
+                  autocomplete="off"
+                />
+              </div>
+
+              <UTooltip text="Search using AI semantic search">
+                <UButton
+                  icon="i-lucide-sparkles"
+                  :color="searchMode === 'smart' ? 'primary' : 'neutral'"
+                  :variant="searchMode === 'smart' ? 'solid' : 'soft'"
+                  size="sm"
+                  @click="searchMode = searchMode === 'smart' ? 'exact' : 'smart'"
+                />
+              </UTooltip>
+
+              <USelectMenu
+                v-model="selectedSpeaker"
+                :items="speakerOptions"
+                placeholder="Filter by speaker"
+                size="sm"
+                class="min-w-[200px]"
+              />
+
+              <UTooltip text="Show only key moments">
+                <UCheckbox v-model="showOnlyKeyMoments" label="Key Moments">
+                  <template #label>
+                    <div class="flex items-center gap-2">
+                      <UIcon name="i-lucide-star" class="size-4" />
+                      <span>Key Moments</span>
+                    </div>
+                  </template>
+                </UCheckbox>
+              </UTooltip>
+            </div>
+
+            <!-- Active Filters -->
+            <div v-if="activeFiltersCount > 0" class="flex items-center gap-2">
+              <span class="text-xs text-muted">Active filters:</span>
+              <UBadge
+                v-if="searchQuery"
+                :label="`Search: ${searchQuery}`"
+                color="primary"
+                size="xs"
+                variant="soft"
+                @click="searchQuery = ''"
+              />
+              <UBadge
+                v-if="selectedSpeaker"
+                :label="`Speaker: ${selectedSpeaker}`"
+                color="primary"
+                size="xs"
+                variant="soft"
+                @click="selectedSpeaker = null"
+              />
+              <UBadge
+                v-if="showOnlyKeyMoments"
+                label="Key Moments"
+                color="warning"
+                size="xs"
+                variant="soft"
+                @click="showOnlyKeyMoments = false"
+              />
+              <UButton
+                label="Clear all"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false; searchMode = 'smart'"
+              />
+            </div>
+
+            <!-- Results count -->
+            <div v-if="searchQuery && filteredSegments.length > 0" class="text-xs text-muted">
+              Found {{ filteredSegments.length }} result{{ filteredSegments.length === 1 ? '' : 's' }}
+              <span v-if="searchMode === 'smart'" class="text-primary">(AI search)</span>
+            </div>
+            </div>
+
+            <!-- Transcript Segments Container -->
+            <div>
+            <div
+              ref="transcriptContainer"
+              class="overflow-y-auto max-h-[50vh]"
+              data-transcript-container
+            >
+              <!-- Virtual list -->
+              <div
+                v-if="filteredSegments.length > 0"
+                :style="{
+                  height: `${virtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative'
+                }"
+              >
+                <div
+                  v-for="virtualRow in virtualizer.getVirtualItems()"
+                  :key="virtualRow.key"
+                  :data-index="virtualRow.index"
+                  :style="{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    transform: `translateY(${virtualRow.start}px)`,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    marginBottom: '8px'
+                  }"
+                  :class="[
+                    'p-4 rounded-lg cursor-pointer overflow-hidden transition-colors duration-200',
+                    {
+                      'bg-primary/10 border-l-4 border-primary shadow-sm': filteredSegments[virtualRow.index].id === activeSegmentId,
+                      'hover:bg-muted/30': filteredSegments[virtualRow.index].id !== activeSegmentId,
+                      'animate-pulse bg-warning/20': filteredSegments[virtualRow.index].id === flashSegmentId
+                    }
+                  ]"
+                  @click="currentTime = filteredSegments[virtualRow.index].start"
+                >
+                  <!-- Header -->
+                  <div class="flex items-start justify-between gap-3 mb-3">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <UButton
+                        :label="formatTime(filteredSegments[virtualRow.index].start)"
+                        icon="i-lucide-clock"
+                        color="neutral"
+                        variant="soft"
+                        size="xs"
+                        @click.stop="seekToSegment(filteredSegments[virtualRow.index])"
+                      />
+
+                      <div
+                        v-if="getSpeaker(filteredSegments[virtualRow.index].speaker)"
+                        class="px-3 py-1 rounded-full text-sm font-medium"
+                        :style="{
+                          backgroundColor: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color + '20',
+                          color: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color
+                        }"
+                      >
+                        {{ getSpeaker(filteredSegments[virtualRow.index].speaker)!.name }}
+                      </div>
+
+                      <UBadge
+                        v-if="filteredSegments[virtualRow.index].isKeyMoment"
+                        label="Key Moment"
+                        icon="i-lucide-star"
+                        color="warning"
+                        size="xs"
+                        variant="soft"
+                      />
+
+                      <UBadge
+                        v-if="filteredSegments[virtualRow.index].confidence !== undefined"
+                        :label="`${Math.round(filteredSegments[virtualRow.index].confidence! * 100)}%`"
+                        color="neutral"
+                        size="xs"
+                        variant="outline"
+                      />
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-center gap-1">
+                      <UTooltip :text="filteredSegments[virtualRow.index].isKeyMoment ? 'Remove from key moments' : 'Mark as key moment'">
+                        <UButton
+                          :icon="filteredSegments[virtualRow.index].isKeyMoment ? 'i-lucide-star' : 'i-lucide-star'"
+                          :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
+                          :variant="filteredSegments[virtualRow.index].isKeyMoment ? 'soft' : 'ghost'"
+                          size="xs"
+                          @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index])"
+                        />
+                      </UTooltip>
+
+                      <UTooltip text="Copy text">
+                        <UButton
+                          icon="i-lucide-copy"
+                          color="neutral"
+                          variant="ghost"
+                          size="xs"
+                          @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
+                        />
+                      </UTooltip>
+
+                      <UTooltip text="Edit segment">
+                        <UButton
+                          icon="i-lucide-edit"
+                          color="neutral"
+                          variant="ghost"
+                          size="xs"
+                          @click.stop="editSegment(filteredSegments[virtualRow.index])"
+                        />
+                      </UTooltip>
+                    </div>
+                  </div>
+
+                  <!-- Text Content -->
+                  <div class="mt-2">
+                    <p
+                      v-if="searchQuery && searchHighlights[filteredSegments[virtualRow.index].id]"
+                      class="text-default leading-relaxed text-base line-clamp-3"
+                      v-html="searchHighlights[filteredSegments[virtualRow.index].id]"
+                    />
+                    <p
+                      v-else
+                      class="text-default leading-relaxed text-base line-clamp-3"
+                    >
+                      {{ filteredSegments[virtualRow.index].text }}
+                    </p>
+                  </div>
+
+                  <!-- Tags -->
+                  <div v-if="filteredSegments[virtualRow.index].tags && filteredSegments[virtualRow.index].tags.length > 0" class="flex flex-wrap gap-1 mt-3">
+                    <UBadge
+                      v-for="tag in filteredSegments[virtualRow.index].tags"
+                      :key="tag"
+                      :label="tag"
+                      color="neutral"
+                      size="xs"
+                      variant="outline"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            <!-- Empty State -->
+            <div v-else class="text-center py-20 px-6">
+              <UIcon name="i-lucide-search-x" class="size-16 text-muted mx-auto mb-4 opacity-30" />
+              <h3 class="text-xl font-semibold mb-2">No segments found</h3>
+              <p class="text-muted mb-4">Try adjusting your filters or search query</p>
+              <UButton
+                label="Clear Filters"
+                icon="i-lucide-x"
+                color="neutral"
+                @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false; searchMode = 'smart'"
+              />
+            </div>
+            </div>
+          </div>
+          </div>
         </div>
       </div>
     </template>
