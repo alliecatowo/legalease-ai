@@ -135,7 +135,8 @@ async function initializeWaveSurfer() {
     duration.value = wavesurfer.value!.getDuration()
     emit('ready', duration.value)
 
-    nextTick(() => {
+    // Optimized: Use microtask instead of nextTick for faster rendering
+    Promise.resolve().then(() => {
       drawKeyMomentsOverlay()
       drawSegmentTimeline()
     })
@@ -324,8 +325,9 @@ watch(() => props.isPlaying, (shouldPlay) => {
   }
 })
 
-watch([() => props.segments, () => props.selectedSegmentId, duration], drawSegmentTimeline, { deep: true })
-watch([() => props.keyMoments, duration], drawKeyMomentsOverlay, { deep: true })
+// Optimized: Remove deep watchers - shallow equality is sufficient for arrays
+watch([() => props.segments, () => props.selectedSegmentId, duration], drawSegmentTimeline)
+watch([() => props.keyMoments, duration], drawKeyMomentsOverlay)
 
 function handleTimelineClick(event: MouseEvent) {
   if (!timelineCanvasRef.value || !duration.value) return
@@ -358,9 +360,10 @@ const throttledRedraw = useThrottleFn(() => {
 
 const throttledTimelineRedraw = useThrottleFn(drawSegmentTimeline, 100)
 
+// Optimized: Minimize nextTick usage - wait for refs to be available
 onMounted(async () => {
   if (isVideo.value) {
-    await nextTick()
+    // Wait for video element to be available in DOM
     let attempts = 0
     while (!videoRef.value && attempts < 10) {
       await new Promise(resolve => setTimeout(resolve, 50))
@@ -374,7 +377,9 @@ onMounted(async () => {
 
   initializeWaveSurfer()
 
-  await nextTick()
+  // Wait for waveform container to be fully rendered
+  await new Promise(resolve => setTimeout(resolve, 0))
+
   if (waveformRef.value) {
     resizeObserver = new ResizeObserver(throttledRedraw)
     resizeObserver.observe(waveformRef.value)
