@@ -429,17 +429,16 @@ watch([() => props.keyMoments, duration], () => {
 
 // Handle canvas click
 function handleTimelineClick(event: MouseEvent) {
-  if (!timelineCanvasRef.value || !props.segments || !duration.value) return
+  if (!timelineCanvasRef.value || !duration.value) return
 
   const rect = timelineCanvasRef.value.getBoundingClientRect()
   const clickX = event.clientX - rect.left
   const clickTime = (clickX / rect.width) * duration.value
 
-  // Find the segment at this time
-  const segment = props.segments.find(s => clickTime >= s.start && clickTime <= s.end)
-  if (segment) {
-    emit('segment-click', segment)
-  }
+  // Seek directly to the clicked time
+  isExternalSeek.value = true
+  const progress = clickTime / duration.value
+  wavesurfer.value?.seekTo(progress)
 }
 
 // Expose methods
