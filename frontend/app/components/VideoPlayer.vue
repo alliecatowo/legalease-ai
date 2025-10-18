@@ -51,7 +51,7 @@ const videoContainerClass = computed(() => {
 
   switch (videoSize.value) {
     case 'small':
-      return 'max-w-2xl mx-auto' // 672px max width, centered
+      return 'max-w-xl mx-auto' // 576px max width, more compact
     case 'theater':
       return 'max-w-5xl mx-auto' // 1024px max width, centered
     case 'fullscreen':
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
 
     <!-- Video Player Container (for video files) -->
     <div v-if="isVideo" :class="videoContainerClass">
-      <div class="relative w-full bg-black rounded-lg overflow-hidden">
+      <div class="relative w-full bg-black rounded-lg overflow-hidden group">
         <!-- Video Element -->
         <video
           ref="videoRef"
@@ -486,8 +486,8 @@ onBeforeUnmount(() => {
           @loadedmetadata="isMediaReady = true"
         />
 
-        <!-- Waveform Overlay at Bottom -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3">
+        <!-- Waveform Overlay at Bottom (Always Visible) -->
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 py-2">
           <div class="relative w-full">
             <div ref="waveformRef" class="w-full cursor-pointer" @click="handleWaveformClick" />
             <!-- Key Moments Overlay Canvas -->
@@ -496,6 +496,76 @@ onBeforeUnmount(() => {
               ref="keyMomentsCanvasRef"
               class="absolute top-0 left-0 w-full h-full pointer-events-none"
             />
+          </div>
+        </div>
+
+        <!-- Controls Overlay (Hover Only) -->
+        <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+          <!-- Top Controls -->
+          <div class="absolute top-0 left-0 right-0 p-4 flex items-center justify-between pointer-events-auto">
+            <!-- Video Size Controls -->
+            <UFieldGroup size="sm" class="bg-black/50 rounded-lg">
+              <UTooltip text="Small">
+                <UButton
+                  icon="i-lucide-minimize-2"
+                  :variant="videoSize === 'small' ? 'soft' : 'ghost'"
+                  :color="videoSize === 'small' ? 'primary' : 'neutral'"
+                  size="sm"
+                  @click="videoSize = 'small'"
+                />
+              </UTooltip>
+              <UTooltip text="Theater">
+                <UButton
+                  icon="i-lucide-rectangle-horizontal"
+                  :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
+                  :color="videoSize === 'theater' ? 'primary' : 'neutral'"
+                  size="sm"
+                  @click="videoSize = 'theater'"
+                />
+              </UTooltip>
+              <UTooltip text="Fullscreen">
+                <UButton
+                  icon="i-lucide-maximize-2"
+                  :variant="videoSize === 'fullscreen' ? 'soft' : 'ghost'"
+                  :color="videoSize === 'fullscreen' ? 'primary' : 'neutral'"
+                  size="sm"
+                  @click="videoSize = 'fullscreen'"
+                />
+              </UTooltip>
+            </UFieldGroup>
+
+            <!-- Playback Rate & Volume -->
+            <div class="flex items-center gap-3 bg-black/50 rounded-lg px-3 py-2">
+              <USelectMenu
+                :model-value="playbackRate"
+                :items="playbackRates.map(rate => ({ label: `${rate}x`, value: rate }))"
+                @update:model-value="setPlaybackRate"
+                size="sm"
+              >
+                <template #label>
+                  <div class="flex items-center gap-2">
+                    <UIcon name="i-lucide-gauge" class="size-4" />
+                    <span>{{ playbackRate }}x</span>
+                  </div>
+                </template>
+              </USelectMenu>
+
+              <div class="flex items-center gap-2">
+                <UIcon
+                  :name="volume === 0 ? 'i-lucide-volume-x' : volume < 0.5 ? 'i-lucide-volume-1' : 'i-lucide-volume-2'"
+                  class="size-4 text-white"
+                />
+                <input
+                  :value="volume"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  class="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
+                  @input="(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -513,7 +583,7 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <!-- Controls -->
+    <!-- Simplified Controls (below player) -->
     <div class="flex items-center justify-between gap-4">
       <!-- Playback Controls -->
       <div class="flex items-center gap-2">
@@ -556,39 +626,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- Additional Controls -->
-      <div class="flex items-center gap-4">
-        <!-- Video Size Controls (only for video) -->
-        <UFieldGroup v-if="isVideo" size="sm">
-          <UTooltip text="Small">
-            <UButton
-              icon="i-lucide-minimize-2"
-              :variant="videoSize === 'small' ? 'soft' : 'ghost'"
-              :color="videoSize === 'small' ? 'primary' : 'neutral'"
-              size="sm"
-              @click="videoSize = 'small'"
-            />
-          </UTooltip>
-          <UTooltip text="Theater">
-            <UButton
-              icon="i-lucide-rectangle-horizontal"
-              :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
-              :color="videoSize === 'theater' ? 'primary' : 'neutral'"
-              size="sm"
-              @click="videoSize = 'theater'"
-            />
-          </UTooltip>
-          <UTooltip text="Fullscreen">
-            <UButton
-              icon="i-lucide-maximize-2"
-              :variant="videoSize === 'fullscreen' ? 'soft' : 'ghost'"
-              :color="videoSize === 'fullscreen' ? 'primary' : 'neutral'"
-              size="sm"
-              @click="videoSize = 'fullscreen'"
-            />
-          </UTooltip>
-        </UFieldGroup>
-
+      <!-- Audio-only controls (volume, speed for audio files) -->
+      <div v-if="!isVideo" class="flex items-center gap-4">
         <!-- Playback Rate -->
         <USelectMenu
           :model-value="playbackRate"
