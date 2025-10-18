@@ -826,7 +826,7 @@ onMounted(async () => {
 
         <!-- Transcript Content Section (Shared by both video and audio) -->
         <div class="flex-1 overflow-hidden flex flex-col">
-          <div class="flex-1 flex flex-col min-h-0 gap-2 p-4 sm:p-6">
+          <div class="flex-1 flex flex-col min-h-0 gap-2 p-1">
               <!-- Search and Filters -->
               <div class="space-y-1">
             <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
