@@ -88,7 +88,7 @@ class TranscriptionSegment(BaseModel):
 class TranscriptionCreate(BaseModel):
     """Schema for creating a transcription (internal use)."""
 
-    document_id: int = Field(..., description="ID of the associated document")
+    document_gid: str = Field(..., description="Global identifier of the associated document")
     format: Optional[str] = Field(None, description="Audio/video format (e.g., 'mp3', 'wav', 'mp4')")
     duration: Optional[float] = Field(None, description="Duration in seconds")
     speakers: Optional[List[SpeakerInfo]] = Field(None, description="List of identified speakers")
@@ -98,8 +98,9 @@ class TranscriptionCreate(BaseModel):
 class TranscriptionResponse(BaseModel):
     """Schema for transcription response."""
 
-    id: int = Field(..., description="Transcription ID")
-    case_id: int = Field(..., description="Associated case ID")
+    gid: str = Field(..., description="Transcription global identifier")
+    case_gid: str = Field(..., description="Associated case global identifier")
+    document_gid: Optional[str] = Field(None, description="Associated document global identifier")
     filename: str = Field(..., description="Original audio/video filename")
     format: Optional[str] = Field(None, description="Audio/video format")
     duration: Optional[float] = Field(None, description="Duration in seconds")
@@ -115,8 +116,8 @@ class TranscriptionResponse(BaseModel):
 class TranscriptionListItem(BaseModel):
     """Schema for transcription list items (summary view)."""
 
-    id: int = Field(..., description="Transcription ID")
-    case_id: int = Field(..., description="Associated case ID")
+    gid: str = Field(..., description="Transcription global identifier")
+    case_gid: str = Field(..., description="Associated case global identifier")
     filename: str = Field(..., description="Original audio/video filename")
     format: Optional[str] = Field(None, description="Audio/video format")
     duration: Optional[float] = Field(None, description="Duration in seconds")
@@ -133,13 +134,13 @@ class TranscriptionListResponse(BaseModel):
 
     transcriptions: List[TranscriptionListItem] = Field(..., description="List of transcriptions")
     total: int = Field(..., description="Total number of transcriptions")
-    case_id: Optional[int] = Field(None, description="Case ID if filtered by case")
+    case_gid: Optional[str] = Field(None, description="Case global identifier if filtered by case")
 
 
 class TranscriptionDeleteResponse(BaseModel):
     """Schema for transcription deletion responses."""
 
-    id: int = Field(..., description="Deleted transcription ID")
+    gid: str = Field(..., description="Deleted transcription global identifier")
     filename: str = Field(..., description="Deleted audio/video filename")
     message: str = Field(..., description="Deletion confirmation message")
 
@@ -148,7 +149,7 @@ class TranscriptionUploadResponse(BaseModel):
     """Schema for transcription upload response."""
 
     message: str = Field(..., description="Upload status message")
-    transcription_id: int = Field(..., description="Created transcription ID")
+    transcription_gid: str = Field(..., description="Created transcription global identifier")
     status: str = Field(..., description="Processing status")
 
 

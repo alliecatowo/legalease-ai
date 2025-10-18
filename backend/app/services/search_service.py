@@ -603,15 +603,15 @@ class HybridSearchEngine:
 
                 formatted_results.append(
                     SearchResult(
-                        id=result["id"],
+                        gid=result["id"],  # Chunk point ID from Qdrant
                         score=result["score"],
                         text=text,
                         match_type=match_type,
                         page_number=payload.get("page_number"),
                         bboxes=payload.get("bboxes", []),
                         metadata={
-                            "document_id": payload.get("document_id"),
-                            "case_id": payload.get("case_id"),
+                            "document_gid": payload.get("document_gid"),
+                            "case_gid": payload.get("case_gid"),
                             "chunk_type": payload.get("chunk_type"),
                             "position": payload.get("position"),
                             "bm25_score": actual_bm25_score,

@@ -372,16 +372,16 @@ function getStatusColor(status: string) {
               <div class="space-y-3">
                 <div
                   v-for="doc in recentDocuments"
-                  :key="doc.id"
+                  :key="doc.gid"
                   class="flex items-center gap-3 p-3 rounded-lg hover:bg-elevated/50 transition-colors cursor-pointer"
-                  @click="navigateTo(`/cases/${doc.case_id}/documents/${doc.id}`)"
+                  @click="navigateTo(`/documents/${doc.gid}`)"
                 >
                   <UIcon name="i-lucide-file-text" class="size-5 text-muted flex-shrink-0" />
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium truncate">{{ doc.filename }}</p>
                     <div class="flex items-center gap-2 mt-1">
                       <NuxtLink
-                        :to="`/cases/${doc.case_id}`"
+                        :to="`/cases/${doc.case_gid}`"
                         class="text-xs text-primary hover:underline"
                         @click.stop
                       >
@@ -424,16 +424,16 @@ function getStatusColor(status: string) {
               <div class="space-y-3">
                 <div
                   v-for="trans in recentTranscriptions"
-                  :key="trans.id"
+                  :key="trans.gid"
                   class="flex items-center gap-3 p-3 rounded-lg hover:bg-elevated/50 transition-colors cursor-pointer"
-                  @click="navigateTo(`/transcripts/${trans.id}`)"
+                  @click="navigateTo(`/transcripts/${trans.gid}`)"
                 >
                   <UIcon name="i-lucide-mic" class="size-5 text-muted flex-shrink-0" />
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium truncate">{{ trans.filename }}</p>
                     <div class="flex items-center gap-2 mt-1">
                       <NuxtLink
-                        :to="`/cases/${trans.case_id}`"
+                        :to="`/cases/${trans.case_gid}`"
                         class="text-xs text-primary hover:underline"
                         @click.stop
                       >
@@ -522,8 +522,8 @@ function getStatusColor(status: string) {
               <div class="space-y-2">
                 <NuxtLink
                   v-for="caseItem in recentCases"
-                  :key="caseItem.id"
-                  :to="`/cases/${caseItem.id}`"
+                  :key="caseItem.gid"
+                  :to="`/cases/${caseItem.gid}`"
                   class="block p-3 rounded-lg hover:bg-elevated/50 transition-colors"
                 >
                   <div class="flex items-start gap-2">

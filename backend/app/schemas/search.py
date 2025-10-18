@@ -66,7 +66,7 @@ class PageItem(BaseModel):
     text: str = Field(..., description="Item text content")
     type: Optional[str] = Field(None, description="Item type")
     bboxes: List[Dict[str, Any]] = Field(default_factory=list, description="Bounding boxes for this item")
-    chunk_id: Optional[int] = Field(None, description="Associated chunk ID")
+    chunk_gid: Optional[str] = Field(None, description="Associated chunk global identifier")
 
     class Config:
         json_schema_extra = {
@@ -74,7 +74,7 @@ class PageItem(BaseModel):
                 "text": "This is the contract text...",
                 "type": "TextItem",
                 "bboxes": [{"l": 72.0, "t": 100.0, "r": 500.0, "b": 120.0}],
-                "chunk_id": 42,
+                "chunk_gid": "mno789pqr012stu345vw",
             }
         }
 
@@ -117,7 +117,7 @@ class DocumentContentResponse(BaseModel):
     Complete document content with pages, items, and bounding boxes.
 
     Attributes:
-        document_id: Database document ID
+        document_gid: Database document global identifier
         filename: Original filename
         text: Full document text
         pages: List of pages with items and bboxes
@@ -126,7 +126,7 @@ class DocumentContentResponse(BaseModel):
         total_pages: Total number of pages
     """
 
-    document_id: int = Field(..., description="Document ID")
+    document_gid: str = Field(..., description="Document global identifier")
     filename: str = Field(..., description="Original filename")
     text: str = Field(..., description="Full document text")
     pages: List[DocumentPage] = Field(..., description="Document pages with items")
@@ -137,7 +137,7 @@ class DocumentContentResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "document_id": 5,
+                "document_gid": "xyz789abc123def456gh",
                 "filename": "contract.pdf",
                 "text": "Full document text...",
                 "pages": [
@@ -167,15 +167,15 @@ class PageImageResponse(BaseModel):
 
     page_number: int = Field(..., description="Page number")
     image_url: str = Field(..., description="Presigned image URL")
-    document_id: int = Field(..., description="Document ID")
+    document_gid: str = Field(..., description="Document global identifier")
     expires_in: int = Field(3600, description="URL expiration in seconds")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "page_number": 1,
-                "image_url": "https://minio.example.com/documents/1/5/pages/page_1.png?...",
-                "document_id": 5,
+                "image_url": "https://minio.example.com/documents/xyz789abc123def456gh/pages/page_1.png?...",
+                "document_gid": "xyz789abc123def456gh",
                 "expires_in": 3600,
             }
         }
@@ -186,19 +186,19 @@ class PageListResponse(BaseModel):
     List of page images for a document.
 
     Attributes:
-        document_id: Document ID
+        document_gid: Document global identifier
         total_pages: Total number of pages
         pages: List of pages with image URLs
     """
 
-    document_id: int = Field(..., description="Document ID")
+    document_gid: str = Field(..., description="Document global identifier")
     total_pages: int = Field(..., description="Total pages")
     pages: List[Dict[str, Any]] = Field(..., description="Page data with image URLs")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "document_id": 5,
+                "document_gid": "xyz789abc123def456gh",
                 "total_pages": 10,
                 "pages": [
                     {"page_number": 1, "image_url": "https://..."},
@@ -224,8 +224,8 @@ class SearchQuery(BaseModel):
     """
 
     query: str = Field(..., min_length=1, description="Search query text")
-    case_ids: Optional[List[int]] = Field(None, description="Filter by case IDs")
-    document_ids: Optional[List[int]] = Field(None, description="Filter by document IDs")
+    case_ids: Optional[List[str]] = Field(None, description="Filter by case global identifiers")
+    document_ids: Optional[List[str]] = Field(None, description="Filter by document global identifiers")
     chunk_types: Optional[List[str]] = Field(None, description="Filter by chunk types")
     top_k: int = Field(10, ge=1, le=100, description="Maximum number of results")
     score_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum score threshold")
@@ -272,7 +272,7 @@ class SearchResult(BaseModel):
         bboxes: Bounding boxes for highlighting
     """
 
-    id: Union[int, str] = Field(..., description="Chunk/point ID (int or UUID string)")
+    gid: str = Field(..., description="Chunk/point global identifier")
     score: float = Field(..., description="Relevance score")
     text: str = Field(..., description="Content text")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
@@ -285,12 +285,12 @@ class SearchResult(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "id": 42,
+                "gid": "abc123def456ghi789jk",
                 "score": 0.87,
                 "text": "The defendant breached the contract by failing to deliver...",
                 "metadata": {
-                    "document_id": 5,
-                    "case_id": 1,
+                    "document_gid": "xyz789abc123def456gh",
+                    "case_gid": "qrs456tuv789wxy012ab",
                     "chunk_type": "section",
                     "page_number": 3,
                 },
@@ -314,8 +314,8 @@ class HybridSearchRequest(BaseModel):
     """
 
     query: str = Field(..., min_length=1, description="Search query text")
-    case_ids: Optional[List[int]] = Field(None, description="Filter by case IDs")
-    document_ids: Optional[List[int]] = Field(None, description="Filter by document IDs")
+    case_ids: Optional[List[str]] = Field(None, description="Filter by case global identifiers")
+    document_ids: Optional[List[str]] = Field(None, description="Filter by document global identifiers")
     chunk_types: Optional[List[str]] = Field(None, description="Filter by chunk types")
     top_k: int = Field(10, ge=1, le=100, description="Maximum number of results")
     score_threshold: Optional[float] = Field(
@@ -391,12 +391,12 @@ class HybridSearchResponse(BaseModel):
             "example": {
                 "results": [
                     {
-                        "id": 42,
+                        "gid": "abc123def456ghi789jk",
                         "score": 0.87,
                         "text": "The defendant breached the contract...",
                         "metadata": {
-                            "document_id": 5,
-                            "case_id": 1,
+                            "document_gid": "xyz789abc123def456gh",
+                            "case_gid": "qrs456tuv789wxy012ab",
                             "chunk_type": "section",
                         },
                         "vector_type": "section",
@@ -430,9 +430,9 @@ class DocumentChunk(BaseModel):
         metadata: Additional metadata
     """
 
-    chunk_id: int = Field(..., description="Unique chunk ID")
-    document_id: int = Field(..., description="Parent document ID")
-    case_id: int = Field(..., description="Associated case ID")
+    chunk_gid: str = Field(..., description="Unique chunk global identifier")
+    document_gid: str = Field(..., description="Parent document global identifier")
+    case_gid: str = Field(..., description="Associated case global identifier")
     text: str = Field(..., min_length=1, description="Chunk text content")
     chunk_type: str = Field(..., description="Chunk type")
     position: int = Field(..., ge=0, description="Position in document")
@@ -451,9 +451,9 @@ class DocumentChunk(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "chunk_id": 123,
-                "document_id": 5,
-                "case_id": 1,
+                "chunk_gid": "mno789pqr012stu345vw",
+                "document_gid": "xyz789abc123def456gh",
+                "case_gid": "qrs456tuv789wxy012ab",
                 "text": "This section discusses the breach of contract...",
                 "chunk_type": "section",
                 "position": 2,
@@ -483,9 +483,9 @@ class IndexRequest(BaseModel):
             "example": {
                 "chunks": [
                     {
-                        "chunk_id": 123,
-                        "document_id": 5,
-                        "case_id": 1,
+                        "chunk_gid": "mno789pqr012stu345vw",
+                        "document_gid": "xyz789abc123def456gh",
+                        "case_gid": "qrs456tuv789wxy012ab",
                         "text": "Contract section...",
                         "chunk_type": "section",
                         "position": 1,

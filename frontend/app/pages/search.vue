@@ -29,7 +29,7 @@ await cases.get() // Load cases from cache or fetch if needed
 
 const availableCases = computed(() =>
   (cases.data.value?.cases || []).map((c: any) => ({
-    id: Number(c.id),
+    id: c.gid,
     name: c.name,
     label: c.name,
     case_number: c.case_number
@@ -37,7 +37,7 @@ const availableCases = computed(() =>
 )
 
 // Filter state
-const selectedCases = ref<number[]>([])
+const selectedCases = ref<string[]>([])
 const selectedDocumentTypes = ref<string[]>([])
 const selectedSpeakers = ref<string[]>([])
 const includeTranscripts = ref(true)
@@ -92,8 +92,8 @@ const performSearch = async () => {
   isLoading.value = true
   isSearching.value = true
   try {
-    // Filter out null/undefined values and convert to integers
-    const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
+    // Filter out null/undefined values
+    const validCaseIds = selectedCases.value.filter(id => id != null)
 
     // Build chunk_types from both selectedChunkTypes and selectedDocumentTypes
     const chunkTypes = [...selectedChunkTypes.value]

@@ -9,7 +9,7 @@ from app.models.document import DocumentStatus
 class DocumentUpload(BaseModel):
     """Schema for document upload metadata."""
 
-    case_id: int = Field(..., description="ID of the case this document belongs to")
+    case_gid: str = Field(..., description="Global ID of the case this document belongs to")
 
 
 class DocumentMetadata(BaseModel):
@@ -26,8 +26,8 @@ class DocumentMetadata(BaseModel):
 class DocumentResponse(BaseModel):
     """Schema for document response."""
 
-    id: int = Field(..., description="Document ID")
-    case_id: int = Field(..., description="Case ID")
+    gid: str = Field(..., description="Document global identifier")
+    case_gid: str = Field(..., description="Case global identifier")
     filename: str = Field(..., description="Original filename")
     file_path: str = Field(..., description="Storage path in MinIO")
     mime_type: Optional[str] = Field(None, description="MIME type of the file")
@@ -44,7 +44,7 @@ class DocumentListResponse(BaseModel):
 
     documents: List[DocumentResponse] = Field(..., description="List of documents")
     total: int = Field(..., description="Total number of documents")
-    case_id: Optional[int] = Field(None, description="Case ID if filtered by case")
+    case_gid: Optional[str] = Field(None, description="Case global identifier if filtered by case")
 
 
 class DocumentWithCaseInfo(DocumentResponse):
@@ -66,7 +66,7 @@ class PaginatedDocumentListResponse(BaseModel):
 class DocumentDeleteResponse(BaseModel):
     """Schema for document deletion response."""
 
-    id: int = Field(..., description="Deleted document ID")
+    gid: str = Field(..., description="Deleted document global identifier")
     filename: str = Field(..., description="Deleted filename")
     message: str = Field(..., description="Deletion confirmation message")
 

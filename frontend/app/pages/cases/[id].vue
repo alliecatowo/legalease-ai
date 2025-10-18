@@ -60,7 +60,7 @@ const case_ = computed(() => {
   if (!caseData.value) return null
 
   return {
-    id: String(caseData.value.id),
+    id: caseData.value.gid,
     name: caseData.value.name,
     caseNumber: caseData.value.case_number,
     type: caseData.value.matter_type || 'General',
@@ -89,7 +89,7 @@ const documents = computed(() => {
       return !mimeType.startsWith('audio/') && !mimeType.startsWith('video/')
     })
     .map((d: any) => ({
-      id: String(d.id),
+      id: d.gid,
       filename: d.filename,
       title: d.meta_data?.title || d.filename,
       type: d.meta_data?.document_type || 'general',
@@ -112,7 +112,7 @@ const transcriptions = computed(() => {
       return mimeType.startsWith('audio/') || mimeType.startsWith('video/')
     })
     .map((d: any) => ({
-      id: String(d.id),
+      id: d.gid,
       filename: d.filename,
       size: d.size || 0,
       uploadedAt: d.uploaded_at,

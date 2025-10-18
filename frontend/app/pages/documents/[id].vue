@@ -21,7 +21,7 @@ await documentsCache.get()
 // Find this document in the cached list
 const document = computed(() => {
   if (!documentsCache.data.value?.documents) return null
-  return documentsCache.data.value.documents.find(d => String(d.id) === String(documentId.value)) || null
+  return documentsCache.data.value.documents.find(d => d.gid === documentId.value) || null
 })
 
 const loadingDocument = documentsCache.loading
@@ -47,13 +47,13 @@ const { data: content, pending: loadingContent, error: contentError } = await us
   }
 )
 
-// Fetch case details if document has case_id (lazy loading)
+// Fetch case details if document has case_gid (lazy loading)
 const { data: caseData } = useLazyAsyncData(
   `case-${documentId.value}`,
   async () => {
-    if (!document.value?.case_id) return null
+    if (!document.value?.case_gid) return null
     try {
-      return await api.cases.get(document.value.case_id.toString())
+      return await api.cases.get(document.value.case_gid)
     } catch (err) {
       console.error('Failed to load case:', err)
       return null
@@ -61,7 +61,7 @@ const { data: caseData } = useLazyAsyncData(
   },
   {
     default: () => null,
-    watch: [() => document.value?.case_id]
+    watch: [() => document.value?.case_gid]
   }
 )
 
@@ -69,10 +69,10 @@ const { data: caseData } = useLazyAsyncData(
 const { data: relatedDocs } = useLazyAsyncData(
   `related-docs-${documentId.value}`,
   async () => {
-    if (!document.value?.case_id) return []
+    if (!document.value?.case_gid) return []
     try {
-      const response = await api.documents.listByCase(document.value.case_id)
-      return response?.documents?.filter((d: any) => d.id !== parseInt(documentId.value)) || []
+      const response = await api.documents.listByCase(document.value.case_gid)
+      return response?.documents?.filter((d: any) => d.gid !== documentId.value) || []
     } catch (err) {
       console.error('Failed to load related docs:', err)
       return []
@@ -80,7 +80,7 @@ const { data: relatedDocs } = useLazyAsyncData(
   },
   {
     default: () => [],
-    watch: [() => document.value?.case_id]
+    watch: [() => document.value?.case_gid]
   }
 )
 
@@ -117,7 +117,7 @@ async function performHybridSearch(query: string) {
       // 1. BM25 only (blue boxes) - strong keyword matches
       api.search.hybrid({
         query,
-        document_ids: [parseInt(documentId.value)],
+        document_ids: [documentId.value],
         top_k: 5,
         use_bm25: true,
         use_dense: false,
@@ -126,7 +126,7 @@ async function performHybridSearch(query: string) {
       // 2. Fusion: BM25 + semantic (yellow boxes)
       api.search.hybrid({
         query,
-        document_ids: [parseInt(documentId.value)],
+        document_ids: [documentId.value],
         top_k: 5,
         use_bm25: true,
         use_dense: true,

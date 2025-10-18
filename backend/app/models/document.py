@@ -4,8 +4,10 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, Enum, BigInteger, ForeignKey, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
+from app.models.base import UUIDMixin
 
 
 class DocumentStatus(str, PyEnum):
@@ -17,7 +19,7 @@ class DocumentStatus(str, PyEnum):
     FAILED = "FAILED"
 
 
-class Document(Base):
+class Document(UUIDMixin, Base):
     """
     Document model representing an uploaded file in a case.
 
@@ -27,9 +29,8 @@ class Document(Base):
 
     __tablename__ = "documents"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    case_id = Column(
-        Integer,
+    case_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True

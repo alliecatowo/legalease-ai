@@ -257,12 +257,12 @@ class CaseService:
                 raise
             raise ResourceCreationError(f"Failed to create case: {str(e)}")
 
-    def get_case(self, case_id: int) -> Case:
+    def get_case(self, case_gid: str) -> Case:
         """
-        Get a case by ID.
+        Get a case by GID.
 
         Args:
-            case_id: Case ID
+            case_gid: Case GID
 
         Returns:
             Case object
@@ -270,9 +270,9 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.db.query(Case).filter(Case.id == case_id).first()
+        case = self.db.query(Case).filter(Case.gid == case_gid).first()
         if not case:
-            raise CaseNotFoundError(f"Case with id {case_id} not found")
+            raise CaseNotFoundError(f"Case with gid {case_gid} not found")
         return case
 
     def get_case_by_number(self, case_number: str) -> Case:
@@ -326,7 +326,7 @@ class CaseService:
 
     def update_case(
         self,
-        case_id: int,
+        case_gid: str,
         name: Optional[str] = None,
         case_number: Optional[str] = None,
         client: Optional[str] = None,
@@ -336,7 +336,7 @@ class CaseService:
         Update case details.
 
         Args:
-            case_id: Case ID
+            case_gid: Case GID
             name: New case name (optional)
             case_number: New case number (optional)
             client: New client name (optional)
@@ -349,7 +349,7 @@ class CaseService:
             CaseNotFoundError: If case not found
             CaseAlreadyExistsError: If new case_number already exists
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_gid)
 
         # Check if new case_number conflicts with existing cases
         if case_number and case_number != case.case_number:
@@ -374,14 +374,14 @@ class CaseService:
         self.db.refresh(case)
         return case
 
-    def activate_case(self, case_id: int) -> Case:
+    def activate_case(self, case_gid: str) -> Case:
         """
         Activate a case (change status to ACTIVE).
 
         This makes the case available for document processing and search.
 
         Args:
-            case_id: Case ID
+            case_gid: Case GID
 
         Returns:
             Updated Case object
@@ -389,13 +389,13 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_gid)
         case.status = CaseStatus.ACTIVE
         self.db.commit()
         self.db.refresh(case)
         return case
 
-    def unload_case(self, case_id: int) -> Case:
+    def unload_case(self, case_gid: str) -> Case:
         """
         Unload a case (change status to UNLOADED).
 
@@ -403,7 +403,7 @@ class CaseService:
         The Qdrant collection and MinIO bucket remain but are not actively used.
 
         Args:
-            case_id: Case ID
+            case_gid: Case GID
 
         Returns:
             Updated Case object
@@ -411,13 +411,13 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_gid)
         case.status = CaseStatus.UNLOADED
         self.db.commit()
         self.db.refresh(case)
         return case
 
-    def delete_case(self, case_id: int) -> None:
+    def delete_case(self, case_gid: str) -> None:
         """
         Permanently delete a case and all associated resources.
 
@@ -428,12 +428,12 @@ class CaseService:
         - The MinIO bucket and all files
 
         Args:
-            case_id: Case ID
+            case_gid: Case GID
 
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_gid)
 
         # Generate resource names
         collection_name = self._generate_collection_name(case.case_number)

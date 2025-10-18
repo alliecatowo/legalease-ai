@@ -124,14 +124,14 @@ const stats = computed(() => {
 // Bulk selection
 const allSelected = computed(() => {
   return filteredDocuments.value.length > 0 &&
-    filteredDocuments.value.every(d => selectedDocuments.value.has(String(d.id)))
+    filteredDocuments.value.every(d => selectedDocuments.value.has(d.gid))
 })
 
 function toggleSelectAll() {
   if (allSelected.value) {
     selectedDocuments.value.clear()
   } else {
-    filteredDocuments.value.forEach(d => selectedDocuments.value.add(String(d.id)))
+    filteredDocuments.value.forEach(d => selectedDocuments.value.add(d.gid))
   }
 }
 
@@ -394,21 +394,21 @@ const documentTypeIcons: Record<string, string> = {
       <div v-if="viewMode === 'list'" class="space-y-3">
         <UCard
           v-for="doc in filteredDocuments"
-          :key="doc.id"
+          :key="doc.gid"
           class="hover:shadow-md transition-all cursor-pointer"
-          :class="selectedDocuments.has(String(doc.id)) ? 'ring-2 ring-primary' : ''"
-          @click="navigateTo(`/documents/${doc.id}`)"
+          :class="selectedDocuments.has(doc.gid) ? 'ring-2 ring-primary' : ''"
+          @click="navigateTo(`/documents/${doc.gid}`)"
         >
           <div class="flex items-start gap-4">
             <!-- Selection Icon -->
             <div
               class="flex-shrink-0 cursor-pointer p-2"
-              @click.stop="toggleSelect(doc.id)"
+              @click.stop="toggleSelect(doc.gid)"
             >
               <UIcon
-                :name="selectedDocuments.has(String(doc.id)) ? 'i-lucide-check-square' : 'i-lucide-square'"
+                :name="selectedDocuments.has(doc.gid) ? 'i-lucide-check-square' : 'i-lucide-square'"
                 class="size-5"
-                :class="selectedDocuments.has(String(doc.id)) ? 'text-primary' : 'text-muted'"
+                :class="selectedDocuments.has(doc.gid) ? 'text-primary' : 'text-muted'"
               />
             </div>
 
@@ -465,7 +465,7 @@ const documentTypeIcons: Record<string, string> = {
                         variant="ghost"
                         color="neutral"
                         size="sm"
-                        @click.stop="navigateTo(`/documents/${doc.id}`)"
+                        @click.stop="navigateTo(`/documents/${doc.gid}`)"
                       />
                     </UTooltip>
                     <UTooltip text="Download">
@@ -474,7 +474,7 @@ const documentTypeIcons: Record<string, string> = {
                         variant="ghost"
                         color="neutral"
                         size="sm"
-                        @click.stop="downloadDocument(doc.id)"
+                        @click.stop="downloadDocument(doc.gid)"
                       />
                     </UTooltip>
                     <UDropdownMenu
@@ -485,7 +485,7 @@ const documentTypeIcons: Record<string, string> = {
                           { label: 'Share', icon: 'i-lucide-share' }
                         ],
                         [
-                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.gid) }
                         ]
                       ]"
                     >
@@ -509,22 +509,22 @@ const documentTypeIcons: Record<string, string> = {
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <UCard
           v-for="doc in filteredDocuments"
-          :key="doc.id"
+          :key="doc.gid"
           class="hover:shadow-lg transition-all cursor-pointer relative"
-          :class="selectedDocuments.has(String(doc.id)) ? 'ring-2 ring-primary' : ''"
-          @click="navigateTo(`/documents/${doc.id}`)"
+          :class="selectedDocuments.has(doc.gid) ? 'ring-2 ring-primary' : ''"
+          @click="navigateTo(`/documents/${doc.gid}`)"
         >
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <div
                   class="cursor-pointer"
-                  @click.stop="toggleSelect(doc.id)"
+                  @click.stop="toggleSelect(doc.gid)"
                 >
                   <UIcon
-                    :name="selectedDocuments.has(String(doc.id)) ? 'i-lucide-check-square' : 'i-lucide-square'"
+                    :name="selectedDocuments.has(doc.gid) ? 'i-lucide-check-square' : 'i-lucide-square'"
                     class="size-5"
-                    :class="selectedDocuments.has(String(doc.id)) ? 'text-primary' : 'text-muted'"
+                    :class="selectedDocuments.has(doc.gid) ? 'text-primary' : 'text-muted'"
                   />
                 </div>
                 <div class="p-2 bg-primary/10 rounded-lg">
@@ -538,11 +538,11 @@ const documentTypeIcons: Record<string, string> = {
                 <UDropdownMenu
                   :items="[
                     [
-                      { label: 'View', icon: 'i-lucide-eye', click: () => navigateTo(`/documents/${doc.id}`) },
-                      { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.id) }
+                      { label: 'View', icon: 'i-lucide-eye', click: () => navigateTo(`/documents/${doc.gid}`) },
+                      { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.gid) }
                     ],
                     [
-                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.gid) }
                     ]
                   ]"
                 >

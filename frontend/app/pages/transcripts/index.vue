@@ -21,7 +21,7 @@ const viewMode = ref<'grid' | 'list'>('grid')
 // Upload modal state
 const showUploadModal = ref(false)
 const uploadingFiles = ref<File[]>([])
-const selectedCaseForUpload = ref<number | null>(null)
+const selectedCaseForUpload = ref<string | null>(null)
 const isUploading = ref(false)
 const uploadError = ref<string | null>(null)
 const transcriptionOptions = ref({
@@ -38,7 +38,7 @@ const fileInputRef = ref<HTMLInputElement>()
 // Filters
 const searchQuery = ref('')
 const selectedStatus = ref<string | null>(null)
-const selectedCase = ref<number | null>(null)
+const selectedCase = ref<string | null>(null)
 const selectedDateRange = ref<string>('all')
 const sortBy = ref<string>('recent')
 
@@ -47,7 +47,7 @@ const caseOptions = computed(() => [
   { label: 'All Cases', value: null },
   ...(cases.data.value?.cases || []).map((c: any) => ({
     label: c.name,
-    value: c.id
+    value: c.gid
   }))
 ])
 
@@ -196,7 +196,7 @@ function formatDate(dateStr: string) {
 }
 
 // Delete transcription
-async function deleteTranscription(id: number) {
+async function deleteTranscription(id: string) {
   try {
     await api.transcriptions.delete(id)
     toast.add({
@@ -215,7 +215,7 @@ async function deleteTranscription(id: number) {
 }
 
 // Download transcription
-async function downloadTranscription(id: number, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') {
+async function downloadTranscription(id: string, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') {
   try {
     const response = await api.transcriptions.download(id, format)
     // Handle download

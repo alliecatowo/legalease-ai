@@ -17,6 +17,7 @@ import time
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from io import BytesIO
+from uuid import UUID
 
 # Suppress torchaudio deprecation warnings from pyannote
 warnings.filterwarnings("ignore", message=".*torchaudio.*deprecated.*", category=UserWarning)
@@ -943,7 +944,7 @@ class TranscriptionExporter:
 @celery_app.task(name="transcribe_audio", bind=True)
 def transcribe_audio(
     self,
-    transcription_id: int,
+    transcription_gid: str,
     options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -960,7 +961,7 @@ def transcribe_audio(
     8. Handle errors gracefully with status updates
 
     Args:
-        transcription_id: ID of the transcription to process
+        transcription_gid: GID of the transcription to process
         options: Optional dict containing transcription configuration:
             - language: Language code or None for auto-detect
             - task: 'transcribe' or 'translate'
@@ -989,12 +990,12 @@ def transcribe_audio(
             meta={'status': 'Initializing transcription', 'progress': 0}
         )
 
-        # Step 1: Get transcription from database
-        logger.info(f"Starting transcription for transcription ID {transcription_id}")
-        transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+        # Step 1: Get transcription from database using GID
+        logger.info(f"Starting transcription for transcription GID {transcription_gid}")
+        transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
 
         if not transcription:
-            raise TranscriptionError(f"Transcription {transcription_id} not found")
+            raise TranscriptionError(f"Transcription with GID {transcription_gid} not found")
 
         # Update transcription status
         transcription.status = DocumentStatus.PROCESSING
@@ -1379,7 +1380,7 @@ def transcribe_audio(
 
         # Prepare metadata (include inference metadata if available)
         metadata = {
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription.gid,
             'filename': transcription.filename,
             'language': language,
             'duration': duration,
@@ -1466,7 +1467,7 @@ def transcribe_audio(
         # Calculate total processing time
         total_time = time.time() - time.time()  # Will be updated below
 
-        logger.info(f"Transcription completed successfully for transcription ID {transcription_id}")
+        logger.info(f"Transcription completed successfully for transcription GID {transcription_gid} (UUID: {transcription.id})")
         logger.info("=" * 80)
         logger.info("PERFORMANCE SUMMARY:")
         logger.info(f"  Audio duration: {duration:.1f}s ({duration/60:.1f} minutes)")
@@ -1481,8 +1482,8 @@ def transcribe_audio(
         # Step 9: Queue transcript indexing for search
         try:
             from app.workers.tasks.transcript_indexing import index_transcript
-            logger.info(f"Queueing transcript indexing for transcription {transcription.id}")
-            index_transcript.delay(transcription.id)
+            logger.info(f"Queueing transcript indexing for transcription {transcription.gid}")
+            index_transcript.delay(transcription.gid)
         except Exception as e:
             logger.warning(f"Failed to queue transcript indexing: {e}")
             # Don't fail the whole transcription if indexing fails to queue
@@ -1490,7 +1491,7 @@ def transcribe_audio(
         # Step 10: Return success result
         return {
             'status': 'completed',
-            'transcription_id': transcription.id,
+            'transcription_gid': transcription.gid,
             'filename': transcription.filename,
             'duration': duration,
             'segments_count': len(diarized_segments),
@@ -1502,11 +1503,11 @@ def transcribe_audio(
         }
 
     except Exception as e:
-        logger.error(f"Transcription failed for transcription ID {transcription_id}: {str(e)}", exc_info=True)
+        logger.error(f"Transcription failed for transcription GID {transcription_gid}: {str(e)}", exc_info=True)
 
         # Update transcription status to FAILED
         try:
-            transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+            transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
             if transcription:
                 transcription.status = DocumentStatus.FAILED
                 db.commit()
@@ -1522,7 +1523,7 @@ def transcribe_audio(
         return {
             'status': 'failed',
             'error': str(e),
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'task_id': self.request.id
         }
 
@@ -1542,8 +1543,8 @@ def transcribe_audio(
 @celery_app.task(name="process_transcription", bind=True)
 def process_transcription(
     self,
-    transcription_id: str,
-    case_id: str,
+    transcription_id: UUID,
+    case_id: UUID,
     extract_entities: bool = True
 ) -> Dict[str, Any]:
     """
@@ -1553,8 +1554,8 @@ def process_transcription(
     It will handle post-transcription processing and NLP tasks.
 
     Args:
-        transcription_id: Unique identifier for the transcription
-        case_id: Unique identifier for the case
+        transcription_id: UUID of the transcription
+        case_id: UUID of the case
         extract_entities: Whether to extract named entities (default: True)
 
     Returns:
@@ -1571,8 +1572,8 @@ def process_transcription(
 
     return {
         "status": "pending",
-        "transcription_id": transcription_id,
-        "case_id": case_id,
+        "transcription_id": str(transcription_id),
+        "case_id": str(case_id),
         "extract_entities": extract_entities,
         "task_id": self.request.id,
     }

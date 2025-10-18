@@ -61,13 +61,13 @@ export const useApi = () => {
 
     // Documents
     documents: {
-      listByCase: (caseId: string | number) => api(`/api/v1/cases/${caseId}/documents`),
-      listAll: (params?: { page?: number; page_size?: number; case_id?: number }) => {
+      listByCase: (caseId: string) => api(`/api/v1/cases/${caseId}/documents`),
+      listAll: (params?: { page?: number; page_size?: number; case_id?: string }) => {
         // Use the new efficient endpoint that includes case info in a single query
         return api<any>('/api/v1/documents', { params })
       },
       get: (id: string) => api(`/api/v1/documents/${id}`),
-      upload: (caseId: string | number, formData: FormData) => api(`/api/v1/cases/${caseId}/documents`, { method: 'POST', body: formData }),
+      upload: (caseId: string, formData: FormData) => api(`/api/v1/cases/${caseId}/documents`, { method: 'POST', body: formData }),
       delete: (id: string) => api(`/api/v1/documents/${id}`, { method: 'DELETE' }),
       download: (id: string) => api(`/api/v1/documents/${id}/download`),
       content: (id: string) => api(`/api/v1/documents/${id}/content`)
@@ -76,69 +76,69 @@ export const useApi = () => {
     // Search
     search: {
       query: (params: any) => api('/api/v1/search', { params }),
-      hybrid: (data: any) => api('/api/v1/search/hybrid', { method: 'POST', body: data }),
-      semantic: (data: any) => api('/api/v1/search/semantic', { method: 'POST', body: data }),
+      hybrid: (data: { query: string; document_ids?: string[]; case_ids?: string[]; [key: string]: any }) => api('/api/v1/search/hybrid', { method: 'POST', body: data }),
+      semantic: (data: { query: string; document_ids?: string[]; case_ids?: string[]; [key: string]: any }) => api('/api/v1/search/semantic', { method: 'POST', body: data }),
       suggest: (q: string) => api('/api/v1/search/suggestions', { params: { q } })
     },
 
     // Transcriptions
     transcriptions: {
-      listForCase: (caseId: number) => api(`/api/v1/cases/${caseId}/transcriptions`),
-      listAll: (params?: { page?: number; page_size?: number; case_id?: number }) => {
+      listForCase: (caseId: string) => api(`/api/v1/cases/${caseId}/transcriptions`),
+      listAll: (params?: { page?: number; page_size?: number; case_id?: string }) => {
         // Use the new paginated endpoint
         return api<any>('/api/v1/transcriptions', { params })
       },
-      get: (id: number) => api(`/api/v1/transcriptions/${id}`),
-      upload: (caseId: number, formData: FormData) =>
+      get: (id: string) => api(`/api/v1/transcriptions/${id}`),
+      upload: (caseId: string, formData: FormData) =>
         api(`/api/v1/cases/${caseId}/transcriptions`, { method: 'POST', body: formData }),
-      delete: (id: number) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
-      download: (id: number, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') =>
+      delete: (id: string) => api(`/api/v1/transcriptions/${id}`, { method: 'DELETE' }),
+      download: (id: string, format: 'docx' | 'srt' | 'vtt' | 'txt' | 'json') =>
         api(`/api/v1/transcriptions/${id}/download/${format}`),
 
       // Summarization
-      getSummary: (id: number) => api(`/api/v1/transcriptions/${id}/summary`),
-      generateSummary: (id: number, options?: any) =>
+      getSummary: (id: string) => api(`/api/v1/transcriptions/${id}/summary`),
+      generateSummary: (id: string, options?: any) =>
         api(`/api/v1/transcriptions/${id}/summarize`, { method: 'POST', body: options || {} }),
-      regenerateSummary: (id: number, components?: string[]) =>
+      regenerateSummary: (id: string, components?: string[]) =>
         api(`/api/v1/transcriptions/${id}/summary/regenerate`, { method: 'POST', body: components }),
-      quickSummary: (id: number) =>
+      quickSummary: (id: string) =>
         api(`/api/v1/transcriptions/${id}/summary/quick`, { method: 'POST' }),
-      summaryStatus: (transcriptionId: number, taskId: string) =>
+      summaryStatus: (transcriptionId: string, taskId: string) =>
         api(`/api/v1/transcriptions/${transcriptionId}/summary/status/${taskId}`),
 
       // Key Moments
-      toggleKeyMoment: (transcriptionId: number, segmentId: string, isKeyMoment: boolean) =>
+      toggleKeyMoment: (transcriptionId: string, segmentId: string, isKeyMoment: boolean) =>
         api(`/api/v1/transcriptions/${transcriptionId}/segments/${segmentId}/key-moment`, {
           method: 'PATCH',
           body: { is_key_moment: isKeyMoment }
         }),
-      getKeyMoments: (transcriptionId: number) =>
+      getKeyMoments: (transcriptionId: string) =>
         api(`/api/v1/transcriptions/${transcriptionId}/key-moments`),
 
       // Speakers
-      updateSpeaker: (transcriptionId: number, speakerId: string, updates: { name: string, role?: string }) =>
+      updateSpeaker: (transcriptionId: string, speakerId: string, updates: { name: string, role?: string }) =>
         api(`/api/v1/transcriptions/${transcriptionId}/speakers/${speakerId}`, {
           method: 'PATCH',
           body: updates
         }),
 
       // Audio
-      getAudio: (id: number) => api(`/api/v1/transcriptions/${id}/audio`)
+      getAudio: (id: string) => api(`/api/v1/transcriptions/${id}/audio`)
     },
 
     // Forensic Exports
     forensicExports: {
-      listForCase: (caseId: number) => api(`/api/v1/cases/${caseId}/forensic-exports`),
+      listForCase: (caseId: string) => api(`/api/v1/cases/${caseId}/forensic-exports`),
       listAll: () => api('/api/v1/forensic-exports'),
-      get: (id: number) => api(`/api/v1/forensic-exports/${id}`),
-      scan: (caseId: number, path: string) => api(`/api/v1/cases/${caseId}/forensic-exports/scan`, {
+      get: (id: string) => api(`/api/v1/forensic-exports/${id}`),
+      scan: (caseId: string, path: string) => api(`/api/v1/cases/${caseId}/forensic-exports/scan`, {
         method: 'POST',
         body: { path }
       }),
-      verify: (id: number) => api(`/api/v1/forensic-exports/${id}/verify`, { method: 'POST' }),
-      delete: (id: number) => api(`/api/v1/forensic-exports/${id}`, { method: 'DELETE' }),
-      getReportUrl: (id: number) => `${baseURL}/api/v1/forensic-exports/${id}/report`,
-      listFiles: (id: number, subpath?: string) => api(`/api/v1/forensic-exports/${id}/files${subpath ? `?subpath=${encodeURIComponent(subpath)}` : ''}`)
+      verify: (id: string) => api(`/api/v1/forensic-exports/${id}/verify`, { method: 'POST' }),
+      delete: (id: string) => api(`/api/v1/forensic-exports/${id}`, { method: 'DELETE' }),
+      getReportUrl: (id: string) => `${baseURL}/api/v1/forensic-exports/${id}/report`,
+      listFiles: (id: string, subpath?: string) => api(`/api/v1/forensic-exports/${id}/files${subpath ? `?subpath=${encodeURIComponent(subpath)}` : ''}`)
     },
 
     // Stats & Analytics

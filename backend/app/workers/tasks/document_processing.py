@@ -6,6 +6,7 @@ These are stub implementations - full functionality will be implemented in Phase
 """
 from typing import Dict, Any
 import logging
+from uuid import UUID
 
 from app.workers.celery_app import celery_app
 from app.core.database import SessionLocal
@@ -17,8 +18,8 @@ logger = logging.getLogger(__name__)
 @celery_app.task(name="process_document", bind=True)
 def process_document(
     self,
-    document_id: str,
-    case_id: str,
+    document_id: UUID,
+    case_id: UUID,
     template: str
 ) -> Dict[str, Any]:
     """
@@ -28,8 +29,8 @@ def process_document(
     It will handle document parsing, entity extraction, and indexing.
 
     Args:
-        document_id: Unique identifier for the document
-        case_id: Unique identifier for the case
+        document_id: UUID of the document
+        case_id: UUID of the case
         template: Template type to use for processing
 
     Returns:
@@ -45,8 +46,8 @@ def process_document(
 
     return {
         "status": "pending",
-        "document_id": document_id,
-        "case_id": case_id,
+        "document_id": str(document_id),
+        "case_id": str(case_id),
         "template": template,
         "task_id": self.request.id,
     }
@@ -55,7 +56,7 @@ def process_document(
 @celery_app.task(name="generate_document", bind=True)
 def generate_document(
     self,
-    case_id: str,
+    case_id: UUID,
     template_name: str,
     context_data: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -66,7 +67,7 @@ def generate_document(
     It will handle template rendering and document generation.
 
     Args:
-        case_id: Unique identifier for the case
+        case_id: UUID of the case
         template_name: Name of the template to use
         context_data: Dictionary of data to populate the template
 
@@ -83,14 +84,14 @@ def generate_document(
 
     return {
         "status": "pending",
-        "case_id": case_id,
+        "case_id": str(case_id),
         "template_name": template_name,
         "task_id": self.request.id,
     }
 
 
 @celery_app.task(name="process_uploaded_document", bind=True)
-def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
+def process_uploaded_document(self, document_gid: str) -> Dict[str, Any]:
     """
     Process an uploaded document - extract text, entities, and create embeddings.
 
@@ -106,7 +107,7 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
     7. Update document status
 
     Args:
-        document_id: ID of the document to process
+        document_gid: GID of the document to process
 
     Returns:
         Dict containing processing status and details
@@ -117,21 +118,21 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
 
     db = SessionLocal()
     try:
-        # Get document from database
-        document = db.query(Document).filter(Document.id == document_id).first()
+        # Get document from database using GID
+        document = db.query(Document).filter(Document.gid == document_gid).first()
         if not document:
-            logger.error(f"Document {document_id} not found")
+            logger.error(f"Document with GID {document_gid} not found")
             return {
                 "status": "failed",
                 "error": "Document not found",
-                "document_id": document_id,
+                "document_gid": document_gid,
             }
 
         # Update status to PROCESSING
         document.status = DocumentStatus.PROCESSING
         db.commit()
 
-        logger.info(f"Processing document {document_id}: {document.filename}")
+        logger.info(f"Processing document {document_gid} (UUID: {document.id}): {document.filename}")
 
         # Step 1: Download document from MinIO
         logger.info(f"Downloading document from MinIO: {document.file_path}")
@@ -253,15 +254,15 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
             "pages_count": pages_count,
             "page_count": pages_count,  # Also use 'page_count' for compatibility
             "processing_stage": result.stage,
-            "processed_at": str(db.query(Document).filter(Document.id == document_id).first().uploaded_at),
+            "processed_at": str(document.uploaded_at),
         }
         db.commit()
 
-        logger.info(f"Document {document_id} processed successfully: {chunks_count} chunks created")
+        logger.info(f"Document {document_gid} processed successfully: {chunks_count} chunks created")
 
         return {
             "status": "completed",
-            "document_id": document_id,
+            "document_gid": document_gid,
             "filename": document.filename,
             "chunks_count": chunks_count,
             "text_length": chunks_data.get("text_length", 0),
@@ -270,11 +271,11 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Error processing document {document_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error processing document {document_gid}: {str(e)}", exc_info=True)
 
         # Update document status to FAILED
         try:
-            document = db.query(Document).filter(Document.id == document_id).first()
+            document = db.query(Document).filter(Document.gid == document_gid).first()
             if document:
                 document.status = DocumentStatus.FAILED
                 document.meta_data = {
@@ -288,7 +289,7 @@ def process_uploaded_document(self, document_id: int) -> Dict[str, Any]:
         return {
             "status": "failed",
             "error": str(e),
-            "document_id": document_id,
+            "document_gid": document_gid,
             "task_id": self.request.id,
         }
     finally:

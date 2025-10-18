@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("/")
 async def search_documents(
     q: str = Query(..., description="Search query"),
-    case_ids: Optional[List[int]] = Query(None, description="Filter by case IDs"),
+    case_gids: Optional[List[str]] = Query(None, description="Filter by case GIDs"),
     document_types: Optional[List[str]] = Query(None, description="Filter by document types: 'document', 'transcript', or both"),
     speakers: Optional[List[str]] = Query(None, description="Filter by speaker names (for transcripts only)"),
     limit: int = Query(10, ge=1, le=100, description="Number of results to return"),
@@ -46,7 +46,7 @@ async def search_documents(
 
     Args:
         q: Search query string
-        case_ids: Optional list of case IDs to filter results
+        case_gids: Optional list of case GIDs to filter results
         limit: Maximum number of results to return
         min_score: Minimum relevance score threshold (default: 0.3)
 
@@ -67,7 +67,7 @@ async def search_documents(
         # Create search request
         request = HybridSearchRequest(
             query=q,
-            case_ids=case_ids,
+            case_gids=case_gids,
             chunk_types=chunk_types,
             top_k=limit,
             score_threshold=min_score,
@@ -93,11 +93,15 @@ async def search_documents(
             "query": q,
             "results": [
                 {
-                    "id": r.id,
+                    "gid": r.gid,  # Use gid not id
                     "score": round(r.score, 3),  # Round to 3 decimal places for cleaner display
                     "text": r.text,
                     "metadata": r.metadata,
                     "highlights": r.highlights,
+                    "page_number": r.page_number,
+                    "bboxes": r.bboxes,
+                    "match_type": r.match_type,
+                    "vector_type": r.vector_type,
                 }
                 for r in results
             ],
@@ -158,8 +162,8 @@ async def hybrid_search(request: HybridSearchRequest):
 @router.post("/keyword")
 async def keyword_search(
     query: str = Query(..., description="Search query"),
-    case_ids: Optional[List[int]] = Query(None, description="Filter by case IDs"),
-    document_ids: Optional[List[int]] = Query(None, description="Filter by document IDs"),
+    case_gids: Optional[List[str]] = Query(None, description="Filter by case GIDs"),
+    document_gids: Optional[List[str]] = Query(None, description="Filter by document GIDs"),
     chunk_types: Optional[List[str]] = Query(None, description="Filter by chunk types"),
     top_k: int = Query(10, ge=1, le=100, description="Number of results"),
     score_threshold: Optional[float] = Query(0.1, ge=0.0, le=1.0, description="Minimum BM25 score threshold"),
@@ -172,8 +176,8 @@ async def keyword_search(
 
     Args:
         query: Search query string
-        case_ids: Optional case ID filters
-        document_ids: Optional document ID filters
+        case_gids: Optional case GID filters
+        document_gids: Optional document GID filters
         chunk_types: Optional chunk type filters (summary, section, microblock)
         top_k: Number of results to return
         score_threshold: Minimum BM25 score (default: 0.1 for permissive matching)
@@ -185,8 +189,8 @@ async def keyword_search(
         # Create request with only BM25
         request = HybridSearchRequest(
             query=query,
-            case_ids=case_ids,
-            document_ids=document_ids,
+            case_gids=case_gids,
+            document_gids=document_gids,
             chunk_types=chunk_types,
             top_k=top_k,
             score_threshold=score_threshold,
@@ -216,12 +220,12 @@ async def keyword_search(
         for result in filtered_results:
             payload = result.get("payload", {})
             formatted_results.append({
-                "id": result["id"],
+                "gid": result["id"],  # Chunk point ID
                 "score": result["score"],
                 "text": payload.get("text", ""),
                 "metadata": {
-                    "document_id": payload.get("document_id"),
-                    "case_id": payload.get("case_id"),
+                    "document_gid": payload.get("document_gid"),
+                    "case_gid": payload.get("case_gid"),
                     "chunk_type": payload.get("chunk_type"),
                     "page_number": payload.get("page_number"),
                     "position": payload.get("position"),
@@ -246,8 +250,8 @@ async def keyword_search(
 @router.post("/semantic")
 async def semantic_search(
     query: str = Query(..., description="Search query"),
-    case_ids: Optional[List[int]] = Query(None, description="Filter by case IDs"),
-    document_ids: Optional[List[int]] = Query(None, description="Filter by document IDs"),
+    case_gids: Optional[List[str]] = Query(None, description="Filter by case GIDs"),
+    document_gids: Optional[List[str]] = Query(None, description="Filter by document GIDs"),
     chunk_types: Optional[List[str]] = Query(None, description="Filter by chunk types"),
     top_k: int = Query(10, ge=1, le=100, description="Number of results"),
 ):
@@ -259,8 +263,8 @@ async def semantic_search(
 
     Args:
         query: Search query string
-        case_ids: Optional case ID filters
-        document_ids: Optional document ID filters
+        case_gids: Optional case GID filters
+        document_gids: Optional document GID filters
         chunk_types: Optional chunk type filters (summary, section, microblock)
         top_k: Number of results to return
 
@@ -271,8 +275,8 @@ async def semantic_search(
         # Create request with only dense vectors
         request = HybridSearchRequest(
             query=query,
-            case_ids=case_ids,
-            document_ids=document_ids,
+            case_gids=case_gids,
+            document_gids=document_gids,
             chunk_types=chunk_types,
             top_k=top_k,
             use_bm25=False,  # Disable BM25
@@ -287,11 +291,13 @@ async def semantic_search(
             "query": query,
             "results": [
                 {
-                    "id": r.id,
+                    "gid": r.gid,  # Use gid not id
                     "score": r.score,
                     "text": r.text,
                     "metadata": r.metadata,
                     "vector_type": r.vector_type,
+                    "page_number": r.page_number,
+                    "bboxes": r.bboxes,
                 }
                 for r in response.results
             ],

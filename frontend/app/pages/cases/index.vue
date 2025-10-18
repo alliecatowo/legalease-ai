@@ -23,7 +23,7 @@ const casesData = computed(() => casesCache.data.value || { cases: [], total: 0 
 // Transform backend data to frontend format
 const cases = computed(() => {
   return (casesData.value?.cases || []).map((c: any) => ({
-    id: String(c.id),
+    id: c.gid,
     name: c.name,
     caseNumber: c.case_number,
     type: c.matter_type || 'General',

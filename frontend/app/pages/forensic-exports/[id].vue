@@ -10,7 +10,7 @@ const router = useRouter()
 const api = useApi()
 const toast = useToast()
 
-const exportId = computed(() => parseInt(route.params.id as string))
+const exportId = computed(() => route.params.id as string)
 
 // State
 const exportData = ref<any>(null)
