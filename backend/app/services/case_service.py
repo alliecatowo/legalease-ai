@@ -211,13 +211,13 @@ class CaseService:
                 f"Case with case_number '{case_number}' already exists"
             )
 
-        # Create the case in STAGING status
+        # Create the case in ACTIVE status
         case = Case(
             name=name,
             case_number=case_number,
             client=client,
             matter_type=matter_type,
-            status=CaseStatus.STAGING,
+            status=CaseStatus.ACTIVE,
         )
 
         try:
@@ -395,12 +395,12 @@ class CaseService:
         self.db.refresh(case)
         return case
 
-    def unload_case(self, case_gid: str) -> Case:
+    def close_case(self, case_gid: str) -> Case:
         """
-        Unload a case (change status to UNLOADED).
+        Close a case (change status to CLOSED).
 
-        This removes the case from active processing while preserving data.
-        The Qdrant collection and MinIO bucket remain but are not actively used.
+        Case is marked as complete but remains searchable.
+        All data is preserved and accessible.
 
         Args:
             case_gid: Case GID
@@ -412,7 +412,7 @@ class CaseService:
             CaseNotFoundError: If case not found
         """
         case = self.get_case(case_gid)
-        case.status = CaseStatus.UNLOADED
+        case.status = CaseStatus.CLOSED
         self.db.commit()
         self.db.refresh(case)
         return case

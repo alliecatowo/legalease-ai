@@ -53,7 +53,7 @@ async def create_case(
     """
     Create a new case.
 
-    The case is created in STAGING status. Upon creation:
+    The case is created in ACTIVE status (ready to use). Upon creation:
     - A Qdrant collection is created for vector search
     - A MinIO bucket is created for document storage
 
@@ -272,22 +272,22 @@ async def activate_case(
 
 
 @router.put(
-    "/{case_gid}/unload",
+    "/{case_gid}/close",
     response_model=CaseStatusUpdate,
-    summary="Unload case",
-    description="Change case status to UNLOADED, removing it from active processing",
+    summary="Close case",
+    description="Mark case as closed (complete but searchable)",
 )
-async def unload_case(
+async def close_case(
     case_gid: str,
     case_service: CaseService = Depends(get_case_service),
 ):
     """
-    Unload a case (RAGFlow unload pattern).
+    Close a case.
 
-    Changes the case status to UNLOADED, which:
-    - Removes the case from active processing
+    Changes the case status to CLOSED, which:
+    - Marks the case as complete
     - Preserves all data (documents, vectors, files)
-    - Keeps Qdrant collection and MinIO bucket intact
+    - Remains searchable and accessible
     - Can be reactivated later with /activate
 
     Args:
@@ -301,12 +301,12 @@ async def unload_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.unload_case(case_gid)
+        case = case_service.close_case(case_gid)
         return CaseStatusUpdate(
             id=case.id,
             case_number=case.case_number,
             status=case.status,
-            message=f"Case '{case.case_number}' unloaded successfully",
+            message=f"Case '{case.case_number}' closed successfully",
         )
     except CaseNotFoundError as e:
         raise HTTPException(
