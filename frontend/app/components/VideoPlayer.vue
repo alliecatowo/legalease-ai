@@ -541,8 +541,8 @@ onBeforeUnmount(() => {
         />
 
         <!-- Waveform Overlay (on hover) -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2 pb-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <div class="relative w-full h-10 pointer-events-auto">
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent py-2 pb-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          <div class="relative w-full h-10 pointer-events-auto px-3">
             <div ref="waveformRef" class="w-full h-full cursor-pointer" @click="handleWaveformClick" />
 
             <!-- Key Moments Overlay Canvas (higher z-index to be on top) -->
