@@ -153,8 +153,13 @@ async function initializeWaveSurfer() {
     loadingProgress.value = 100
     duration.value = wavesurfer.value!.getDuration()
     emit('ready', duration.value)
-    drawSegmentMarkers()
-    drawKeyMomentsOverlay()
+
+    // Wait a tick for canvas to be properly sized
+    nextTick(() => {
+      drawSegmentMarkers()
+      drawKeyMomentsOverlay()
+      drawSegmentTimeline()
+    })
   })
 
   // Throttle audioprocess to 100ms instead of 60fps for better performance
@@ -484,6 +489,18 @@ onMounted(async () => {
     // Store observer for cleanup
     onBeforeUnmount(() => {
       resizeObserver.disconnect()
+    })
+  }
+
+  // Also observe timeline canvas for size changes
+  if (timelineCanvasRef.value) {
+    const timelineObserver = new ResizeObserver(() => {
+      drawSegmentTimeline()
+    })
+    timelineObserver.observe(timelineCanvasRef.value)
+
+    onBeforeUnmount(() => {
+      timelineObserver.disconnect()
     })
   }
 })
