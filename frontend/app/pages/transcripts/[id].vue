@@ -45,6 +45,8 @@ const flashSegmentId = ref<string | null>(null)
 // Metadata sidebar defaults: visible and expanded
 const metadataSidebarOpen = ref(true)
 const metadataSidebarCollapsed = ref(false)
+// Video player size (for video files only)
+const videoSize = ref<'small' | 'theater'>('theater')
 
 // Perform smart search using backend API
 async function performSmartSearch() {
@@ -666,9 +668,9 @@ onMounted(async () => {
     </template>
 
     <template #body>
-      <div class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
-        <!-- Loading State -->
-        <div v-if="isLoading" class="flex items-center justify-center min-h-full p-6">
+      <!-- Loading State -->
+      <div v-if="isLoading" class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
+        <div class="flex items-center justify-center min-h-full p-6">
           <div class="text-center space-y-4">
             <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
             <div>
@@ -677,9 +679,11 @@ onMounted(async () => {
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Error State -->
-        <div v-else-if="error" class="flex items-center justify-center min-h-full p-6">
+      <!-- Error State -->
+      <div v-else-if="error" class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
+        <div class="flex items-center justify-center min-h-full p-6">
           <UCard class="max-w-md">
             <div class="text-center space-y-4">
               <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto" />
@@ -696,42 +700,51 @@ onMounted(async () => {
             </div>
           </UCard>
         </div>
+      </div>
 
-        <!-- Main Content -->
-        <div v-else-if="transcript" :class="isVideoFile ? 'space-y-2' : 'space-y-6'">
-          <!-- Video Player (for video files) -->
-          <LazyVideoPlayer
-            v-if="transcript.audioUrl && isVideoFile"
-            :media-url="transcript.audioUrl"
-            media-type="video"
-            :transcription-id="transcript.id"
-            :current-time="currentTime"
-            :segments="transcript.segments"
-            :selected-segment-id="selectedSegment?.id"
-            :key-moments="keyMoments"
-            @update:current-time="currentTime = $event"
-            @update:is-playing="isPlaying = $event"
-            @segment-click="seekToSegment"
-            @waveform-click="handleWaveformClick"
+      <!-- Video Layout: Collapsible video player -->
+      <div v-else-if="transcript && isVideoFile" class="h-full -m-4 sm:-m-6 flex flex-col overflow-hidden">
+        <UCollapsible :default-open="true" :unmount-on-hide="false" class="flex-shrink-0 border-b border-default">
+          <UButton
+            class="group w-full !rounded-none"
+            label="Video Player"
+            icon="i-lucide-video"
+            trailing-icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="ghost"
+            :ui="{
+              trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200'
+            }"
+            block
           />
 
-          <!-- Audio Player (for audio files) -->
-          <LazyWaveformPlayer
-            v-else-if="transcript.audioUrl && !isVideoFile"
-            :audio-url="transcript.audioUrl"
-            :transcription-id="transcript.id"
-            :current-time="currentTime"
-            :segments="transcript.segments"
-            :selected-segment-id="selectedSegment?.id"
-            :key-moments="keyMoments"
-            @update:current-time="currentTime = $event"
-            @update:is-playing="isPlaying = $event"
-            @segment-click="seekToSegment"
-            @waveform-click="handleWaveformClick"
-          />
+          <template #content>
+            <div class="p-4 sm:p-6">
+              <LazyVideoPlayer
+                v-if="transcript.audioUrl"
+                :media-url="transcript.audioUrl"
+                media-type="video"
+                :transcription-id="transcript.id"
+                :current-time="currentTime"
+                :segments="transcript.segments"
+                :selected-segment-id="selectedSegment?.id"
+                :key-moments="keyMoments"
+                :size="videoSize"
+                @update:current-time="currentTime = $event"
+                @update:is-playing="isPlaying = $event"
+                @segment-click="seekToSegment"
+                @waveform-click="handleWaveformClick"
+              />
+            </div>
+          </template>
+        </UCollapsible>
 
-          <!-- Search and Filters -->
-          <div :class="isVideoFile ? 'space-y-1' : 'space-y-3'">
+        <!-- Transcript Content Section -->
+        <div class="flex-1 overflow-hidden">
+          <div class="h-full overflow-y-auto p-4 sm:p-6">
+            <div class="space-y-2">
+              <!-- Search and Filters -->
+              <div class="space-y-1">
             <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
               <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
                 <UButton
@@ -811,6 +824,28 @@ onMounted(async () => {
                   </div>
                 </template>
               </UCheckbox>
+
+              <!-- Video Size Controls (only for video files) -->
+              <UFieldGroup v-if="isVideoFile">
+                <UTooltip text="Compact view">
+                  <UButton
+                    icon="i-lucide-minimize-2"
+                    :color="videoSize === 'small' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'small' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'small'"
+                  />
+                </UTooltip>
+                <UTooltip text="Theater view">
+                  <UButton
+                    icon="i-lucide-rectangle-horizontal"
+                    :color="videoSize === 'theater' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'theater'"
+                  />
+                </UTooltip>
+              </UFieldGroup>
             </div>
 
             <!-- Active Filters -->
@@ -1043,6 +1078,30 @@ onMounted(async () => {
             </div>
             </div>
           </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio Layout: Simple wrapper with audio player -->
+      <div v-else-if="transcript && !isVideoFile" class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
+        <div class="space-y-6">
+          <LazyWaveformPlayer
+            v-if="transcript.audioUrl"
+            :audio-url="transcript.audioUrl"
+            :transcription-id="transcript.id"
+            :current-time="currentTime"
+            :segments="transcript.segments"
+            :selected-segment-id="selectedSegment?.id"
+            :key-moments="keyMoments"
+            @update:current-time="currentTime = $event"
+            @update:is-playing="isPlaying = $event"
+            @segment-click="seekToSegment"
+            @waveform-click="handleWaveformClick"
+          />
+
+          <!-- Copy all the search/filters/segments for audio here from video panel -->
+          <p class="text-muted">Audio transcript content goes here...</p>
         </div>
       </div>
     </template>

@@ -4,7 +4,7 @@ import WaveSurfer from 'wavesurfer.js'
 import type { TranscriptSegment } from '~/composables/useTranscription'
 import { useThrottleFn } from '@vueuse/core'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   mediaUrl: string
   mediaType?: 'video' | 'audio' // Explicitly specify media type
   transcriptionId?: string  // Optional transcription GID for fetching pre-computed waveform
@@ -12,7 +12,10 @@ const props = defineProps<{
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
   keyMoments?: TranscriptSegment[]
-}>()
+  size?: 'small' | 'theater' | 'fullscreen' // Video size mode (controlled by parent)
+}>(), {
+  size: 'theater'
+})
 
 const emit = defineEmits<{
   'update:currentTime': [time: number]
@@ -36,28 +39,25 @@ const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
 
-// Video size mode: 'small' | 'theater' | 'fullscreen'
-const videoSize = ref<'small' | 'theater' | 'fullscreen'>('theater')
-
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
 
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
-// Video size classes
+// Video size classes (controlled by parent via size prop)
 const videoContainerClass = computed(() => {
   if (!isVideo.value) return ''
 
-  switch (videoSize.value) {
+  switch (props.size) {
     case 'small':
-      return 'max-w-xl mx-auto' // 576px max width, more compact
+      return 'w-full max-w-xl mx-auto' // Full width up to 576px, centered
     case 'theater':
-      return 'max-w-5xl mx-auto' // 1024px max width, centered
+      return 'w-full' // Full width of container
     case 'fullscreen':
       return 'w-full' // Full width
     default:
-      return 'max-w-5xl mx-auto'
+      return 'w-full'
   }
 })
 
@@ -464,7 +464,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="w-full flex flex-col gap-4">
     <!-- Loading Skeleton with Progress -->
     <div v-if="isLoading || !isReady" class="w-full bg-muted/20 rounded-lg p-8">
       <div class="text-center space-y-4">
@@ -488,10 +488,33 @@ onBeforeUnmount(() => {
           @loadedmetadata="isMediaReady = true"
         />
 
-        <!-- Waveform Overlay at Bottom (Always Visible) -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 pb-2 pt-1 group/waveform">
-          <div class="relative w-full">
-            <div ref="waveformRef" class="w-full cursor-pointer" @click="handleWaveformClick" />
+        <!-- Center Play/Pause Button (on hover) -->
+        <div
+          class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+        >
+          <UButton
+            :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
+            color="white"
+            size="xl"
+            class="pointer-events-auto"
+            :disabled="!isMediaReady"
+            @click="togglePlayPause"
+          />
+        </div>
+
+        <!-- Segment Timeline - Always Visible (thin bar at bottom) -->
+        <canvas
+          v-if="segments && segments.length > 0"
+          ref="timelineCanvasRef"
+          class="absolute bottom-0 left-0 right-0 cursor-pointer z-10"
+          style="height: 6px;"
+          @click="handleTimelineClick"
+        />
+
+        <!-- Waveform Overlay (on hover) -->
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2 pb-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          <div class="relative w-full h-10 pointer-events-auto">
+            <div ref="waveformRef" class="w-full h-full cursor-pointer" @click="handleWaveformClick" />
 
             <!-- Key Moments Overlay Canvas -->
             <canvas
@@ -499,123 +522,81 @@ onBeforeUnmount(() => {
               ref="keyMomentsCanvasRef"
               class="absolute top-0 left-0 w-full h-full pointer-events-none"
             />
+          </div>
+        </div>
+      </div>
 
-            <!-- Segment Timeline Overlay (on hover) -->
-            <canvas
-              v-if="segments && segments.length > 0"
-              ref="timelineCanvasRef"
-              class="absolute bottom-0 left-0 w-full cursor-pointer opacity-0 group-hover/waveform:opacity-100 transition-opacity duration-200"
-              style="height: 6px;"
-              @click="handleTimelineClick"
+      <!-- Video Controls Bar -->
+      <div class="flex items-center justify-between gap-3 px-1">
+        <!-- Left: Playback Controls -->
+        <div class="flex items-center gap-1">
+          <UTooltip text="Skip Back 10s">
+            <UButton
+              icon="i-lucide-skip-back"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :disabled="!isMediaReady"
+              @click="skip(-10)"
             />
+          </UTooltip>
+
+          <UButton
+            :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
+            color="primary"
+            size="md"
+            :disabled="!isMediaReady"
+            @click="togglePlayPause"
+          />
+
+          <UTooltip text="Skip Forward 10s">
+            <UButton
+              icon="i-lucide-skip-forward"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :disabled="!isMediaReady"
+              @click="skip(10)"
+            />
+          </UTooltip>
+
+          <div class="text-xs text-muted ml-1">
+            {{ formatTime(currentTime || 0) }} / {{ formatTime(duration) }}
           </div>
         </div>
 
-        <!-- Controls Overlay (Hover Only) -->
-        <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-          <!-- Center Play/Pause Button -->
-          <div class="absolute inset-0 flex items-center justify-center pointer-events-auto">
-            <UButton
-              :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
-              color="primary"
-              size="xl"
-              :disabled="!isMediaReady"
-              class="!size-20 rounded-full shadow-2xl"
-              @click="togglePlayPause"
+        <!-- Right: Size, Speed, Volume -->
+        <div class="flex items-center gap-1">
+          <!-- Playback Speed -->
+          <USelectMenu
+            :model-value="playbackRate"
+            :items="playbackRates.map(rate => ({ label: `${rate}x`, value: rate }))"
+            @update:model-value="setPlaybackRate"
+            size="sm"
+          >
+            <template #label>
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-gauge" class="size-3.5" />
+                <span class="text-xs">{{ playbackRate }}x</span>
+              </div>
+            </template>
+          </USelectMenu>
+
+          <!-- Volume -->
+          <div class="flex items-center gap-1.5">
+            <UIcon
+              :name="volume === 0 ? 'i-lucide-volume-x' : volume < 0.5 ? 'i-lucide-volume-1' : 'i-lucide-volume-2'"
+              class="size-3.5 text-muted"
             />
-          </div>
-
-          <!-- Top Controls -->
-          <div class="absolute top-0 left-0 right-0 p-4 flex items-center justify-between pointer-events-auto">
-            <!-- Video Size Controls -->
-            <UFieldGroup size="sm" class="bg-black/50 rounded-lg">
-              <UTooltip text="Small">
-                <UButton
-                  icon="i-lucide-minimize-2"
-                  :variant="videoSize === 'small' ? 'soft' : 'ghost'"
-                  :color="videoSize === 'small' ? 'primary' : 'neutral'"
-                  size="sm"
-                  @click="videoSize = 'small'"
-                />
-              </UTooltip>
-              <UTooltip text="Theater">
-                <UButton
-                  icon="i-lucide-rectangle-horizontal"
-                  :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
-                  :color="videoSize === 'theater' ? 'primary' : 'neutral'"
-                  size="sm"
-                  @click="videoSize = 'theater'"
-                />
-              </UTooltip>
-              <UTooltip text="Fullscreen">
-                <UButton
-                  icon="i-lucide-maximize-2"
-                  :variant="videoSize === 'fullscreen' ? 'soft' : 'ghost'"
-                  :color="videoSize === 'fullscreen' ? 'primary' : 'neutral'"
-                  size="sm"
-                  @click="videoSize = 'fullscreen'"
-                />
-              </UTooltip>
-            </UFieldGroup>
-
-            <!-- Playback Rate & Volume -->
-            <div class="flex items-center gap-3 bg-black/50 rounded-lg px-3 py-2">
-              <USelectMenu
-                :model-value="playbackRate"
-                :items="playbackRates.map(rate => ({ label: `${rate}x`, value: rate }))"
-                @update:model-value="setPlaybackRate"
-                size="sm"
-              >
-                <template #label>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-gauge" class="size-4" />
-                    <span>{{ playbackRate }}x</span>
-                  </div>
-                </template>
-              </USelectMenu>
-
-              <div class="flex items-center gap-2">
-                <UIcon
-                  :name="volume === 0 ? 'i-lucide-volume-x' : volume < 0.5 ? 'i-lucide-volume-1' : 'i-lucide-volume-2'"
-                  class="size-4 text-white"
-                />
-                <input
-                  :value="volume"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  class="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
-                  @input="(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- Bottom Controls (on hover) -->
-          <div class="absolute bottom-2 left-0 right-0 px-4 flex items-center justify-between pointer-events-auto">
-            <!-- Left: Skip/Play/Time -->
-            <div class="flex items-center gap-2 bg-black/50 rounded-lg px-3 py-2">
-              <UButton
-                icon="i-lucide-skip-back"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                :disabled="!isMediaReady"
-                @click="skip(-10)"
-              />
-              <div class="text-xs text-white/80">
-                {{ formatTime(currentTime || 0) }} / {{ formatTime(duration) }}
-              </div>
-              <UButton
-                icon="i-lucide-skip-forward"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                :disabled="!isMediaReady"
-                @click="skip(10)"
-              />
-            </div>
+            <input
+              :value="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              class="w-16 h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+              @input="(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))"
+            />
           </div>
         </div>
       </div>
