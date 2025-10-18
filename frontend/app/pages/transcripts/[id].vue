@@ -163,19 +163,78 @@ const segmentIndexMap = computed(() => {
   return map
 })
 
+// Helper: Simple Levenshtein distance for fuzzy matching
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = []
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i]
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        )
+      }
+    }
+  }
+
+  return matrix[b.length][a.length]
+}
+
+// Helper: Check if text matches search query with fuzzy word matching
+function matchesSearchQuery(text: string, query: string): boolean {
+  const textLower = text.toLowerCase()
+  const textWords = textLower.split(/\s+/).filter(w => w.length > 0)
+  const queryWords = query.toLowerCase().trim().split(/\s+/).filter(w => w.length > 0)
+
+  if (queryWords.length === 0) return true
+
+  // All query words must appear in the text with fuzzy matching
+  return queryWords.every(queryWord => {
+    // Exact match
+    if (textWords.some(textWord => textWord.includes(queryWord))) return true
+
+    // Fuzzy match: allow up to 2 character differences for words > 4 chars
+    if (queryWord.length > 4) {
+      return textWords.some(textWord => {
+        // Check if words are similar length and similar spelling
+        const lengthDiff = Math.abs(textWord.length - queryWord.length)
+        if (lengthDiff > 2) return false
+
+        const distance = levenshteinDistance(queryWord, textWord)
+        return distance <= 2 // Allow max 2 edits
+      })
+    }
+
+    return false
+  })
+}
+
 // Optimized: Pre-compute searchable text and highlighted HTML for fast filtering
 const searchableSegments = computed(() => {
   if (!transcript.value) return []
 
-  // Only highlight in keyword mode with active search
-  const shouldHighlight = searchMode.value === 'keyword' && searchQuery.value.trim().length > 0
+  // Highlight in both keyword and smart mode when there's a search query
+  const shouldHighlight = searchQuery.value.trim().length > 0
   const query = searchQuery.value.trim()
 
   return transcript.value.segments.map((seg, index) => ({
     segment: seg,
     index,
     searchText: `${seg.text} ${getSpeaker(seg.speaker)?.name || ''}`.toLowerCase(),
-    highlightedText: shouldHighlight ? highlightText(seg.text, query) : seg.text
+    highlightedText: shouldHighlight ? highlightText(seg.text, query) : seg.text,
+    matchesQuery: matchesSearchQuery(`${seg.text} ${getSpeaker(seg.speaker)?.name || ''}`, query)
   }))
 })
 
@@ -191,8 +250,8 @@ const filteredSegments = computed(() => {
         filtered = filtered.filter(item => searchResults.value.has(item.index))
       }
     } else {
-      const query = searchQuery.value.toLowerCase()
-      filtered = filtered.filter(item => item.searchText.includes(query))
+      // Use fuzzy word matching instead of exact substring match
+      filtered = filtered.filter(item => item.matchesQuery)
     }
   }
 
