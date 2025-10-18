@@ -166,40 +166,38 @@ function createTeam() {
         class="flex max-sm:flex-col justify-between items-start gap-4"
       >
         <div class="flex items-center gap-3 w-full">
-          <USelectMenu
-            v-model="selectedTeamId"
-            :options="teams"
-            value-attribute="id"
-            :disabled="loading"
-            placeholder="Select a team"
-            class="flex-1"
-          >
-            <template #label>
-              <span v-if="selectedTeamId">
-                {{ teams.find(t => t.id === selectedTeamId)?.name || 'Select a team' }}
-              </span>
-              <span v-else-if="!teams.length" class="text-muted-foreground">
-                No teams - click to create one
-              </span>
-              <span v-else>
-                Select a team
-              </span>
-            </template>
-            <template #option="{ option }">
-              <span>{{ option.name }}</span>
-            </template>
-            <template v-if="!teams.length" #empty>
-              <div class="text-center py-4">
-                <p class="text-sm text-muted-foreground mb-2">You don't have any teams yet</p>
-                <UButton
-                  label="Create Your First Team"
-                  color="primary"
-                  size="sm"
-                  @click="createTeam"
-                />
-              </div>
-            </template>
-          </USelectMenu>
+          <div class="flex-1">
+            <UButton
+              v-if="!teams.length"
+              label="Create Your First Team"
+              icon="i-lucide-plus"
+              color="primary"
+              :disabled="loading"
+              @click="createTeam"
+              class="w-full justify-center"
+            />
+            <USelectMenu
+              v-else
+              v-model="selectedTeamId"
+              :options="teams"
+              value-attribute="id"
+              :disabled="loading"
+              placeholder="Select a team"
+              class="w-full"
+            >
+              <template #label>
+                <span v-if="selectedTeamId">
+                  {{ teams.find(t => t.id === selectedTeamId)?.name || 'Select a team' }}
+                </span>
+                <span v-else>
+                  Select a team
+                </span>
+              </template>
+              <template #option="{ option }">
+                <span>{{ option.name }}</span>
+              </template>
+            </USelectMenu>
+          </div>
           <UButton
             v-if="selectedTeamId && selectedTeamId !== activeTeamId"
             label="Switch"
