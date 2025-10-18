@@ -103,6 +103,15 @@ const activeSegmentId = computed(() => {
   return segment?.id || null
 })
 
+// Computed property to determine if this is a video file
+const isVideoFile = computed(() => {
+  if (!transcript.value?.metadata?.format) return false
+  const format = transcript.value.metadata.format.toLowerCase()
+  // Common video formats
+  const videoFormats = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'wmv']
+  return videoFormats.includes(format)
+})
+
 // Watch for search changes
 watch([searchQuery, searchMode], () => {
   if (searchMode.value === 'smart' && searchQuery.value.trim()) {
@@ -648,9 +657,25 @@ onMounted(async () => {
 
         <!-- Main Content -->
         <div v-else-if="transcript" class="space-y-6">
-          <!-- Audio Player -->
+          <!-- Video Player (for video files) -->
+          <LazyVideoPlayer
+            v-if="transcript.audioUrl && isVideoFile"
+            :media-url="transcript.audioUrl"
+            media-type="video"
+            :transcription-id="transcript.id"
+            :current-time="currentTime"
+            :segments="transcript.segments"
+            :selected-segment-id="selectedSegment?.id"
+            :key-moments="keyMoments"
+            @update:current-time="currentTime = $event"
+            @update:is-playing="isPlaying = $event"
+            @segment-click="seekToSegment"
+            @waveform-click="handleWaveformClick"
+          />
+
+          <!-- Audio Player (for audio files) -->
           <LazyWaveformPlayer
-            v-if="transcript.audioUrl"
+            v-else-if="transcript.audioUrl && !isVideoFile"
             :audio-url="transcript.audioUrl"
             :transcription-id="transcript.id"
             :current-time="currentTime"
