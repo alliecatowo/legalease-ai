@@ -12,12 +12,12 @@ const toast = useToast()
 const viewMode = ref<'list' | 'table'>('list')
 
 // Multi-select state
-const selectedExports = ref<number[]>([])
+const selectedExports = ref<string[]>([])
 const isDeletingBulk = ref(false)
 
 // Scan modal state
 const showScanModal = ref(false)
-const selectedCaseForScan = ref<number | null>(null)
+const selectedCaseForScan = ref<string | null>(null)
 const scanPath = ref('/data/forensic-exports')
 const isScanning = ref(false)
 const scanResults = ref<any>(null)
@@ -59,7 +59,7 @@ function openDirectoryPicker() {
 
 // Filters
 const searchQuery = ref('')
-const selectedCase = ref<number | null>(null)
+const selectedCase = ref<string | null>(null)
 const selectedStatus = ref<string | null>(null)
 const sortBy = ref<string>('recent')
 
@@ -74,7 +74,7 @@ const caseOptions = computed(() => [
   { label: 'All Cases', value: null },
   ...(casesData.value?.cases || []).map((c: any) => ({
     label: c.name,
-    value: c.id
+    value: c.gid
   }))
 ])
 
@@ -99,7 +99,7 @@ const filteredExports = computed(() => {
 
   // Case filter
   if (selectedCase.value) {
-    result = result.filter((exp: any) => exp.case_id === selectedCase.value)
+    result = result.filter((exp: any) => exp.case_gid === selectedCase.value)
   }
 
   // Status filter
@@ -212,51 +212,6 @@ function closeScanModal() {
   scanResults.value = null
 }
 
-// Delete export
-async function deleteExport(id: number) {
-  if (!confirm('Delete this export record? (Files will remain on disk)')) {
-    return
-  }
-
-  try {
-    await api.forensicExports.delete(id)
-    toast.add({
-      title: 'Success',
-      description: 'Export record deleted successfully',
-      color: 'success'
-    })
-    await refreshExports()
-  } catch (error: any) {
-    toast.add({
-      title: 'Error',
-      description: error.message || 'Failed to delete export',
-      color: 'error'
-    })
-  }
-}
-
-// Verify export
-async function verifyExport(id: number) {
-  try {
-    const response = await api.forensicExports.verify(id)
-    toast.add({
-      title: response.exists ? 'Export Verified' : 'Export Not Found',
-      description: response.exists ? 'Export folder exists on disk' : 'Export folder not found on disk',
-      color: response.exists ? 'success' : 'warning'
-    })
-
-    if (response.exists) {
-      await refreshExports()
-    }
-  } catch (error: any) {
-    toast.add({
-      title: 'Verification Failed',
-      description: error.message || 'Failed to verify export',
-      color: 'error'
-    })
-  }
-}
-
 // Table columns for UTable
 const columns = [
   { accessorKey: 'folder_name', header: 'Folder Name' },
@@ -292,21 +247,64 @@ function toggleSelectAll() {
   if (allSelected.value) {
     selectedExports.value = []
   } else {
-    selectedExports.value = filteredExports.value.map((exp: any) => exp.id)
+    selectedExports.value = filteredExports.value.map((exp: any) => exp.gid)
   }
 }
 
-function toggleSelect(id: number) {
-  const index = selectedExports.value.indexOf(id)
+function toggleSelect(gid: string) {
+  const index = selectedExports.value.indexOf(gid)
   if (index > -1) {
     selectedExports.value.splice(index, 1)
   } else {
-    selectedExports.value.push(id)
+    selectedExports.value.push(gid)
   }
 }
 
-function isSelected(id: number) {
-  return selectedExports.value.includes(id)
+function isSelected(gid: string) {
+  return selectedExports.value.includes(gid)
+}
+
+async function deleteExport(gid: string) {
+  if (!confirm('Delete this export record? (Files will remain on disk)')) {
+    return
+  }
+
+  try {
+    await api.forensicExports.delete(gid)
+    toast.add({
+      title: 'Success',
+      description: 'Export record deleted successfully',
+      color: 'success'
+    })
+    await refreshExports()
+  } catch (error: any) {
+    toast.add({
+      title: 'Error',
+      description: error.message || 'Failed to delete export',
+      color: 'error'
+    })
+  }
+}
+
+async function verifyExport(gid: string) {
+  try {
+    const response = await api.forensicExports.verify(gid)
+    toast.add({
+      title: response.exists ? 'Export Verified' : 'Export Not Found',
+      description: response.exists ? 'Export folder exists on disk' : 'Export folder not found on disk',
+      color: response.exists ? 'success' : 'warning'
+    })
+
+    if (response.exists) {
+      await refreshExports()
+    }
+  } catch (error: any) {
+    toast.add({
+      title: 'Verification Failed',
+      description: error.message || 'Failed to verify export',
+      color: 'error'
+    })
+  }
 }
 
 async function deleteBulk() {
@@ -320,9 +318,8 @@ async function deleteBulk() {
   isDeletingBulk.value = true
 
   try {
-    // Delete all selected exports
     await Promise.all(
-      selectedExports.value.map(id => api.forensicExports.delete(id))
+      selectedExports.value.map(gid => api.forensicExports.delete(gid))
     )
 
     toast.add({
@@ -576,7 +573,7 @@ async function deleteBulk() {
             :data="filteredExports"
             :columns="columns"
             class="w-full"
-            @select="(row: any) => navigateTo(`/forensic-exports/${row.id}`)"
+            @select="(row: any) => navigateTo(`/forensic-exports/${row.gid}`)"
           >
             <template #folder_name-data="{ row }">
               <div class="font-semibold truncate max-w-xs">
@@ -635,17 +632,17 @@ async function deleteBulk() {
                     variant="ghost"
                     color="neutral"
                     size="sm"
-                    @click="verifyExport(row.id)"
+                    @click="verifyExport(row.gid)"
                   />
                 </UTooltip>
                 <UDropdownMenu
                   :items="[
                     [
-                      { label: 'View Details', icon: 'i-lucide-eye', click: () => navigateTo(`/forensic-exports/${row.id}`) },
-                      { label: 'Verify', icon: 'i-lucide-shield-check', click: () => verifyExport(row.id) }
+                      { label: 'View Details', icon: 'i-lucide-eye', click: () => navigateTo(`/forensic-exports/${row.gid}`) },
+                      { label: 'Verify', icon: 'i-lucide-shield-check', click: () => verifyExport(row.gid) }
                     ],
                     [
-                      { label: 'Delete Record', icon: 'i-lucide-trash', color: 'error', click: () => deleteExport(row.id) }
+                      { label: 'Delete Record', icon: 'i-lucide-trash', color: 'error', click: () => deleteExport(row.gid) }
                     ]
                   ]"
                 >
@@ -665,18 +662,18 @@ async function deleteBulk() {
         <div v-if="viewMode === 'list' && filteredExports.length > 0" class="space-y-3">
           <UCard
             v-for="exp in filteredExports"
-            :key="exp.id"
+            :key="exp.gid"
             :class="[
               'hover:shadow-md transition-all',
-              isSelected(exp.id) ? 'ring-2 ring-primary bg-primary/5' : ''
+              isSelected(exp.gid) ? 'ring-2 ring-primary bg-primary/5' : ''
             ]"
           >
             <div class="flex items-start gap-4">
               <!-- Checkbox -->
               <div class="flex-shrink-0 pt-3">
                 <UCheckbox
-                  :model-value="isSelected(exp.id)"
-                  @update:model-value="toggleSelect(exp.id)"
+                  :model-value="isSelected(exp.gid)"
+                  @update:model-value="toggleSelect(exp.gid)"
                   @click.stop
                 />
               </div>
@@ -684,7 +681,7 @@ async function deleteBulk() {
               <!-- Icon -->
               <div
                 class="flex-shrink-0 p-3 bg-primary/10 rounded-lg cursor-pointer"
-                @click="navigateTo(`/forensic-exports/${exp.id}`)"
+                @click="navigateTo(`/forensic-exports/${exp.gid}`)"
               >
                 <UIcon name="i-lucide-database" class="size-6 text-primary" />
               </div>
@@ -692,7 +689,7 @@ async function deleteBulk() {
               <!-- Content -->
               <div
                 class="flex-1 min-w-0 cursor-pointer"
-                @click="navigateTo(`/forensic-exports/${exp.id}`)"
+                @click="navigateTo(`/forensic-exports/${exp.gid}`)"
               >
                 <div class="flex items-start justify-between gap-4">
                   <div class="flex-1 min-w-0">
@@ -726,33 +723,33 @@ async function deleteBulk() {
                   <ClientOnly>
                     <div class="flex items-center gap-1">
                       <UTooltip text="View Details">
-                        <UButton
-                          icon="i-lucide-eye"
-                          variant="ghost"
-                          color="neutral"
-                          size="sm"
-                          @click.stop="navigateTo(`/forensic-exports/${exp.id}`)"
-                        />
-                      </UTooltip>
-                      <UTooltip text="Verify Export">
-                        <UButton
-                          icon="i-lucide-shield-check"
-                          variant="ghost"
-                          color="neutral"
-                          size="sm"
-                          @click.stop="verifyExport(exp.id)"
-                        />
-                      </UTooltip>
-                      <UDropdownMenu
-                        :items="[
-                          [
-                            { label: 'View Details', icon: 'i-lucide-eye', click: () => navigateTo(`/forensic-exports/${exp.id}`) },
-                            { label: 'Verify', icon: 'i-lucide-shield-check', click: () => verifyExport(exp.id) }
-                          ],
-                          [
-                            { label: 'Delete Record', icon: 'i-lucide-trash', color: 'error', click: () => deleteExport(exp.id) }
-                          ]
-                        ]"
+                      <UButton
+                        icon="i-lucide-eye"
+                        variant="ghost"
+                        color="neutral"
+                        size="sm"
+                        @click.stop="navigateTo(`/forensic-exports/${exp.gid}`)"
+                      />
+                    </UTooltip>
+                    <UTooltip text="Verify Export">
+                      <UButton
+                        icon="i-lucide-shield-check"
+                        variant="ghost"
+                        color="neutral"
+                        size="sm"
+                        @click.stop="verifyExport(exp.gid)"
+                      />
+                    </UTooltip>
+                    <UDropdownMenu
+                      :items="[
+                        [
+                          { label: 'View Details', icon: 'i-lucide-eye', click: () => navigateTo(`/forensic-exports/${exp.gid}`) },
+                          { label: 'Verify', icon: 'i-lucide-shield-check', click: () => verifyExport(exp.gid) }
+                        ],
+                        [
+                          { label: 'Delete Record', icon: 'i-lucide-trash', color: 'error', click: () => deleteExport(exp.gid) }
+                        ]
+                      ]"
                       >
                         <UButton
                           icon="i-lucide-more-vertical"
@@ -937,7 +934,7 @@ async function deleteBulk() {
                 <div class="space-y-2">
                   <div
                     v-for="item in scanResults.found"
-                    :key="item.id"
+                    :key="item.gid"
                     class="p-3 bg-success/10 border border-success/20 rounded-lg text-sm"
                   >
                     <p class="font-medium">{{ item.name }}</p>

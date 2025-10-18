@@ -19,8 +19,8 @@ const searchSettings = ref({
   top_k: 50, // Increased from 20 to fetch more results
   score_threshold: 0.0, // Minimum confidence score (0.0 = no filter)
   chunk_types: [] as string[], // Filter by chunk types
-  document_ids: [] as number[], // Filter by document IDs
-  case_ids: [] as number[] // Filter by case IDs
+  document_gids: [] as string[], // Filter by document GIDs
+  case_gids: [] as string[] // Filter by case GIDs
 })
 
 // Case filters - use shared cache system
@@ -29,7 +29,7 @@ await cases.get() // Load cases from cache or fetch if needed
 
 const availableCases = computed(() =>
   (cases.data.value?.cases || []).map((c: any) => ({
-    id: Number(c.id),
+    id: c.gid,
     name: c.name,
     label: c.name,
     case_number: c.case_number
@@ -37,7 +37,7 @@ const availableCases = computed(() =>
 )
 
 // Filter state
-const selectedCases = ref<number[]>([])
+const selectedCases = ref<string[]>([])
 const selectedDocumentTypes = ref<string[]>([])
 const selectedSpeakers = ref<string[]>([])
 const includeTranscripts = ref(true)
@@ -92,8 +92,8 @@ const performSearch = async () => {
   isLoading.value = true
   isSearching.value = true
   try {
-    // Filter out null/undefined values and convert to integers
-    const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
+    // Filter out null/undefined values
+    const validCaseGids = selectedCases.value.filter(id => id != null)
 
     // Build chunk_types from both selectedChunkTypes and selectedDocumentTypes
     const chunkTypes = [...selectedChunkTypes.value]
@@ -119,8 +119,8 @@ const performSearch = async () => {
       top_k: searchSettings.value.top_k,
       score_threshold: searchSettings.value.score_threshold > 0 ? searchSettings.value.score_threshold : undefined,
       chunk_types: chunkTypes.length > 0 ? chunkTypes : undefined,
-      case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
-      document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
+      case_gids: validCaseGids.length > 0 ? validCaseGids : undefined,
+      document_gids: searchSettings.value.document_gids.length > 0 ? searchSettings.value.document_gids : undefined
     }
 
     // DEBUG: Log search request details
@@ -156,23 +156,44 @@ const performSearch = async () => {
     }
 
     // Transform filtered results only (more efficient)
-    const results = rawResults.map((result: any) => ({
-      id: result.id,
-      title: extractTitle(result),
-      excerpt: formatExcerpt(result),
-      documentType: determineDocumentType(result),
-      date: result.metadata?.created_at || result.metadata?.uploaded_at || new Date().toISOString(),
-      jurisdiction: result.metadata?.jurisdiction || null,
-      relevanceScore: result.score,
-      entities: extractEntities(result.metadata),
-      caseNumber: result.metadata?.case_id ? `Case #${result.metadata.case_id}` : null,
-      metadata: result.metadata,
-      highlights: result.highlights,
-      vectorType: result.vector_type,
-      chunkType: result.metadata?.chunk_type,
-      pageNumber: result.metadata?.page_number,
-      filename: result.metadata?.filename
-    }))
+    const results = rawResults.map((result: any) => {
+      const pointId = String(result.id || '')
+      const documentGid = result.metadata?.document_gid || null
+      const documentId = result.metadata?.document_id || null
+      const caseGid = result.metadata?.case_gid || null
+      const caseId = result.metadata?.case_id || null
+      const metadata = {
+        ...result.metadata,
+        document_gid: documentGid,
+        document_id: documentId,
+        case_gid: caseGid,
+        case_id: caseId,
+        chunk_id: result.metadata?.chunk_id || null,
+        point_id: pointId
+      }
+
+      const caseLabel = metadata.case_number || metadata.case_gid || metadata.case_id || null
+
+      return {
+        id: pointId,
+        internalId: result.id,
+        gid: pointId,
+        title: extractTitle(result),
+        excerpt: formatExcerpt(result),
+        documentType: determineDocumentType(result),
+        date: metadata.created_at || metadata.uploaded_at || new Date().toISOString(),
+        jurisdiction: metadata.jurisdiction || null,
+        relevanceScore: result.score,
+        entities: extractEntities(metadata),
+        caseNumber: caseLabel ? `Case ${caseLabel}` : null,
+        metadata,
+        highlights: result.highlights,
+        vectorType: result.vector_type,
+        chunkType: metadata.chunk_type,
+        pageNumber: metadata.page_number,
+        filename: metadata.filename
+      }
+    })
 
     searchResults.value = results
   } catch (error) {
@@ -309,7 +330,7 @@ function extractTitle(result: any): string {
 
   // Priority 4: Use chunk type and document ID
   const chunkType = metadata.chunk_type || 'Section'
-  const docId = metadata.document_id || result.id
+  const docId = metadata.document_gid || metadata.document_id || result.id
 
   return `${chunkType.charAt(0).toUpperCase() + chunkType.slice(1)} from Document #${docId}`
 }

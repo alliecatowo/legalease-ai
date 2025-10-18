@@ -3,11 +3,13 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
+from app.models.base import UUIDMixin
 
 
-class Chunk(Base):
+class Chunk(UUIDMixin, Base):
     """
     Chunk model representing a segmented piece of a document.
 
@@ -17,9 +19,8 @@ class Chunk(Base):
 
     __tablename__ = "chunks"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    document_id = Column(
-        Integer,
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True

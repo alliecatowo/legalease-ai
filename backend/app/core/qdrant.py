@@ -340,7 +340,9 @@ def get_collection_info(
 
 def build_filter(
     case_ids: Optional[List[int]] = None,
+    case_gids: Optional[List[str]] = None,
     document_ids: Optional[List[int]] = None,
+    document_gids: Optional[List[str]] = None,
     chunk_types: Optional[List[str]] = None,
     additional_conditions: Optional[List[FieldCondition]] = None,
 ) -> Optional[Filter]:
@@ -348,8 +350,10 @@ def build_filter(
     Build a Qdrant filter from common query parameters.
 
     Args:
-        case_ids: Filter by case IDs
-        document_ids: Filter by document IDs
+        case_ids: Filter by case UUIDs
+        case_gids: Filter by case GIDs
+        document_ids: Filter by document UUIDs
+        document_gids: Filter by document GIDs
         chunk_types: Filter by chunk types (e.g., 'summary', 'section', 'microblock')
         additional_conditions: Additional custom filter conditions
 
@@ -359,7 +363,6 @@ def build_filter(
     conditions = []
 
     if case_ids:
-        # Handle single vs multiple case_ids properly
         if len(case_ids) == 1:
             conditions.append(
                 FieldCondition(
@@ -375,8 +378,23 @@ def build_filter(
                 )
             )
 
+    if case_gids:
+        if len(case_gids) == 1:
+            conditions.append(
+                FieldCondition(
+                    key="case_gid",
+                    match=MatchValue(value=case_gids[0]),
+                )
+            )
+        else:
+            conditions.append(
+                FieldCondition(
+                    key="case_gid",
+                    match=MatchAny(any=case_gids),
+                )
+            )
+
     if document_ids:
-        # Handle single vs multiple document_ids properly
         if len(document_ids) == 1:
             conditions.append(
                 FieldCondition(
@@ -389,6 +407,22 @@ def build_filter(
                 FieldCondition(
                     key="document_id",
                     match=MatchAny(any=document_ids),
+                )
+            )
+
+    if document_gids:
+        if len(document_gids) == 1:
+            conditions.append(
+                FieldCondition(
+                    key="document_gid",
+                    match=MatchValue(value=document_gids[0]),
+                )
+            )
+        else:
+            conditions.append(
+                FieldCondition(
+                    key="document_gid",
+                    match=MatchAny(any=document_gids),
                 )
             )
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const props = defineProps<{
-  transcriptionId: number
+  transcriptionId: string
   summary?: any
 }>()
 

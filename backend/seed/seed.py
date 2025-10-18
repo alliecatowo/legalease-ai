@@ -192,18 +192,22 @@ def process_document(db, case: Case, filename: str, doc_info: dict, processor: D
         return False
 
     # Create document record
-    file_path = f"documents/{case.id}/{filename}"
+    # Note: case.id is now a UUID, and case.gid is used for storage paths
     doc = Document(
-        case_id=case.id,
+        case_id=case.id,  # UUID foreign key
         filename=filename,
-        file_path=file_path,
+        file_path="",  # Will be set after flush to get gid
         mime_type="application/pdf",
         size=len(pdf_content),
         status=DocumentStatus.PENDING,
         uploaded_at=datetime.now(UTC),
     )
     db.add(doc)
-    db.flush()
+    db.flush()  # Flush to generate UUID and gid
+
+    # Now set file_path using gids
+    file_path = f"cases/{case.gid}/{doc.gid}_{filename}"
+    doc.file_path = file_path
 
     # Upload to MinIO
     print("  Uploading to MinIO...")
@@ -233,9 +237,10 @@ def process_document(db, case: Case, filename: str, doc_info: dict, processor: D
     # Save chunks to database
     print("  Saving chunks...")
     qdrant = get_qdrant_client()
+    # Filter by document_id (UUID string) since document_gid may be null during indexing
     scroll_result = qdrant.scroll(
         collection_name=settings.QDRANT_COLLECTION,
-        scroll_filter={"must": [{"key": "document_id", "match": {"value": doc.id}}]},
+        scroll_filter={"must": [{"key": "document_id", "match": {"value": str(doc.id)}}]},
         limit=1000,
         with_payload=True,
         with_vectors=False,
@@ -262,8 +267,8 @@ def process_document(db, case: Case, filename: str, doc_info: dict, processor: D
     try:
         page_image_service = PageImageService()
         image_count = page_image_service.generate_page_images(
-            document_id=doc.id,
-            case_id=case.id,
+            document_gid=doc.gid,
+            case_gid=case.gid,
             pdf_content=pdf_content
         )
         print(f"  Generated {image_count} page images")

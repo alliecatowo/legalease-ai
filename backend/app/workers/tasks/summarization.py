@@ -23,7 +23,7 @@ class SummarizationError(Exception):
 @celery_app.task(name="summarize_transcript", bind=True)
 def summarize_transcript(
     self,
-    transcription_id: int,
+    transcription_gid: str,
     options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -38,7 +38,7 @@ def summarize_transcript(
     - Topics and entities (parties, dates, legal terms, citations)
 
     Args:
-        transcription_id: ID of the transcription to summarize
+        transcription_gid: GID of the transcription to summarize
         options: Optional dict containing configuration:
             - components: List of components to generate (default: all)
             - model: Ollama model to use (default: from settings)
@@ -62,21 +62,21 @@ def summarize_transcript(
             meta={'status': 'Initializing summarization', 'progress': 0}
         )
 
-        # Step 1: Get transcription from database
-        logger.info(f"Starting summarization for transcription {transcription_id}")
+        # Step 1: Get transcription from database using GID
+        logger.info(f"Starting summarization for transcription {transcription_gid}")
         transcription = db.query(Transcription).filter(
-            Transcription.id == transcription_id
+            Transcription.gid == transcription_gid
         ).first()
 
         if not transcription:
-            raise SummarizationError(f"Transcription {transcription_id} not found")
+            raise SummarizationError(f"Transcription with GID {transcription_gid} not found")
 
         # Check if summary already exists
         if not regenerate and transcription.summary_generated_at:
-            logger.info(f"Summary already exists for transcription {transcription_id}, skipping")
+            logger.info(f"Summary already exists for transcription {transcription_gid}, skipping")
             return {
                 'status': 'skipped',
-                'transcription_id': transcription_id,
+                'transcription_gid': transcription_gid,
                 'message': 'Summary already exists. Use regenerate=True to force regeneration.',
                 'summary_generated_at': transcription.summary_generated_at.isoformat()
             }
@@ -151,12 +151,12 @@ def summarize_transcript(
 
         db.commit()
 
-        logger.info(f"Summarization completed successfully for transcription {transcription_id}")
+        logger.info(f"Summarization completed successfully for transcription {transcription_gid}")
 
         # Step 5: Return success result
         return {
             'status': 'completed',
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'summary_generated_at': transcription.summary_generated_at.isoformat(),
             'components_generated': list(analysis.keys()),
             'statistics': {
@@ -170,7 +170,7 @@ def summarize_transcript(
         }
 
     except Exception as e:
-        logger.error(f"Summarization failed for transcription {transcription_id}: {str(e)}", exc_info=True)
+        logger.error(f"Summarization failed for transcription {transcription_gid}: {str(e)}", exc_info=True)
 
         # Update task state
         self.update_state(
@@ -181,7 +181,7 @@ def summarize_transcript(
         return {
             'status': 'failed',
             'error': str(e),
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'task_id': self.request.id
         }
 
@@ -192,7 +192,7 @@ def summarize_transcript(
 @celery_app.task(name="regenerate_summary", bind=True)
 def regenerate_summary(
     self,
-    transcription_id: int,
+    transcription_gid: str,
     components: Optional[list] = None
 ) -> Dict[str, Any]:
     """
@@ -201,7 +201,7 @@ def regenerate_summary(
     Useful for updating only certain parts of the analysis.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         components: List of components to regenerate (default: all)
 
     Returns:
@@ -209,7 +209,7 @@ def regenerate_summary(
     """
     return summarize_transcript(
         self,
-        transcription_id,
+        transcription_gid,
         options={
             'components': components,
             'regenerate': True
@@ -220,7 +220,7 @@ def regenerate_summary(
 @celery_app.task(name="batch_summarize_transcripts", bind=True)
 def batch_summarize_transcripts(
     self,
-    transcription_ids: list[int],
+    transcription_gids: list[str],
     options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -229,29 +229,29 @@ def batch_summarize_transcripts(
     Useful for processing multiple transcriptions at once.
 
     Args:
-        transcription_ids: List of transcription IDs to summarize
+        transcription_gids: List of transcription GIDs to summarize
         options: Optional configuration (passed to each summarize_transcript call)
 
     Returns:
         Dict containing batch summarization results
     """
-    logger.info(f"Starting batch summarization for {len(transcription_ids)} transcriptions")
+    logger.info(f"Starting batch summarization for {len(transcription_gids)} transcriptions")
 
     results = {
-        'total': len(transcription_ids),
+        'total': len(transcription_gids),
         'completed': 0,
         'failed': 0,
         'skipped': 0,
         'details': []
     }
 
-    for idx, transcription_id in enumerate(transcription_ids):
+    for idx, transcription_gid in enumerate(transcription_gids):
         # Update progress
-        progress = int((idx / len(transcription_ids)) * 100)
+        progress = int((idx / len(transcription_gids)) * 100)
         self.update_state(
             state='PROCESSING',
             meta={
-                'status': f'Processing transcription {idx + 1}/{len(transcription_ids)}',
+                'status': f'Processing transcription {idx + 1}/{len(transcription_gids)}',
                 'progress': progress
             }
         )
@@ -260,7 +260,7 @@ def batch_summarize_transcripts(
             # Summarize this transcription
             result = summarize_transcript(
                 self,
-                transcription_id,
+                transcription_gid,
                 options=options
             )
 
@@ -274,16 +274,16 @@ def batch_summarize_transcripts(
                 results['skipped'] += 1
 
             results['details'].append({
-                'transcription_id': transcription_id,
+                'transcription_gid': transcription_gid,
                 'status': status,
                 'result': result
             })
 
         except Exception as e:
-            logger.error(f"Failed to summarize transcription {transcription_id}: {e}")
+            logger.error(f"Failed to summarize transcription {transcription_gid}: {e}")
             results['failed'] += 1
             results['details'].append({
-                'transcription_id': transcription_id,
+                'transcription_gid': transcription_gid,
                 'status': 'failed',
                 'error': str(e)
             })
@@ -296,7 +296,7 @@ def batch_summarize_transcripts(
 @celery_app.task(name="quick_summary", bind=True)
 def quick_summary(
     self,
-    transcription_id: int
+    transcription_gid: str
 ) -> Dict[str, Any]:
     """
     Generate just the executive summary (fast, minimal analysis).
@@ -304,7 +304,7 @@ def quick_summary(
     Useful when you need a quick overview without full analysis.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
 
     Returns:
         Dict containing executive summary
@@ -312,15 +312,15 @@ def quick_summary(
     db = SessionLocal()
 
     try:
-        logger.info(f"Generating quick summary for transcription {transcription_id}")
+        logger.info(f"Generating quick summary for transcription {transcription_gid}")
 
-        # Get transcription
+        # Get transcription using GID
         transcription = db.query(Transcription).filter(
-            Transcription.id == transcription_id
+            Transcription.gid == transcription_gid
         ).first()
 
         if not transcription:
-            raise SummarizationError(f"Transcription {transcription_id} not found")
+            raise SummarizationError(f"Transcription with GID {transcription_gid} not found")
 
         segments = transcription.segments
         if not segments:
@@ -353,17 +353,17 @@ def quick_summary(
 
         return {
             'status': 'completed',
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'executive_summary': summary,
             'task_id': self.request.id
         }
 
     except Exception as e:
-        logger.error(f"Quick summary failed for transcription {transcription_id}: {e}")
+        logger.error(f"Quick summary failed for transcription {transcription_gid}: {e}")
         return {
             'status': 'failed',
             'error': str(e),
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'task_id': self.request.id
         }
 

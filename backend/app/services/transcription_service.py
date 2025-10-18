@@ -50,7 +50,7 @@ class TranscriptionService:
 
     @staticmethod
     async def upload_audio_for_transcription(
-        case_id: int,
+        case_gid: str,
         file: UploadFile,
         db: Session,
         options: Optional["TranscriptionOptions"] = None,
@@ -59,7 +59,7 @@ class TranscriptionService:
         Upload an audio/video file for transcription.
 
         Args:
-            case_id: ID of the case
+            case_gid: GID of the case
             file: Uploaded audio/video file
             db: Database session
             options: Optional transcription configuration options
@@ -71,10 +71,10 @@ class TranscriptionService:
             HTTPException: If validation fails or upload fails
         """
         # Validate case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        case = db.query(Case).filter(Case.gid == case_gid).first()
         if not case:
-            logger.error(f"Case {case_id} not found")
-            raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+            logger.error(f"Case {case_gid} not found")
+            raise HTTPException(status_code=404, detail=f"Case {case_gid} not found")
 
         # Validate file type
         if file.content_type not in TranscriptionService.SUPPORTED_FORMATS:
@@ -85,16 +85,34 @@ class TranscriptionService:
                 f"and video (mp4, mpeg, mov, avi, webm, mkv)",
             )
 
-        # Generate unique file identifier
-        file_uuid = str(uuid.uuid4())
         filename = file.filename or "unknown"
-
-        # Create MinIO path: cases/{case_id}/transcripts/{uuid}_{filename}
-        object_name = f"cases/{case_id}/transcripts/{file_uuid}_{filename}"
 
         # Read file content and get size
         file_content = await file.read()
         file_size = len(file_content)
+
+        # Extract format from content type (e.g., "audio/mp3" -> "mp3")
+        file_format = file.content_type.split("/")[-1] if file.content_type else None
+
+        # Create Transcription record first to get GID
+        transcription = Transcription(
+            case_id=case.id,
+            filename=filename,
+            file_path="",  # Will be set after upload
+            mime_type=file.content_type,
+            size=file_size,
+            status=DocumentStatus.PENDING,
+            uploaded_at=datetime.utcnow(),
+            format=file_format,
+            segments=[],
+            speakers=[],
+        )
+
+        db.add(transcription)
+        db.flush()  # Get the transcription ID and GID
+
+        # Create MinIO path: cases/{case_gid}/transcripts/{trans_gid}_{filename}
+        object_name = f"cases/{case.gid}/transcripts/{transcription.gid}_{filename}"
 
         # Upload to MinIO
         try:
@@ -112,24 +130,8 @@ class TranscriptionService:
                 detail=f"Failed to upload file to storage: {str(e)}",
             )
 
-        # Extract format from content type (e.g., "audio/mp3" -> "mp3")
-        file_format = file.content_type.split("/")[-1] if file.content_type else None
-
-        # Create Transcription record directly
-        transcription = Transcription(
-            case_id=case_id,
-            filename=filename,
-            file_path=object_name,
-            mime_type=file.content_type,
-            size=file_size,
-            status=DocumentStatus.PENDING,
-            uploaded_at=datetime.utcnow(),
-            format=file_format,
-            segments=[],
-            speakers=[],
-        )
-
-        db.add(transcription)
+        # Update file path
+        transcription.file_path = object_name
         db.commit()
         db.refresh(transcription)
 
@@ -137,19 +139,19 @@ class TranscriptionService:
         from app.workers.tasks.transcription import transcribe_audio
 
         options_dict = options.model_dump() if options else {}
-        transcribe_audio.delay(transcription.id, options=options_dict)
+        transcribe_audio.delay(transcription.gid, options=options_dict)
 
-        logger.info(f"Created transcription {transcription.id} and queued task with options: {options_dict}")
+        logger.info(f"Created transcription {transcription.gid} and queued task with options: {options_dict}")
 
         return transcription
 
     @staticmethod
-    def get_transcription(transcription_id: int, db: Session) -> Transcription:
+    def get_transcription(transcription_gid: str, db: Session) -> Transcription:
         """
-        Get a transcription by ID.
+        Get a transcription by GID.
 
         Args:
-            transcription_id: ID of the transcription
+            transcription_gid: GID of the transcription
             db: Database session
 
         Returns:
@@ -160,24 +162,24 @@ class TranscriptionService:
         """
         transcription = (
             db.query(Transcription)
-            .filter(Transcription.id == transcription_id)
+            .filter(Transcription.gid == transcription_gid)
             .first()
         )
         if not transcription:
-            logger.error(f"Transcription {transcription_id} not found")
+            logger.error(f"Transcription {transcription_gid} not found")
             raise HTTPException(
-                status_code=404, detail=f"Transcription {transcription_id} not found"
+                status_code=404, detail=f"Transcription {transcription_gid} not found"
             )
 
         return transcription
 
     @staticmethod
-    def list_case_transcriptions(case_id: int, db: Session) -> List[Dict[str, Any]]:
+    def list_case_transcriptions(case_gid: str, db: Session) -> List[Dict[str, Any]]:
         """
         List all transcriptions for a case.
 
         Args:
-            case_id: ID of the case
+            case_gid: GID of the case
             db: Database session
 
         Returns:
@@ -187,19 +189,19 @@ class TranscriptionService:
             HTTPException: If case not found
         """
         # Validate case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        case = db.query(Case).filter(Case.gid == case_gid).first()
         if not case:
-            logger.error(f"Case {case_id} not found")
-            raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+            logger.error(f"Case {case_gid} not found")
+            raise HTTPException(status_code=404, detail=f"Case {case_gid} not found")
 
         # Get all transcriptions for the case directly
         transcriptions = (
             db.query(Transcription)
-            .filter(Transcription.case_id == case_id)
+            .filter(Transcription.case_id == case.id)
             .all()
         )
 
-        logger.info(f"Found {len(transcriptions)} transcriptions for case {case_id}")
+        logger.info(f"Found {len(transcriptions)} transcriptions for case {case_gid}")
 
         # Build summary list
         result = []
@@ -207,7 +209,9 @@ class TranscriptionService:
             result.append(
                 {
                     "id": trans.id,
+                    "gid": trans.gid,
                     "case_id": trans.case_id,
+                    "case_gid": case.gid,
                     "filename": trans.filename,
                     "format": trans.format,
                     "duration": trans.duration,
@@ -222,12 +226,12 @@ class TranscriptionService:
         return result
 
     @staticmethod
-    def download_audio(transcription_id: int, db: Session) -> tuple[bytes, str, str]:
+    def download_audio(transcription_gid: str, db: Session) -> tuple[bytes, str, str]:
         """
         Download the original audio/video file from MinIO.
 
         Args:
-            transcription_id: ID of the transcription
+            transcription_gid: GID of the transcription
             db: Database session
 
         Returns:
@@ -237,35 +241,35 @@ class TranscriptionService:
             HTTPException: If transcription not found or download fails
         """
         # Get transcription from database
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
         try:
             # Download from MinIO
-            logger.info(f"Downloading audio for transcription {transcription_id} from MinIO: {transcription.file_path}")
+            logger.info(f"Downloading audio for transcription {transcription_gid} from MinIO: {transcription.file_path}")
             content = minio_client.download_file(transcription.file_path)
 
             return content, transcription.filename, transcription.mime_type or "application/octet-stream"
 
         except S3Error as e:
-            logger.error(f"MinIO error downloading audio for transcription {transcription_id}: {str(e)}")
+            logger.error(f"MinIO error downloading audio for transcription {transcription_gid}: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to download audio from storage: {str(e)}",
             )
         except Exception as e:
-            logger.error(f"Error downloading audio for transcription {transcription_id}: {str(e)}")
+            logger.error(f"Error downloading audio for transcription {transcription_gid}: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to download audio: {str(e)}",
             )
 
     @staticmethod
-    def get_transcription_details(transcription_id: int, db: Session) -> Dict[str, Any]:
+    def get_transcription_details(transcription_gid: str, db: Session) -> Dict[str, Any]:
         """
         Get detailed transcription information.
 
         Args:
-            transcription_id: ID of the transcription
+            transcription_gid: GID of the transcription
             db: Database session
 
         Returns:
@@ -274,12 +278,12 @@ class TranscriptionService:
         Raises:
             HTTPException: If transcription not found
         """
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
         # Get key moment metadata for segments
         key_moment_metadata = (
             db.query(TranscriptSegment)
-            .filter(TranscriptSegment.transcript_id == transcription_id)
+            .filter(TranscriptSegment.transcript_id == transcription.id)
             .all()
         )
 
@@ -296,8 +300,11 @@ class TranscriptionService:
             segments_with_metadata.append(segment_copy)
 
         return {
+            "gid": transcription.gid,
             "id": transcription.id,
             "case_id": transcription.case_id,
+            "case_gid": transcription.case.gid if transcription.case else None,
+            "document_gid": transcription.document.gid if transcription.document else None,
             "filename": transcription.filename,
             "format": transcription.format,
             "duration": transcription.duration,
@@ -306,8 +313,66 @@ class TranscriptionService:
             "status": transcription.status.value if transcription.status else "unknown",
             "created_at": transcription.created_at,
             "uploaded_at": transcription.uploaded_at,
-            "audio_url": f"/api/v1/transcriptions/{transcription.id}/audio",
+            "audio_url": f"/api/v1/transcriptions/{transcription.gid}/audio",
         }
+
+    @staticmethod
+    def reprocess_transcription(
+        transcription_gid: str,
+        db: Session,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Transcription:
+        """
+        Reset and re-queue a transcription for processing.
+
+        Args:
+            transcription_gid: GID of the transcription
+            db: Database session
+            options: Optional dict of transcription options to pass to the worker
+
+        Returns:
+            Transcription: Updated transcription record queued for processing
+        """
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
+
+        logger.info("Reprocessing transcription %s", transcription_gid)
+
+        # Clear existing metadata so the UI reflects processing state immediately
+        transcription.status = DocumentStatus.PENDING
+        transcription.duration = None
+        transcription.segments = []
+        transcription.speakers = []
+        transcription.waveform_data = None
+        transcription.executive_summary = None
+        transcription.key_moments = None
+        transcription.timeline = None
+        transcription.speaker_stats = None
+        transcription.action_items = None
+        transcription.topics = None
+        transcription.entities = None
+        transcription.summary_generated_at = None
+
+        # Remove persisted segment metadata
+        db.query(TranscriptSegment).filter(
+            TranscriptSegment.transcript_id == transcription.id
+        ).delete(synchronize_session=False)
+
+        db.commit()
+        db.refresh(transcription)
+
+        # Queue worker
+        from app.workers.tasks.transcription import transcribe_audio
+
+        worker_options = options or {}
+        transcribe_audio.delay(transcription.gid, options=worker_options)
+
+        logger.info(
+            "Queued reprocessing task for transcription %s with options: %s",
+            transcription_gid,
+            json.dumps(worker_options),
+        )
+
+        return transcription
 
     @staticmethod
     def export_as_json(transcription: Transcription, db: Session) -> bytes:
@@ -447,12 +512,12 @@ class TranscriptionService:
         return "\n".join(txt_content).encode("utf-8")
 
     @staticmethod
-    def delete_transcription(transcription_id: int, db: Session) -> Transcription:
+    def delete_transcription(transcription_gid: str, db: Session) -> Transcription:
         """
         Delete a transcription.
 
         Args:
-            transcription_id: ID of the transcription
+            transcription_gid: GID of the transcription
             db: Database session
 
         Returns:
@@ -461,18 +526,18 @@ class TranscriptionService:
         Raises:
             HTTPException: If transcription not found or deletion fails
         """
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
         try:
             # Delete from database (cascade will handle related records)
             db.delete(transcription)
             db.commit()
 
-            logger.info(f"Successfully deleted transcription {transcription_id}")
+            logger.info(f"Successfully deleted transcription {transcription_gid}")
             return transcription
 
         except Exception as e:
-            logger.error(f"Error deleting transcription {transcription_id}: {str(e)}")
+            logger.error(f"Error deleting transcription {transcription_gid}: {str(e)}")
             db.rollback()
             raise HTTPException(
                 status_code=500,
@@ -507,13 +572,13 @@ class TranscriptionService:
 
     @staticmethod
     def toggle_key_moment(
-        transcription_id: int, segment_id: str, is_key_moment: bool, db: Session
+        transcription_gid: str, segment_id: str, is_key_moment: bool, db: Session
     ) -> Dict[str, Any]:
         """
         Toggle key moment status for a transcript segment.
 
         Args:
-            transcription_id: ID of the transcription
+            transcription_gid: GID of the transcription
             segment_id: UUID of the segment (from JSON segments)
             is_key_moment: New key moment status
             db: Database session
@@ -525,7 +590,7 @@ class TranscriptionService:
             HTTPException: If transcription or segment not found
         """
         # Verify transcription exists
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
         # Verify segment exists in the transcription's JSON segments
         segment_exists = False
@@ -537,18 +602,18 @@ class TranscriptionService:
 
         if not segment_exists:
             logger.error(
-                f"Segment {segment_id} not found in transcription {transcription_id}"
+                f"Segment {segment_id} not found in transcription {transcription_gid}"
             )
             raise HTTPException(
                 status_code=404,
-                detail=f"Segment {segment_id} not found in transcription {transcription_id}",
+                detail=f"Segment {segment_id} not found in transcription {transcription_gid}",
             )
 
         # Check if segment metadata already exists
         segment_metadata = (
             db.query(TranscriptSegment)
             .filter(
-                TranscriptSegment.transcript_id == transcription_id,
+                TranscriptSegment.transcript_id == transcription.id,
                 TranscriptSegment.segment_id == segment_id,
             )
             .first()
@@ -563,7 +628,7 @@ class TranscriptionService:
         else:
             # Create new metadata
             segment_metadata = TranscriptSegment(
-                transcript_id=transcription_id,
+                transcript_id=transcription.id,
                 segment_id=segment_id,
                 is_key_moment=is_key_moment,
             )
@@ -572,7 +637,7 @@ class TranscriptionService:
             db.refresh(segment_metadata)
 
         logger.info(
-            f"Toggled key moment for segment {segment_id} in transcription {transcription_id}: {is_key_moment}"
+            f"Toggled key moment for segment {segment_id} in transcription {transcription_gid}: {is_key_moment}"
         )
 
         return {
@@ -643,7 +708,7 @@ class TranscriptionService:
 
     @staticmethod
     def update_speaker(
-        transcription_id: int,
+        transcription_gid: str,
         speaker_id: str,
         name: str,
         role: Optional[str],
@@ -653,7 +718,7 @@ class TranscriptionService:
         Update speaker information in a transcription.
 
         Args:
-            transcription_id: ID of the transcription
+            transcription_gid: GID of the transcription
             speaker_id: ID of the speaker to update
             name: New speaker name
             role: Optional speaker role
@@ -666,16 +731,16 @@ class TranscriptionService:
             HTTPException: If transcription or speaker not found
         """
         # Verify transcription exists
-        transcription = TranscriptionService.get_transcription(transcription_id, db)
+        transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
         # Verify speakers array exists
         if not transcription.speakers or not isinstance(transcription.speakers, list):
             logger.error(
-                f"No speakers found in transcription {transcription_id}"
+                f"No speakers found in transcription {transcription_gid}"
             )
             raise HTTPException(
                 status_code=404,
-                detail=f"No speakers found in transcription {transcription_id}",
+                detail=f"No speakers found in transcription {transcription_gid}",
             )
 
         # Find the speaker by ID
@@ -693,11 +758,11 @@ class TranscriptionService:
 
         if not speaker_found:
             logger.error(
-                f"Speaker {speaker_id} not found in transcription {transcription_id}"
+                f"Speaker {speaker_id} not found in transcription {transcription_gid}"
             )
             raise HTTPException(
                 status_code=404,
-                detail=f"Speaker {speaker_id} not found in transcription {transcription_id}",
+                detail=f"Speaker {speaker_id} not found in transcription {transcription_gid}",
             )
 
         # Mark the speakers column as modified for SQLAlchemy to detect the change
@@ -709,7 +774,7 @@ class TranscriptionService:
         db.refresh(transcription)
 
         logger.info(
-            f"Updated speaker {speaker_id} in transcription {transcription_id}: name='{name}', role='{role}'"
+            f"Updated speaker {speaker_id} in transcription {transcription_gid}: name='{name}', role='{role}'"
         )
 
         return {
