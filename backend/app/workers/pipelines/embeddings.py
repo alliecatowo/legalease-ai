@@ -133,42 +133,47 @@ class FastEmbedPipeline:
 
         try:
             # Memory-efficient batch processing
-            # Instead of loading all embeddings at once with vstack,
-            # we accumulate them incrementally to maintain constant memory usage
-            embeddings_batches = []
-            batch_count = 0
+            # We MUST split texts into smaller chunks BEFORE calling embed()
+            # FastEmbed pre-processes all texts before yielding, causing OOM on large batches
+            all_embeddings = []
+            processed = 0
 
-            # FastEmbed returns a generator that yields one embedding per text
-            # We consume it in controlled batches
-            embeddings_generator = self.model.embed(
-                texts,
-                batch_size=batch_size,
-            )
+            # Process texts in small batches to prevent memory spikes
+            for batch_start in range(0, total_texts, batch_size):
+                batch_end = min(batch_start + batch_size, total_texts)
+                batch_texts = texts[batch_start:batch_end]
+                batch_num = (batch_start // batch_size) + 1
+                total_batches = (total_texts + batch_size - 1) // batch_size
 
-            # Accumulate embeddings in batches
-            current_batch = []
-            for idx, embedding in enumerate(embeddings_generator, 1):
-                current_batch.append(embedding)
+                logger.info(
+                    f"  Processing batch {batch_num}/{total_batches}: "
+                    f"texts {batch_start+1}-{batch_end} "
+                    f"({processed*100//total_texts}% complete)"
+                )
 
-                # Log progress every 100 embeddings
-                if idx % 100 == 0:
-                    logger.info(f"  Generated {idx}/{total_texts} embeddings ({idx*100//total_texts}%)")
+                # Generate embeddings for this batch only
+                # Use smaller batch_size for FastEmbed's internal batching
+                embeddings_generator = self.model.embed(
+                    batch_texts,
+                    batch_size=min(batch_size, 32),  # Cap internal batch size
+                )
 
-                # When batch is full, stack and clear
-                if len(current_batch) >= batch_size:
-                    embeddings_batches.append(np.vstack(current_batch))
-                    current_batch = []
-                    batch_count += 1
+                # Collect all embeddings from this batch
+                batch_embeddings = []
+                for embedding in embeddings_generator:
+                    batch_embeddings.append(embedding)
 
-            # Don't forget remaining embeddings
-            if current_batch:
-                embeddings_batches.append(np.vstack(current_batch))
-                batch_count += 1
+                # Stack batch and append to results
+                batch_array = np.vstack(batch_embeddings)
+                all_embeddings.append(batch_array)
+
+                processed = batch_end
+                logger.info(f"  Batch {batch_num}/{total_batches} complete ({processed}/{total_texts})")
 
             # Final stack of all batches
-            embeddings = np.vstack(embeddings_batches)
+            embeddings = np.vstack(all_embeddings)
 
-            logger.info(f"Generated embeddings with shape: {embeddings.shape} (processed in {batch_count} batches)")
+            logger.info(f"Generated embeddings with shape: {embeddings.shape}")
             return embeddings
 
         except Exception as e:

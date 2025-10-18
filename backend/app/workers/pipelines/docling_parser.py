@@ -287,6 +287,25 @@ class DoclingParser:
                     f"{items_with_bbox} with bboxes "
                     f"({items_with_bbox/total_items*100:.1f}% coverage)"
                 )
+
+                # Force GPU memory cleanup after Docling processing
+                # This prevents GPU OOM when embedding pipeline loads its models
+                if device == "cuda":
+                    try:
+                        import torch
+                        import gc
+
+                        # Clear PyTorch cache
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            torch.cuda.synchronize()
+                            logger.info("Cleared GPU memory after Docling processing")
+
+                        # Force garbage collection to release Docling models
+                        gc.collect()
+                    except Exception as e:
+                        logger.warning(f"Failed to clear GPU memory: {e}")
+
                 return result
 
             finally:
