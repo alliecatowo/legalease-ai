@@ -12,11 +12,9 @@ from app.models.base import UUIDMixin
 class CaseStatus(str, PyEnum):
     """Case status enumeration."""
 
-    STAGING = "STAGING"
-    PROCESSING = "PROCESSING"
-    ACTIVE = "ACTIVE"
-    UNLOADED = "UNLOADED"
-    ARCHIVED = "ARCHIVED"
+    ACTIVE = "ACTIVE"      # Case is open and being worked on
+    CLOSED = "CLOSED"      # Case is complete but searchable
+    ARCHIVED = "ARCHIVED"  # Case is archived (hidden by default)
 
 
 class Case(UUIDMixin, Base):
@@ -35,7 +33,7 @@ class Case(UUIDMixin, Base):
     status = Column(
         Enum(CaseStatus, native_enum=True, create_constraint=True),
         nullable=False,
-        default=CaseStatus.STAGING,
+        default=CaseStatus.ACTIVE,
         index=True
     )
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

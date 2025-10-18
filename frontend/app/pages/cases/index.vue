@@ -45,8 +45,8 @@ const cases = computed(() => {
 const statusOptions = [
   { label: 'All Status', value: 'all' },
   { label: 'Active', value: 'active' },
-  { label: 'Pending', value: 'pending' },
-  { label: 'Closed', value: 'closed' }
+  { label: 'Closed', value: 'closed' },
+  { label: 'Archived', value: 'archived' }
 ]
 
 const typeOptions = [
@@ -72,18 +72,16 @@ const filteredCases = computed(() => {
 const stats = computed(() => ({
   total: cases.value.length,
   active: cases.value.filter((c: any) => c.status === 'active').length,
-  pending: cases.value.filter((c: any) => c.status === 'staging').length,
-  closed: cases.value.filter((c: any) => c.status === 'unloaded').length,
+  closed: cases.value.filter((c: any) => c.status === 'closed').length,
+  archived: cases.value.filter((c: any) => c.status === 'archived').length,
   totalDocuments: cases.value.reduce((acc: number, c: any) => acc + c.documents, 0),
   totalTranscripts: cases.value.reduce((acc: number, c: any) => acc + (c.transcripts || 0), 0)
 }))
 
 const statusColors: Record<string, string> = {
   active: 'success',
-  staging: 'warning',
-  pending: 'warning',
-  unloaded: 'neutral',
-  closed: 'neutral'
+  closed: 'neutral',
+  archived: 'gray'
 }
 
 async function onCaseCreated(caseData: any) {
@@ -138,24 +136,24 @@ async function onCaseCreated(caseData: any) {
 
           <UCard :ui="{ body: 'p-4' }">
             <div class="flex items-center gap-3">
-              <div class="p-2 bg-warning/10 rounded-lg">
-                <UIcon name="i-lucide-clock" class="size-5 text-warning" />
-              </div>
-              <div>
-                <p class="text-xs text-muted">Pending</p>
-                <p class="text-2xl font-bold">{{ stats.pending }}</p>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard :ui="{ body: 'p-4' }">
-            <div class="flex items-center gap-3">
               <div class="p-2 bg-neutral/10 rounded-lg">
                 <UIcon name="i-lucide-check-circle" class="size-5 text-neutral" />
               </div>
               <div>
                 <p class="text-xs text-muted">Closed</p>
                 <p class="text-2xl font-bold">{{ stats.closed }}</p>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard :ui="{ body: 'p-4' }">
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-gray/10 rounded-lg">
+                <UIcon name="i-lucide-archive" class="size-5 text-gray" />
+              </div>
+              <div>
+                <p class="text-xs text-muted">Archived</p>
+                <p class="text-2xl font-bold">{{ stats.archived }}</p>
               </div>
             </div>
           </UCard>
