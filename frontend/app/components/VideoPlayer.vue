@@ -393,10 +393,12 @@ watch(() => props.currentTime, (newTime) => {
   if (newTime !== undefined && wavesurfer.value && duration.value > 0) {
     const currentWavesurferTime = wavesurfer.value.getCurrentTime()
     const timeDiff = Math.abs(newTime - currentWavesurferTime)
+    console.log('Seek request:', { newTime, currentTime: currentWavesurferTime, timeDiff, willSeek: timeDiff > 0.01 })
     // Only seek if different (very small threshold to avoid rounding errors but allow all intentional seeks)
     if (timeDiff > 0.01) {
       isExternalSeek.value = true
       const progress = newTime / duration.value
+      console.log('Seeking to:', { time: newTime, progress })
       wavesurfer.value.seekTo(progress)
     }
   }
