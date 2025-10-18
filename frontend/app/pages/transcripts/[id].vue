@@ -297,35 +297,34 @@ function getSpeaker(speakerId?: string): Speaker | undefined {
   return transcript.value?.speakers.find(s => s.id === speakerId)
 }
 
-// Optimized: Performant fuzzy keyword highlighting with pre-compiled regex
+// Optimized: Performant keyword highlighting with word boundary matching
 function highlightText(text: string, query: string): string {
   if (!query || !text) return text
 
-  // Escape special regex characters and split into words for fuzzy matching
+  // Split query into individual words
   const words = query.trim().split(/\s+/).filter(w => w.length > 0)
   if (words.length === 0) return text
 
-  // Build fuzzy regex pattern: each word can have up to 1 character difference
-  const pattern = words
-    .map(word => {
-      // Escape special regex characters
-      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      // Allow fuzzy matching: optional character before/after each letter
-      return escaped.split('').map((char, i) => {
-        if (i === 0) return `${char}.?`
-        return `.?${char}.?`
-      }).join('').replace(/\.?\.\?$/, '') // Clean up trailing
-    })
-    .join('|')
+  // Escape special regex characters for each word
+  const escapedWords = words.map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 
   try {
-    const regex = new RegExp(`(${pattern})`, 'gi')
+    // Match whole words OR partial matches within word boundaries
+    // This will match "no" in "no", "not" in "not", etc.
+    const pattern = escapedWords.join('|')
+    const regex = new RegExp(`\\b(${pattern})`, 'gi')
+
     return text.replace(regex, '<mark class="bg-warning/30 text-warning-foreground rounded px-0.5">$1</mark>')
   } catch (e) {
-    // If regex fails, fall back to simple exact match
-    const simplePattern = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
-    const regex = new RegExp(`(${simplePattern})`, 'gi')
-    return text.replace(regex, '<mark class="bg-warning/30 text-warning-foreground rounded px-0.5">$1</mark>')
+    // If regex fails, fall back to case-insensitive includes
+    let result = text
+    escapedWords.forEach(word => {
+      const regex = new RegExp(word, 'gi')
+      result = result.replace(regex, match =>
+        `<mark class="bg-warning/30 text-warning-foreground rounded px-0.5">${match}</mark>`
+      )
+    })
+    return result
   }
 }
 
