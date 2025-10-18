@@ -71,6 +71,15 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Identity & Auth
+    KEYCLOAK_BASE_URL: str = "http://auth.localhost"
+    KEYCLOAK_REALM: str = "legalease"
+    KEYCLOAK_BACKEND_CLIENT_ID: str = "fastapi-backend"
+    KEYCLOAK_BACKEND_CLIENT_SECRET: str = "change-me"
+    KEYCLOAK_JWKS_CACHE_SECONDS: int = 300
+    KEYCLOAK_TIMEOUT_SECONDS: int = 5
+    KEYCLOAK_AUDIENCE: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

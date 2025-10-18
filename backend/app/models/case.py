@@ -3,8 +3,9 @@
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Optional, List
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
 from app.core.database import Base
 
 
@@ -29,6 +30,12 @@ class Case(Base):
     __tablename__ = "cases"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    team_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("teams.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     name = Column(String(255), nullable=False, index=True)
     case_number = Column(String(100), unique=True, nullable=False, index=True)
     client = Column(String(255), nullable=False, index=True)
@@ -66,6 +73,11 @@ class Case(Base):
         back_populates="case",
         cascade="all, delete-orphan",
         lazy="selectin"
+    )
+    team = relationship(
+        "Team",
+        back_populates="cases",
+        lazy="joined"
     )
 
     def __repr__(self) -> str:

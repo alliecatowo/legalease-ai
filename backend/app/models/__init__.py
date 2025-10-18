@@ -8,6 +8,14 @@ from app.models.entity import Entity, document_entities
 from app.models.transcription import Transcription
 from app.models.processing_job import ProcessingJob
 from app.models.forensic_export import ForensicExport
+from app.models.user import (
+    AuditLog,
+    Team,
+    TeamMembership,
+    TeamRole,
+    User,
+    UserSession,
+)
 
 # Export all models for easier imports
 __all__ = [
@@ -22,4 +30,10 @@ __all__ = [
     "Transcription",
     "ProcessingJob",
     "ForensicExport",
+    "User",
+    "Team",
+    "TeamMembership",
+    "TeamRole",
+    "UserSession",
+    "AuditLog",
 ]

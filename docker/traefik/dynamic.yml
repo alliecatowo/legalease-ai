@@ -1,0 +1,31 @@
+http:
+  middlewares:
+    default-headers:
+      headers:
+        frameDeny: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "geolocation=()"
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - Authorization
+          - Content-Type
+          - X-CSRF-Token
+          - X-Requested-With
+        accessControlAllowOriginList:
+          - http://app.localhost
+          - https://app.localhost
+          - http://api.localhost
+          - https://api.localhost
+          - http://auth.localhost
+          - https://auth.localhost
+
+tls:
+  certificates: []

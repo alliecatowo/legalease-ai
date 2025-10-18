@@ -12,6 +12,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+docker/.env.auth
 
 # Logs
 *.log

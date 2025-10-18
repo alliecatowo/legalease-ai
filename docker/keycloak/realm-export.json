@@ -1,0 +1,195 @@
+{
+  "realm": "legalease",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "rememberMe": true,
+  "verifyEmail": true,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+  "unmanagedAttributes": [
+    "team_id",
+    "active_team"
+  ],
+  "smtpServer": {
+    "host": "mailhog",
+    "port": "1025",
+    "from": "no-reply@legalease.local",
+    "fromDisplayName": "LegalEase Auth",
+    "auth": "false",
+    "ssl": "false"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Platform administrator with full access"
+      },
+      {
+        "name": "member",
+        "description": "Standard dashboard user"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "teams",
+      "path": "/teams",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": [
+        {
+          "name": "default",
+          "path": "/teams/default",
+          "attributes": {
+            "team_id": [
+              "00000000-0000-0000-0000-000000000001"
+            ]
+          },
+          "realmRoles": [
+            "member"
+          ],
+          "clientRoles": {}
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "nuxt-dashboard",
+      "name": "Nuxt Dashboard",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "https://app.localhost/api/auth/callback",
+        "http://app.localhost/api/auth/callback",
+        "http://localhost:3000/api/auth/callback",
+        "https://localhost:3000/api/auth/callback"
+      ],
+      "webOrigins": [
+        "https://app.localhost",
+        "http://app.localhost",
+        "http://localhost:3000",
+        "+"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "access.token.lifespan": "900",
+        "refresh.token.max.reuse": "1",
+        "client.session.idle.timeout": "3600",
+        "client.session.max.lifespan": "86400"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "active_team",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "active_team",
+            "claim.name": "active_team",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access"
+      ]
+    },
+    {
+      "clientId": "fastapi-backend",
+      "name": "FastAPI Backend",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "CHANGE_ME_IMMEDIATELY",
+      "protocol": "openid-connect",
+      "redirectUris": [],
+      "webOrigins": [],
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "access.token.lifespan": "900",
+        "client.secret.creation.time": "0",
+        "use.refresh.tokens": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "active_team",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "active_team",
+            "claim.name": "active_team",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": [
+    "roles",
+    "profile",
+    "email",
+    "web-origins"
+  ],
+  "defaultOptionalClientScopes": [
+    "offline_access",
+    "address",
+    "phone"
+  ]
+}

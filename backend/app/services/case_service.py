@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, List
+from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from qdrant_client import QdrantClient
@@ -187,6 +188,7 @@ class CaseService:
         case_number: str,
         client: str,
         matter_type: Optional[str] = None,
+        team_id: Optional[UUID] = None,
     ) -> Case:
         """
         Create a new case with associated Qdrant collection and MinIO bucket.
@@ -218,6 +220,7 @@ class CaseService:
             client=client,
             matter_type=matter_type,
             status=CaseStatus.STAGING,
+            team_id=team_id,
         )
 
         try:
@@ -257,7 +260,7 @@ class CaseService:
                 raise
             raise ResourceCreationError(f"Failed to create case: {str(e)}")
 
-    def get_case(self, case_id: int) -> Case:
+    def get_case(self, case_id: int, team_id: Optional[UUID] = None) -> Case:
         """
         Get a case by ID.
 
@@ -270,12 +273,15 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.db.query(Case).filter(Case.id == case_id).first()
+        query = self.db.query(Case).filter(Case.id == case_id)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+        case = query.first()
         if not case:
             raise CaseNotFoundError(f"Case with id {case_id} not found")
         return case
 
-    def get_case_by_number(self, case_number: str) -> Case:
+    def get_case_by_number(self, case_number: str, team_id: Optional[UUID] = None) -> Case:
         """
         Get a case by case number.
 
@@ -288,7 +294,10 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.db.query(Case).filter(Case.case_number == case_number).first()
+        query = self.db.query(Case).filter(Case.case_number == case_number)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+        case = query.first()
         if not case:
             raise CaseNotFoundError(f"Case with case_number '{case_number}' not found")
         return case
@@ -298,6 +307,7 @@ class CaseService:
         status: Optional[CaseStatus] = None,
         skip: int = 0,
         limit: int = 50,
+        team_id: Optional[UUID] = None,
     ) -> tuple[List[Case], int]:
         """
         List cases with optional status filter.
@@ -311,6 +321,8 @@ class CaseService:
             Tuple of (list of cases, total count)
         """
         query = self.db.query(Case)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
 
         # Apply status filter if provided
         if status:
@@ -331,6 +343,7 @@ class CaseService:
         case_number: Optional[str] = None,
         client: Optional[str] = None,
         matter_type: Optional[str] = None,
+        team_id: Optional[UUID] = None,
     ) -> Case:
         """
         Update case details.
@@ -349,7 +362,7 @@ class CaseService:
             CaseNotFoundError: If case not found
             CaseAlreadyExistsError: If new case_number already exists
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_id, team_id=team_id)
 
         # Check if new case_number conflicts with existing cases
         if case_number and case_number != case.case_number:
@@ -374,7 +387,7 @@ class CaseService:
         self.db.refresh(case)
         return case
 
-    def activate_case(self, case_id: int) -> Case:
+    def activate_case(self, case_id: int, team_id: Optional[UUID] = None) -> Case:
         """
         Activate a case (change status to ACTIVE).
 
@@ -389,13 +402,13 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_id, team_id=team_id)
         case.status = CaseStatus.ACTIVE
         self.db.commit()
         self.db.refresh(case)
         return case
 
-    def unload_case(self, case_id: int) -> Case:
+    def unload_case(self, case_id: int, team_id: Optional[UUID] = None) -> Case:
         """
         Unload a case (change status to UNLOADED).
 
@@ -411,13 +424,13 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_id, team_id=team_id)
         case.status = CaseStatus.UNLOADED
         self.db.commit()
         self.db.refresh(case)
         return case
 
-    def delete_case(self, case_id: int) -> None:
+    def delete_case(self, case_id: int, team_id: Optional[UUID] = None) -> None:
         """
         Permanently delete a case and all associated resources.
 
@@ -433,7 +446,7 @@ class CaseService:
         Raises:
             CaseNotFoundError: If case not found
         """
-        case = self.get_case(case_id)
+        case = self.get_case(case_id, team_id=team_id)
 
         # Generate resource names
         collection_name = self._generate_collection_name(case.case_number)

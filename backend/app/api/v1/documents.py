@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import io
 
 from app.core.database import get_db
+from app.api.deps import require_active_team
 from app.schemas.document import (
     DocumentResponse,
     DocumentListResponse,
@@ -40,6 +41,7 @@ def list_all_documents(
     page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
     case_id: Optional[int] = Query(None, description="Optional case ID to filter documents"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List all documents with pagination.
@@ -60,7 +62,8 @@ def list_all_documents(
         page=page,
         page_size=page_size,
         case_id=case_id,
-        db=db
+        db=db,
+        team_id=active_team.id,
     )
 
     return PaginatedDocumentListResponse(
@@ -82,6 +85,7 @@ async def upload_documents(
     case_id: int,
     files: List[UploadFile] = File(..., description="List of files to upload"),
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Upload documents to a case.
@@ -106,6 +110,7 @@ async def upload_documents(
         case_id=case_id,
         files=files,
         db=db,
+        team_id=active_team.id,
     )
 
     return documents
@@ -120,6 +125,7 @@ async def upload_documents(
 def list_case_documents(
     case_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     List all documents for a case.
@@ -133,7 +139,11 @@ def list_case_documents(
     """
     logger.info(f"Listing documents for case {case_id}")
 
-    documents = DocumentService.list_case_documents(case_id=case_id, db=db)
+    documents = DocumentService.list_case_documents(
+        case_id=case_id,
+        db=db,
+        team_id=active_team.id,
+    )
 
     return DocumentListResponse(
         documents=documents,
@@ -151,6 +161,7 @@ def list_case_documents(
 def get_document(
     document_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get document details by ID.
@@ -164,7 +175,11 @@ def get_document(
     """
     logger.info(f"Getting document {document_id}")
 
-    document = DocumentService.get_document(document_id=document_id, db=db)
+    document = DocumentService.get_document(
+        document_id=document_id,
+        db=db,
+        team_id=active_team.id,
+    )
 
     return document
 
@@ -188,6 +203,7 @@ def get_document(
 def download_document(
     document_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Download a document file.
@@ -202,7 +218,9 @@ def download_document(
     logger.info(f"Downloading document {document_id}")
 
     content, filename, content_type = DocumentService.download_document(
-        document_id=document_id, db=db
+        document_id=document_id,
+        db=db,
+        team_id=active_team.id,
     )
 
     # Return as streaming response with proper headers
@@ -226,6 +244,7 @@ def get_document_content(
     document_id: int,
     include_images: bool = False,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Get document content with bounding boxes.
@@ -240,11 +259,19 @@ def get_document_content(
     """
     logger.info(f"Getting content for document {document_id} (include_images={include_images})")
 
-    content = DocumentService.get_document_content(document_id=document_id, db=db)
+    content = DocumentService.get_document_content(
+        document_id=document_id,
+        db=db,
+        team_id=active_team.id,
+    )
 
     # Add page image URLs if requested
     if include_images and content.get("total_pages", 0) > 0:
-        document = DocumentService.get_document(document_id=document_id, db=db)
+        document = DocumentService.get_document(
+            document_id=document_id,
+            db=db,
+            team_id=active_team.id,
+        )
 
         try:
             page_images = PageImageService.get_all_page_image_urls(
@@ -386,6 +413,7 @@ def list_document_pages(
 def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
+    active_team=Depends(require_active_team),
 ):
     """
     Delete a document.
@@ -399,7 +427,11 @@ def delete_document(
     """
     logger.info(f"Deleting document {document_id}")
 
-    document = DocumentService.delete_document(document_id=document_id, db=db)
+    document = DocumentService.delete_document(
+        document_id=document_id,
+        db=db,
+        team_id=active_team.id,
+    )
 
     return DocumentDeleteResponse(
         id=document.id,

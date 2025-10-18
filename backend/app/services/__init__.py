@@ -14,3 +14,9 @@ try:
     __all__.extend(["HybridSearchEngine", "get_search_engine"])
 except ImportError as e:
     print(f"Warning: Could not import search_service: {e}")
+
+try:
+    from app.services.auth import KeycloakAdminService
+    __all__.extend(["KeycloakAdminService"])
+except ImportError as e:
+    print(f"Warning: Could not import auth services: {e}")

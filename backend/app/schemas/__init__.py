@@ -30,6 +30,15 @@ from app.schemas.transcription import (
     SpeakerInfo,
     TranscriptionFormat,
 )
+from app.schemas.user import (
+    AuditLogEntry,
+    InviteUserRequest,
+    TeamCreateRequest,
+    TeamMembershipResponse,
+    TeamSummary,
+    UpdateActiveTeamRequest,
+    UserProfileResponse,
+)
 
 __all__ = [
     # Case schemas
@@ -59,4 +68,12 @@ __all__ = [
     "TranscriptionSegment",
     "SpeakerInfo",
     "TranscriptionFormat",
+    # User schemas
+    "UserProfileResponse",
+    "TeamSummary",
+    "TeamMembershipResponse",
+    "UpdateActiveTeamRequest",
+    "TeamCreateRequest",
+    "InviteUserRequest",
+    "AuditLogEntry",
 ]

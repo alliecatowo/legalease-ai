@@ -4,9 +4,11 @@ import io
 import logging
 import uuid
 from datetime import datetime
-from typing import List, Optional, BinaryIO
-from fastapi import UploadFile, HTTPException
-from sqlalchemy.orm import Session
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import HTTPException, UploadFile
+from sqlalchemy.orm import Session, joinedload
 from minio.error import S3Error
 
 from app.models.document import Document, DocumentStatus
@@ -42,6 +44,7 @@ class DocumentService:
         case_id: int,
         files: List[UploadFile],
         db: Session,
+        team_id: Optional[UUID] = None,
     ) -> List[Document]:
         """
         Upload multiple documents for a case.
@@ -64,7 +67,10 @@ class DocumentService:
             HTTPException: If case not found or upload fails
         """
         # Validate case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        query = db.query(Case).filter(Case.id == case_id)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+        case = query.first()
         if not case:
             logger.error(f"Case {case_id} not found")
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
@@ -141,7 +147,11 @@ class DocumentService:
         return uploaded_documents
 
     @staticmethod
-    def get_document(document_id: int, db: Session) -> Document:
+    def get_document(
+        document_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Document:
         """
         Get a document by ID.
 
@@ -155,7 +165,16 @@ class DocumentService:
         Raises:
             HTTPException: If document not found
         """
-        document = db.query(Document).filter(Document.id == document_id).first()
+        query = (
+            db.query(Document)
+            .options(joinedload(Document.case))
+            .join(Case, Document.case_id == Case.id)
+            .filter(Document.id == document_id)
+        )
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+
+        document = query.first()
         if not document:
             logger.error(f"Document {document_id} not found")
             raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
@@ -163,7 +182,11 @@ class DocumentService:
         return document
 
     @staticmethod
-    def list_case_documents(case_id: int, db: Session) -> List[Document]:
+    def list_case_documents(
+        case_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> List[Document]:
         """
         List all documents for a case.
 
@@ -178,7 +201,10 @@ class DocumentService:
             HTTPException: If case not found
         """
         # Validate case exists
-        case = db.query(Case).filter(Case.id == case_id).first()
+        query = db.query(Case).filter(Case.id == case_id)
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
+        case = query.first()
         if not case:
             logger.error(f"Case {case_id} not found")
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
@@ -193,7 +219,8 @@ class DocumentService:
         page: int = 1,
         page_size: int = 50,
         case_id: Optional[int] = None,
-        db: Session = None
+        db: Session = None,
+        team_id: Optional[UUID] = None,
     ) -> tuple[List[dict], int]:
         """
         List all documents across all cases with pagination.
@@ -217,6 +244,9 @@ class DocumentService:
         ).join(
             Case, Document.case_id == Case.id
         )
+
+        if team_id:
+            query = query.filter(Case.team_id == team_id)
 
         # Apply case filter if provided
         if case_id is not None:
@@ -252,7 +282,11 @@ class DocumentService:
         return document_dicts, total
 
     @staticmethod
-    def download_document(document_id: int, db: Session) -> tuple[bytes, str, str]:
+    def download_document(
+        document_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> tuple[bytes, str, str]:
         """
         Download a document from MinIO.
 
@@ -267,7 +301,7 @@ class DocumentService:
             HTTPException: If document not found or download fails
         """
         # Get document from database
-        document = DocumentService.get_document(document_id, db)
+        document = DocumentService.get_document(document_id, db, team_id)
 
         try:
             # Download from MinIO
@@ -290,7 +324,11 @@ class DocumentService:
             )
 
     @staticmethod
-    def get_document_content(document_id: int, db: Session) -> dict:
+    def get_document_content(
+        document_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> dict:
         """
         Get parsed document content including text, pages, and bounding boxes.
 
@@ -312,7 +350,7 @@ class DocumentService:
         from app.models.chunk import Chunk
 
         # Get document from database
-        document = DocumentService.get_document(document_id, db)
+        document = DocumentService.get_document(document_id, db, team_id)
 
         # Check if document has been processed
         if document.status != DocumentStatus.COMPLETED:
@@ -410,7 +448,11 @@ class DocumentService:
         return result
 
     @staticmethod
-    def delete_document(document_id: int, db: Session) -> Document:
+    def delete_document(
+        document_id: int,
+        db: Session,
+        team_id: Optional[UUID] = None,
+    ) -> Document:
         """
         Delete a document (from both database and MinIO).
 
@@ -425,7 +467,7 @@ class DocumentService:
             HTTPException: If document not found or deletion fails
         """
         # Get document from database
-        document = DocumentService.get_document(document_id, db)
+        document = DocumentService.get_document(document_id, db, team_id)
 
         try:
             # Delete from MinIO

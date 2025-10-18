@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.api.deps import require_active_team
 from app.models.case import CaseStatus
 from app.schemas.case import (
     CaseCreate,
@@ -49,6 +50,7 @@ def get_case_service(db: Session = Depends(get_db)) -> CaseService:
 async def create_case(
     case_data: CaseCreate,
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Create a new case.
@@ -73,6 +75,7 @@ async def create_case(
             case_number=case_data.case_number,
             client=case_data.client,
             matter_type=case_data.matter_type,
+            team_id=active_team.id,
         )
         return case
     except CaseAlreadyExistsError as e:
@@ -98,6 +101,7 @@ async def list_cases(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     List cases with pagination and optional filtering.
@@ -116,6 +120,7 @@ async def list_cases(
         status=status_filter,
         skip=skip,
         limit=page_size,
+        team_id=active_team.id,
     )
 
     # Convert to list items with document and transcript counts
@@ -157,6 +162,7 @@ async def list_cases(
 async def get_case(
     case_id: int,
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Get case by ID.
@@ -172,7 +178,7 @@ async def get_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.get_case(case_id)
+    case = case_service.get_case(case_id, team_id=active_team.id)
         return case
     except CaseNotFoundError as e:
         raise HTTPException(
@@ -191,6 +197,7 @@ async def update_case(
     case_id: int,
     case_data: CaseUpdate,
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Update case details.
@@ -213,6 +220,7 @@ async def update_case(
             case_number=case_data.case_number,
             client=case_data.client,
             matter_type=case_data.matter_type,
+            team_id=active_team.id,
         )
         return case
     except CaseNotFoundError as e:
@@ -236,6 +244,7 @@ async def update_case(
 async def activate_case(
     case_id: int,
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Activate a case (RAGFlow load pattern).
@@ -256,7 +265,7 @@ async def activate_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.activate_case(case_id)
+        case = case_service.activate_case(case_id, team_id=active_team.id)
         return CaseStatusUpdate(
             id=case.id,
             case_number=case.case_number,
@@ -279,6 +288,7 @@ async def activate_case(
 async def unload_case(
     case_id: int,
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Unload a case (RAGFlow unload pattern).
@@ -300,7 +310,7 @@ async def unload_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.unload_case(case_id)
+        case = case_service.unload_case(case_id, team_id=active_team.id)
         return CaseStatusUpdate(
             id=case.id,
             case_number=case.case_number,
@@ -323,6 +333,7 @@ async def unload_case(
 async def delete_case(
     case_id: int,
     case_service: CaseService = Depends(get_case_service),
+    active_team=Depends(require_active_team),
 ):
     """
     Permanently delete a case.
@@ -346,9 +357,9 @@ async def delete_case(
         HTTPException: If case not found
     """
     try:
-        case = case_service.get_case(case_id)
+        case = case_service.get_case(case_id, team_id=active_team.id)
         case_number = case.case_number
-        case_service.delete_case(case_id)
+        case_service.delete_case(case_id, team_id=active_team.id)
 
         return CaseDeleteResponse(
             id=case_id,
