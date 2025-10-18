@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, watch, onBeforeUnmount, computed, nextTick } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 import type { TranscriptSegment } from '~/composables/useTranscription'
 import { useThrottleFn } from '@vueuse/core'
@@ -66,7 +66,10 @@ async function fetchWaveformData(): Promise<{ peaks: number[], duration: number 
 
 // Initialize WaveSurfer with video element
 async function initializeWaveSurfer() {
-  if (!waveformRef.value) return
+  if (!waveformRef.value) {
+    console.error('VideoPlayer: waveformRef is not available')
+    return
+  }
 
   isLoading.value = true
   loadingProgress.value = 0
@@ -74,11 +77,18 @@ async function initializeWaveSurfer() {
   // For video, use the video element; for audio, create an audio element
   let mediaElement: HTMLMediaElement
 
-  if (isVideo.value && videoRef.value) {
+  if (isVideo.value) {
+    if (!videoRef.value) {
+      console.error('VideoPlayer: videoRef is not available for video file')
+      isLoading.value = false
+      return
+    }
     // Use existing video element
+    console.log('VideoPlayer: Using video element for media')
     mediaElement = videoRef.value
   } else {
     // Create audio element for audio-only files
+    console.log('VideoPlayer: Creating audio element for media')
     const audio = document.createElement('audio')
     audio.preload = 'metadata'
     audio.crossOrigin = 'anonymous'
@@ -383,10 +393,47 @@ defineExpose({
   setPlaybackRate
 })
 
-onMounted(() => {
-  initializeWaveSurfer()
+onMounted(async () => {
+  // For video files, wait for video element to be ready
+  if (isVideo.value) {
+    // Wait for next tick and then check for video element
+    await nextTick()
+
+    // Give Vue time to render the video element
+    let attempts = 0
+    const maxAttempts = 10
+
+    while (!videoRef.value && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 100))
+      attempts++
+    }
+
+    if (!videoRef.value) {
+      console.error('VideoPlayer: Failed to get video element after', attempts, 'attempts')
+      isLoading.value = false
+      return
+    }
+
+    // Wait for video element to have basic metadata
+    if (videoRef.value.readyState === 0) {
+      await new Promise<void>((resolve) => {
+        const onLoadedMetadata = () => {
+          videoRef.value?.removeEventListener('loadedmetadata', onLoadedMetadata)
+          resolve()
+        }
+        videoRef.value?.addEventListener('loadedmetadata', onLoadedMetadata)
+        // Timeout after 10 seconds
+        setTimeout(() => resolve(), 10000)
+      })
+    }
+
+    initializeWaveSurfer()
+  } else {
+    initializeWaveSurfer()
+  }
 
   // Add resize observer to redraw canvases on window resize
+  await nextTick()
   if (waveformRef.value) {
     const resizeObserver = new ResizeObserver(() => {
       drawSegmentTimeline()
@@ -419,11 +466,12 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Video Player Container (for video files) -->
-    <div v-if="isVideo" class="relative w-full bg-black rounded-lg overflow-hidden" :class="{ 'hidden': !isReady }">
+    <div v-if="isVideo" class="relative w-full bg-black rounded-lg overflow-hidden">
       <!-- Video Element -->
       <video
         ref="videoRef"
         class="w-full h-auto"
+        :class="{ 'opacity-0': !isReady }"
         :src="mediaUrl"
         preload="metadata"
         crossorigin="anonymous"
