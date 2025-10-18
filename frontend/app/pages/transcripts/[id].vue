@@ -793,6 +793,7 @@ onMounted(async () => {
               media-type="video"
               :transcription-id="transcript.id"
               :current-time="currentTime"
+              :is-playing="isPlaying"
               :segments="transcript.segments"
               :selected-segment-id="selectedSegment?.id"
               :key-moments="keyMoments"

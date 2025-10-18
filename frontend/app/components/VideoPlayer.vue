@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   mediaType?: 'video' | 'audio' // Explicitly specify media type
   transcriptionId?: string  // Optional transcription GID for fetching pre-computed waveform
   currentTime?: number
+  isPlaying?: boolean // External control of play/pause state
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
   keyMoments?: TranscriptSegment[]
@@ -377,6 +378,21 @@ watch(() => props.currentTime, (newTime) => {
     // Only seek if the difference is significant (>0.5s) to avoid feedback loops
     if (Math.abs(newTime - currentWavesurferTime) > 0.5) {
       seekTo(newTime)
+    }
+  }
+})
+
+// Watch for external isPlaying updates
+watch(() => props.isPlaying, (shouldPlay) => {
+  if (shouldPlay !== undefined && wavesurfer.value && isReady.value) {
+    const currentlyPlaying = isPlaying.value
+    // Only change state if different to avoid feedback loops
+    if (shouldPlay !== currentlyPlaying) {
+      if (shouldPlay) {
+        wavesurfer.value.play()
+      } else {
+        wavesurfer.value.pause()
+      }
     }
   }
 })
