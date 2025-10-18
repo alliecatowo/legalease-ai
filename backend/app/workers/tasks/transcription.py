@@ -14,7 +14,8 @@ import re
 import httpx
 import warnings
 import time
-from typing import Dict, Any, Optional, List, Tuple
+from collections import OrderedDict
+from typing import Dict, Any, Optional, List, Tuple, Set
 from datetime import datetime, timedelta
 from io import BytesIO
 from uuid import UUID
@@ -449,6 +450,57 @@ class SpeakerDiarizer:
 class SpeakerNameInferencer:
     """Handles AI-powered speaker name inference from conversation content."""
 
+    _ensured_models: Set[str] = set()
+
+    @classmethod
+    async def ensure_model_available(
+        cls,
+        client: httpx.AsyncClient,
+        ollama_url: str,
+        model: str,
+    ) -> bool:
+        """Ensure the requested Ollama model is available locally."""
+
+        if model in cls._ensured_models:
+            return True
+
+        try:
+            tags_resp = await client.get(f"{ollama_url}/api/tags")
+            if tags_resp.status_code == 200:
+                tags = tags_resp.json().get("models", [])
+                if any(tag.get("name") == model for tag in tags):
+                    logger.info("Ollama model '%s' already available", model)
+                    cls._ensured_models.add(model)
+                    return True
+
+            logger.info("Ollama model '%s' not found locally, pulling...", model)
+            pull_resp = await client.post(
+                f"{ollama_url}/api/pull",
+                json={"model": model, "stream": False},
+                timeout=600.0,
+            )
+
+            if pull_resp.status_code == 200:
+                logger.info("Successfully pulled Ollama model '%s'", model)
+                cls._ensured_models.add(model)
+                return True
+
+            logger.error(
+                "Failed to pull Ollama model '%s': %s",
+                model,
+                pull_resp.text,
+            )
+            return False
+
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(
+                "Error ensuring Ollama model '%s' is available: %s",
+                model,
+                exc,
+                exc_info=True,
+            )
+            return False
+
     @staticmethod
     def extract_name_patterns(segments: List[Dict[str, Any]], filename: Optional[str] = None) -> Dict[str, List[str]]:
         """
@@ -528,6 +580,13 @@ class SpeakerNameInferencer:
         Returns:
             Dict mapping speaker IDs to inferred names with confidence scores
         """
+        logger.info(
+            "Preparing speaker name inference request (segments=%d, speakers=%s, potential_names=%s)",
+            len(segments),
+            ", ".join(speakers),
+            ", ".join(potential_names.keys()) if potential_names else "none"
+        )
+
         try:
             from app.services.ollama_semaphore import get_ollama_semaphore
 
@@ -588,6 +647,22 @@ Return JSON with speaker names and confidence scores:"""
                     from app.core.config import settings as app_settings
 
                     async with httpx.AsyncClient(timeout=90.0) as client:
+                        if not await SpeakerNameInferencer.ensure_model_available(
+                            client,
+                            ollama_url,
+                            app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                        ):
+                            logger.error(
+                                "Speaker name inference skipped: unable to prepare Ollama model '%s'",
+                                app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                            )
+                            return {}
+
+                        logger.info(
+                            "Sending speaker inference prompt to Ollama at %s using model %s",
+                            ollama_url,
+                            app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                        )
                         response = await client.post(
                             f"{ollama_url}/api/generate",
                             json={
@@ -658,7 +733,11 @@ Return JSON with speaker names and confidence scores:"""
         Returns:
             Tuple of (updated_speakers, metadata with inference info)
         """
-        logger.info("Starting speaker name inference...")
+        logger.info(
+            "Starting speaker name inference (segments=%d, speaker_slots=%d)",
+            len(segments),
+            len(speakers),
+        )
 
         # Step 1: Extract potential names using pattern matching
         potential_names = SpeakerNameInferencer.extract_name_patterns(segments, filename)
@@ -977,6 +1056,15 @@ def transcribe_audio(
 
     # Parse options with defaults
     options = options or {}
+    if not isinstance(options, dict):
+        # Celery can deserialize into AttributeDict; convert to plain dict
+        options = dict(options)
+
+    logger.info(
+        "Transcription options resolved for %s: %s",
+        transcription_gid,
+        json.dumps(options, sort_keys=True),
+    )
     language = options.get("language")
     task = options.get("task", "transcribe")
     enable_diarization = options.get("enable_diarization", True)
@@ -1302,27 +1390,32 @@ def transcribe_audio(
             ]
             return colors[index % len(colors)]
 
-        speakers = {}
-        speaker_index = 0
+        speaker_counts: "OrderedDict[str, int]" = OrderedDict()
         for segment in diarized_segments:
-            speaker_id = segment.get('speaker', 'SPEAKER_01')
-            if speaker_id not in speakers:
-                # Generate human-readable name from speaker ID
-                # Use the current speaker_index + 1 for consistent numbering
-                speaker_name = f"Speaker {speaker_index + 1}"
+            speaker_id = segment.get('speaker') or 'SPEAKER_01'
+            segment['speaker'] = speaker_id
+            speaker_counts[speaker_id] = speaker_counts.get(speaker_id, 0) + 1
 
-                speakers[speaker_id] = {
-                    'id': speaker_id,
-                    'name': speaker_name,
-                    'color': generate_speaker_color(speaker_index),
-                    'segments_count': 0
-                }
-                speaker_index += 1
-            speakers[speaker_id]['segments_count'] += 1
+        speakers: Dict[str, Dict[str, Any]] = {}
+        for speaker_index, (speaker_id, segment_count) in enumerate(speaker_counts.items()):
+            speaker_name = f"Speaker {speaker_index + 1}"
+            speakers[speaker_id] = {
+                'id': speaker_id,
+                'name': speaker_name,
+                'color': generate_speaker_color(speaker_index),
+                'segments_count': segment_count
+            }
 
         # Step 5.5: AI-powered speaker name inference (if enabled)
         inference_metadata = None
         enable_name_inference = options.get("enable_name_inference", settings.ENABLE_SPEAKER_NAME_INFERENCE)
+
+        logger.info(
+            "Speaker inference gate for %s -> enabled=%s, detected_speakers=%d",
+            transcription_gid,
+            enable_name_inference,
+            len(speakers),
+        )
 
         if enable_name_inference and len(speakers) > 0:
             try:
@@ -1368,6 +1461,13 @@ def transcribe_audio(
                     'error': str(e),
                     'applied_names': {}
                 }
+        else:
+            logger.info(
+                "Skipping speaker name inference for %s (enabled=%s, speakers=%d)",
+                transcription_gid,
+                enable_name_inference,
+                len(speakers),
+            )
 
         # Step 6: Export to multiple formats
         self.update_state(
