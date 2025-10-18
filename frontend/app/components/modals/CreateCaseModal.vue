@@ -311,37 +311,6 @@ function resetForm() {
           </p>
         </div>
 
-        <!-- Step 4: Timeline (commented out) -->
-        <!-- <div v-if="currentStep === 3" class="space-y-4">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-medium">Key Dates & Events</h3>
-            <UBadge :label="`${caseData.timeline.length} events`" variant="soft" />
-          </div>
-
-          <!-- Add Event Form -->
-          <UCard :ui="{ body: 'space-y-3' }">
-            <h4 class="text-sm font-medium mb-3">Add Event</h4>
-            <UCalendar v-model="newEvent.date" />
-            <UInput v-model="newEvent.event" placeholder="Event name" />
-            <UTextarea v-model="newEvent.description" placeholder="Description (optional)" :rows="2" />
-            <UButton label="Add Event" icon="i-lucide-plus" size="sm" @click="addEvent" block />
-          </UCard>
-
-          <!-- Timeline List -->
-          <div v-if="caseData.timeline.length" class="space-y-2">
-            <UCard v-for="(event, idx) in caseData.timeline" :key="idx" :ui="{ body: 'p-3' }">
-              <div class="flex items-start justify-between">
-                <div class="flex-1">
-                  <p class="font-medium">{{ event.event }}</p>
-                  <p class="text-sm text-muted">{{ event.date.toString() }}</p>
-                  <p v-if="event.description" class="text-sm text-dimmed mt-1">{{ event.description }}</p>
-                </div>
-                <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="sm" @click="removeEvent(idx)" />
-              </div>
-            </UCard>
-          </div>
-        </div> -->
-
         <!-- Step 4: Analysis -->
         <div v-if="currentStep === 3" class="space-y-4">
           <div class="mb-4">
