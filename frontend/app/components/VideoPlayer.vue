@@ -42,6 +42,7 @@ const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
 const lastEmittedTime = ref(0) // Track last time we emitted to avoid feedback loops
+const isSeeking = ref(false) // Track when we're seeking from external update
 
 // Computed: determine if this is a video or audio-only player
 const isVideo = computed(() => props.mediaType === 'video')
@@ -167,8 +168,15 @@ async function initializeWaveSurfer() {
 
   wavesurfer.value.on('seek', (progress) => {
     const time = progress * duration.value
-    emit('update:currentTime', time)
-    lastEmittedTime.value = time
+    // Only emit if this wasn't triggered by our own external update
+    if (!isSeeking.value) {
+      emit('update:currentTime', time)
+      lastEmittedTime.value = time
+    } else {
+      // Just update the tracking without emitting
+      lastEmittedTime.value = time
+      isSeeking.value = false
+    }
   })
 
   wavesurfer.value.on('play', () => {
@@ -376,12 +384,14 @@ function formatTime(seconds: number): string {
 
 // Watch for external currentTime updates
 watch(() => props.currentTime, (newTime) => {
-  if (newTime !== undefined && wavesurfer.value) {
+  if (newTime !== undefined && wavesurfer.value && duration.value > 0) {
     // Only seek if this is a real user action (not our own emission)
     // Check if the new time is different from what we last emitted
-    if (Math.abs(newTime - lastEmittedTime.value) > 0.1) {
-      seekTo(newTime)
-      lastEmittedTime.value = newTime
+    const timeDiff = Math.abs(newTime - lastEmittedTime.value)
+    if (timeDiff > 0.1) {
+      isSeeking.value = true
+      const progress = newTime / duration.value
+      wavesurfer.value.seekTo(progress)
     }
   }
 })
