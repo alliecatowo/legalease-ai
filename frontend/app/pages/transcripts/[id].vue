@@ -291,6 +291,18 @@ function handleWaveformClick(time: number) {
   }
 }
 
+// Helper function to download a file from blob data
+async function downloadFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 async function toggleKeyMoment(segmentId: string) {
   if (!transcript.value) return
 
@@ -626,24 +638,87 @@ onMounted(async () => {
                   label: 'Download Original Audio',
                   icon: 'i-lucide-music',
                   click: async () => {
-                    const audioUrl = transcript?.audioUrl
-                    if (audioUrl) {
-                      const link = document.createElement('a')
-                      link.href = audioUrl
-                      link.download = `${transcript.title}.mp3`
-                      link.click()
-                    } else {
-                      toast.add({
-                        title: 'Audio not available',
-                        description: 'No audio file found for this transcript',
-                        color: 'warning'
-                      })
+                    if (!transcript) return
+                    isExporting.value = true
+                    toast.add({ title: 'Downloading...', description: 'Fetching original audio file', color: 'primary' })
+                    try {
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/audio`)
+                      if (!response.ok) throw new Error('Download failed')
+                      const blob = await response.blob()
+                      const extension = transcript.title.split('.').pop() || 'mp3'
+                      await downloadFile(blob, `${transcript.title}`)
+                      toast.add({ title: 'Download complete', description: 'Audio file downloaded', color: 'success' })
+                    } catch (error: any) {
+                      toast.add({ title: 'Download failed', description: error.message || 'Failed to download audio', color: 'error' })
+                    } finally {
+                      isExporting.value = false
+                      showExportMenu.value = false
                     }
                   }
                 },
-                { label: 'Export as DOCX', icon: 'i-lucide-file-text', click: () => exportTranscript('docx') },
-                { label: 'Export as SRT', icon: 'i-lucide-captions', click: () => exportTranscript('srt') },
-                { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
+                {
+                  label: 'Export as DOCX',
+                  icon: 'i-lucide-file-text',
+                  click: async () => {
+                    if (!transcript) return
+                    isExporting.value = true
+                    toast.add({ title: 'Exporting...', description: 'Generating DOCX file', color: 'primary' })
+                    try {
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/download/docx`)
+                      if (!response.ok) throw new Error('Export failed')
+                      const blob = await response.blob()
+                      await downloadFile(blob, `${transcript.title}_transcription.docx`)
+                      toast.add({ title: 'Export complete', description: 'DOCX file downloaded', color: 'success' })
+                    } catch (error: any) {
+                      toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+                    } finally {
+                      isExporting.value = false
+                      showExportMenu.value = false
+                    }
+                  }
+                },
+                {
+                  label: 'Export as SRT',
+                  icon: 'i-lucide-subtitles',
+                  click: async () => {
+                    if (!transcript) return
+                    isExporting.value = true
+                    toast.add({ title: 'Exporting...', description: 'Generating SRT file', color: 'primary' })
+                    try {
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/download/srt`)
+                      if (!response.ok) throw new Error('Export failed')
+                      const blob = await response.blob()
+                      await downloadFile(blob, `${transcript.title}_transcription.srt`)
+                      toast.add({ title: 'Export complete', description: 'SRT file downloaded', color: 'success' })
+                    } catch (error: any) {
+                      toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+                    } finally {
+                      isExporting.value = false
+                      showExportMenu.value = false
+                    }
+                  }
+                },
+                {
+                  label: 'Export as VTT',
+                  icon: 'i-lucide-captions',
+                  click: async () => {
+                    if (!transcript) return
+                    isExporting.value = true
+                    toast.add({ title: 'Exporting...', description: 'Generating VTT file', color: 'primary' })
+                    try {
+                      const response = await fetch(`/api/v1/transcriptions/${transcript.id}/download/vtt`)
+                      if (!response.ok) throw new Error('Export failed')
+                      const blob = await response.blob()
+                      await downloadFile(blob, `${transcript.title}_transcription.vtt`)
+                      toast.add({ title: 'Export complete', description: 'VTT file downloaded', color: 'success' })
+                    } catch (error: any) {
+                      toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+                    } finally {
+                      isExporting.value = false
+                      showExportMenu.value = false
+                    }
+                  }
+                }
               ],
               [
                 { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
