@@ -6,7 +6,7 @@ import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps<{
   audioUrl: string
-  transcriptionId?: number  // Optional transcription ID for fetching pre-computed waveform
+  transcriptionId?: string  // Optional transcription GID for fetching pre-computed waveform
   currentTime?: number
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
@@ -44,7 +44,7 @@ async function fetchWaveformData(): Promise<{ peaks: number[], duration: number 
   }
 
   try {
-    const response = await fetch(`/api/v1/transcriptions/${props.transcriptionId}/waveform`)
+    const response = await fetch(`/api/v1/transcriptions/${encodeURIComponent(props.transcriptionId)}/waveform`)
     if (response.ok) {
       const data = await response.json()
       console.log('Fetched pre-computed waveform data:', data.peaks.length, 'peaks')

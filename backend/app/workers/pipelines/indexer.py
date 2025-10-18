@@ -6,7 +6,7 @@ Supports multi-vector (summary, section, microblock) and hybrid (dense + sparse)
 """
 
 import logging
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 import uuid
 from qdrant_client.models import PointStruct, SparseVector
 
@@ -14,6 +14,35 @@ from app.core.qdrant import get_qdrant_client, upsert_points
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def get_gid_from_uuid(model_class, uuid_id: uuid.UUID) -> Optional[str]:
+    """
+    Get GID from UUID by querying the database.
+
+    Since NanoIDs are independent from UUIDs, we need to query the database
+    to get the GID for a given UUID.
+
+    Args:
+        model_class: SQLAlchemy model class (Case, Document, etc.)
+        uuid_id: UUID to look up
+
+    Returns:
+        GID string or None if not found
+    """
+    from app.core.database import SessionLocal
+
+    try:
+        db = SessionLocal()
+        record = db.query(model_class).filter(model_class.id == uuid_id).first()
+        if record and hasattr(record, 'gid'):
+            return record.gid
+        return None
+    except Exception as e:
+        logger.error(f"Error getting GID for UUID {uuid_id}: {e}")
+        return None
+    finally:
+        db.close()
 
 
 class QdrantIndexer:
@@ -50,8 +79,8 @@ class QdrantIndexer:
         chunks: List[Dict[str, Any]],
         embeddings: Dict[str, List[List[float]]],
         sparse_vectors: Optional[List[Tuple[List[int], List[float]]]] = None,
-        document_id: int = None,
-        case_id: int = None,
+        document_id: Union[int, uuid.UUID] = None,
+        case_id: Union[int, uuid.UUID] = None,
     ) -> bool:
         """
         Index document chunks with embeddings into Qdrant.
@@ -61,8 +90,8 @@ class QdrantIndexer:
             embeddings: Dictionary mapping vector types to embedding lists
                        e.g., {"summary": [...], "section": [...], "microblock": [...]}
             sparse_vectors: Optional list of sparse vectors (indices, values) for BM25
-            document_id: Database document ID
-            case_id: Database case ID
+            document_id: Database document ID (UUID or legacy int)
+            case_id: Database case ID (UUID or legacy int)
 
         Returns:
             True if indexing successful
@@ -101,8 +130,8 @@ class QdrantIndexer:
         chunks: List[Dict[str, Any]],
         embeddings: Dict[str, List[List[float]]],
         sparse_vectors: Optional[List[Tuple[List[int], List[float]]]] = None,
-        document_id: int = None,
-        case_id: int = None,
+        document_id: Union[int, uuid.UUID] = None,
+        case_id: Union[int, uuid.UUID] = None,
     ) -> List[PointStruct]:
         """
         Prepare Qdrant points from chunks and embeddings.
@@ -111,8 +140,8 @@ class QdrantIndexer:
             chunks: List of chunk dictionaries
             embeddings: Dictionary of embeddings by type
             sparse_vectors: Optional sparse vectors
-            document_id: Database document ID
-            case_id: Database case ID
+            document_id: Database document ID (UUID or legacy int)
+            case_id: Database case ID (UUID or legacy int)
 
         Returns:
             List of PointStruct objects
@@ -164,8 +193,8 @@ class QdrantIndexer:
         embedding: List[float],
         chunk_type: str,
         sparse_vector: Optional[Tuple[List[int], List[float]]] = None,
-        document_id: int = None,
-        case_id: int = None,
+        document_id: Union[int, uuid.UUID] = None,
+        case_id: Union[int, uuid.UUID] = None,
     ) -> PointStruct:
         """
         Create a single Qdrant point.
@@ -175,8 +204,8 @@ class QdrantIndexer:
             embedding: Dense embedding vector
             chunk_type: Type of chunk (summary, section, microblock)
             sparse_vector: Optional sparse vector (indices, values)
-            document_id: Database document ID
-            case_id: Database case ID
+            document_id: Database document ID (UUID or legacy int)
+            case_id: Database case ID (UUID or legacy int)
 
         Returns:
             PointStruct object
@@ -190,12 +219,29 @@ class QdrantIndexer:
             "chunk_type": chunk_type,
             "position": chunk.get("position", 0),
             "page_number": chunk.get("page_number"),
-            "document_id": document_id,
-            "case_id": case_id,
             "char_count": chunk.get("char_count", len(chunk.get("text", ""))),
             "word_count": chunk.get("word_count", len(chunk.get("text", "").split())),
             "bboxes": chunk.get("bboxes", []),  # Store bounding boxes
         }
+
+        # Add both legacy ID fields and new GID fields
+        # Handle document_id (can be UUID or int)
+        if document_id is not None:
+            if isinstance(document_id, uuid.UUID):
+                from app.models.document import Document
+                payload["document_id"] = str(document_id)  # Store UUID as string for backwards compat
+                payload["document_gid"] = get_gid_from_uuid(Document, document_id)  # Query GID from DB
+            else:
+                payload["document_id"] = document_id  # Legacy int support
+
+        # Handle case_id (can be UUID or int)
+        if case_id is not None:
+            if isinstance(case_id, uuid.UUID):
+                from app.models.case import Case
+                payload["case_id"] = str(case_id)  # Store UUID as string for backwards compat
+                payload["case_gid"] = get_gid_from_uuid(Case, case_id)  # Query GID from DB
+            else:
+                payload["case_id"] = case_id  # Legacy int support
 
         # Add any additional metadata
         if chunk.get("metadata"):
@@ -229,8 +275,8 @@ class QdrantIndexer:
         embedding: List[float],
         chunk_type: str = "section",
         sparse_vector: Optional[Tuple[List[int], List[float]]] = None,
-        document_id: int = None,
-        case_id: int = None,
+        document_id: Union[int, uuid.UUID] = None,
+        case_id: Union[int, uuid.UUID] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
@@ -241,8 +287,8 @@ class QdrantIndexer:
             embedding: Dense embedding vector
             chunk_type: Type of chunk
             sparse_vector: Optional sparse vector
-            document_id: Database document ID
-            case_id: Database case ID
+            document_id: Database document ID (UUID or legacy int)
+            case_id: Database case ID (UUID or legacy int)
             metadata: Optional additional metadata
 
         Returns:
@@ -265,23 +311,50 @@ class QdrantIndexer:
 
     def delete_document_chunks(
         self,
-        document_id: int,
+        document_id: Union[int, uuid.UUID, str],
     ) -> bool:
         """
         Delete all chunks for a document from Qdrant.
 
         Args:
-            document_id: Database document ID
+            document_id: Database document ID (UUID, GID string, or legacy int)
 
         Returns:
             True if deletion successful
         """
-        from app.core.qdrant import delete_by_filter, build_filter
+        from app.core.qdrant import delete_by_filter
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
 
         try:
             logger.info(f"Deleting chunks for document {document_id}")
 
-            filters = build_filter(document_ids=[document_id])
+            # Build filter based on ID type
+            filter_key = None
+            filter_value = None
+
+            if isinstance(document_id, uuid.UUID):
+                # Use GID filter for UUID
+                from app.models.document import Document
+                filter_key = "document_gid"
+                filter_value = get_gid_from_uuid(Document, document_id)
+            elif isinstance(document_id, str):
+                # Assume string is GID
+                filter_key = "document_gid"
+                filter_value = document_id
+            else:
+                # Legacy int support
+                filter_key = "document_id"
+                filter_value = document_id
+
+            filters = Filter(
+                must=[
+                    FieldCondition(
+                        key=filter_key,
+                        match=MatchValue(value=filter_value),
+                    )
+                ]
+            )
+
             success = delete_by_filter(
                 filters=filters,
                 collection_name=self.collection_name,
@@ -300,23 +373,50 @@ class QdrantIndexer:
 
     def delete_case_chunks(
         self,
-        case_id: int,
+        case_id: Union[int, uuid.UUID, str],
     ) -> bool:
         """
         Delete all chunks for a case from Qdrant.
 
         Args:
-            case_id: Database case ID
+            case_id: Database case ID (UUID, GID string, or legacy int)
 
         Returns:
             True if deletion successful
         """
-        from app.core.qdrant import delete_by_filter, build_filter
+        from app.core.qdrant import delete_by_filter
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
 
         try:
             logger.info(f"Deleting chunks for case {case_id}")
 
-            filters = build_filter(case_ids=[case_id])
+            # Build filter based on ID type
+            filter_key = None
+            filter_value = None
+
+            if isinstance(case_id, uuid.UUID):
+                # Use GID filter for UUID
+                from app.models.case import Case
+                filter_key = "case_gid"
+                filter_value = get_gid_from_uuid(Case, case_id)
+            elif isinstance(case_id, str):
+                # Assume string is GID
+                filter_key = "case_gid"
+                filter_value = case_id
+            else:
+                # Legacy int support
+                filter_key = "case_id"
+                filter_value = case_id
+
+            filters = Filter(
+                must=[
+                    FieldCondition(
+                        key=filter_key,
+                        match=MatchValue(value=filter_value),
+                    )
+                ]
+            )
+
             success = delete_by_filter(
                 filters=filters,
                 collection_name=self.collection_name,
@@ -362,8 +462,8 @@ class QdrantIndexer:
 def index_documents(
     chunks: List[Dict[str, Any]],
     embeddings: Dict[str, List[List[float]]],
-    document_id: int,
-    case_id: int,
+    document_id: Union[int, uuid.UUID],
+    case_id: Union[int, uuid.UUID],
     sparse_vectors: Optional[List[Tuple[List[int], List[float]]]] = None,
     collection_name: Optional[str] = None,
 ) -> bool:
@@ -373,8 +473,8 @@ def index_documents(
     Args:
         chunks: List of chunk dictionaries
         embeddings: Dictionary of embeddings by type
-        document_id: Database document ID
-        case_id: Database case ID
+        document_id: Database document ID (UUID or legacy int)
+        case_id: Database case ID (UUID or legacy int)
         sparse_vectors: Optional sparse vectors
         collection_name: Optional collection name
 

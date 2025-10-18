@@ -14,9 +14,11 @@ import re
 import httpx
 import warnings
 import time
-from typing import Dict, Any, Optional, List, Tuple
+from collections import OrderedDict
+from typing import Dict, Any, Optional, List, Tuple, Set
 from datetime import datetime, timedelta
 from io import BytesIO
+from uuid import UUID
 
 # Suppress torchaudio deprecation warnings from pyannote
 warnings.filterwarnings("ignore", message=".*torchaudio.*deprecated.*", category=UserWarning)
@@ -448,6 +450,57 @@ class SpeakerDiarizer:
 class SpeakerNameInferencer:
     """Handles AI-powered speaker name inference from conversation content."""
 
+    _ensured_models: Set[str] = set()
+
+    @classmethod
+    async def ensure_model_available(
+        cls,
+        client: httpx.AsyncClient,
+        ollama_url: str,
+        model: str,
+    ) -> bool:
+        """Ensure the requested Ollama model is available locally."""
+
+        if model in cls._ensured_models:
+            return True
+
+        try:
+            tags_resp = await client.get(f"{ollama_url}/api/tags")
+            if tags_resp.status_code == 200:
+                tags = tags_resp.json().get("models", [])
+                if any(tag.get("name") == model for tag in tags):
+                    logger.info("Ollama model '%s' already available", model)
+                    cls._ensured_models.add(model)
+                    return True
+
+            logger.info("Ollama model '%s' not found locally, pulling...", model)
+            pull_resp = await client.post(
+                f"{ollama_url}/api/pull",
+                json={"model": model, "stream": False},
+                timeout=600.0,
+            )
+
+            if pull_resp.status_code == 200:
+                logger.info("Successfully pulled Ollama model '%s'", model)
+                cls._ensured_models.add(model)
+                return True
+
+            logger.error(
+                "Failed to pull Ollama model '%s': %s",
+                model,
+                pull_resp.text,
+            )
+            return False
+
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(
+                "Error ensuring Ollama model '%s' is available: %s",
+                model,
+                exc,
+                exc_info=True,
+            )
+            return False
+
     @staticmethod
     def extract_name_patterns(segments: List[Dict[str, Any]], filename: Optional[str] = None) -> Dict[str, List[str]]:
         """
@@ -527,6 +580,13 @@ class SpeakerNameInferencer:
         Returns:
             Dict mapping speaker IDs to inferred names with confidence scores
         """
+        logger.info(
+            "Preparing speaker name inference request (segments=%d, speakers=%s, potential_names=%s)",
+            len(segments),
+            ", ".join(speakers),
+            ", ".join(potential_names.keys()) if potential_names else "none"
+        )
+
         try:
             from app.services.ollama_semaphore import get_ollama_semaphore
 
@@ -534,7 +594,8 @@ class SpeakerNameInferencer:
             semaphore = get_ollama_semaphore()
 
             # Prepare conversation context (first ~10 segments)
-            context_segments = segments[:min(10, len(segments))]
+            max_context_segments = min(30, len(segments))
+            context_segments = segments[:max_context_segments]
             conversation_text = "\n".join([
                 f"{seg.get('speaker', 'UNKNOWN')}: {seg.get('text', '')}"
                 for seg in context_segments
@@ -563,6 +624,8 @@ Guidelines:
 - Only include speakers you can confidently identify
 - Confidence score: 0.0 to 1.0 (only suggest names with confidence > 0.8)
 - Use first names only unless full name is clear
+- Treat statements like 'Jane, how are you?' as one speaker addressing another; do not assign the addressed name to the current speaker unless they explicitly identify themselves
+- Prioritize phrases such as \"I'm <name>\", \"This is <name>\", \"My name is <name>\" for self-identification
 - If unsure, do not include that speaker"""
 
             potential_names_str = ""
@@ -587,6 +650,22 @@ Return JSON with speaker names and confidence scores:"""
                     from app.core.config import settings as app_settings
 
                     async with httpx.AsyncClient(timeout=90.0) as client:
+                        if not await SpeakerNameInferencer.ensure_model_available(
+                            client,
+                            ollama_url,
+                            app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                        ):
+                            logger.error(
+                                "Speaker name inference skipped: unable to prepare Ollama model '%s'",
+                                app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                            )
+                            return {}
+
+                        logger.info(
+                            "Sending speaker inference prompt to Ollama at %s using model %s",
+                            ollama_url,
+                            app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
+                        )
                         response = await client.post(
                             f"{ollama_url}/api/generate",
                             json={
@@ -657,7 +736,11 @@ Return JSON with speaker names and confidence scores:"""
         Returns:
             Tuple of (updated_speakers, metadata with inference info)
         """
-        logger.info("Starting speaker name inference...")
+        logger.info(
+            "Starting speaker name inference (segments=%d, speaker_slots=%d)",
+            len(segments),
+            len(speakers),
+        )
 
         # Step 1: Extract potential names using pattern matching
         potential_names = SpeakerNameInferencer.extract_name_patterns(segments, filename)
@@ -943,7 +1026,7 @@ class TranscriptionExporter:
 @celery_app.task(name="transcribe_audio", bind=True)
 def transcribe_audio(
     self,
-    transcription_id: int,
+    transcription_gid: str,
     options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -960,7 +1043,7 @@ def transcribe_audio(
     8. Handle errors gracefully with status updates
 
     Args:
-        transcription_id: ID of the transcription to process
+        transcription_gid: GID of the transcription to process
         options: Optional dict containing transcription configuration:
             - language: Language code or None for auto-detect
             - task: 'transcribe' or 'translate'
@@ -976,6 +1059,15 @@ def transcribe_audio(
 
     # Parse options with defaults
     options = options or {}
+    if not isinstance(options, dict):
+        # Celery can deserialize into AttributeDict; convert to plain dict
+        options = dict(options)
+
+    logger.info(
+        "Transcription options resolved for %s: %s",
+        transcription_gid,
+        json.dumps(options, sort_keys=True),
+    )
     language = options.get("language")
     task = options.get("task", "transcribe")
     enable_diarization = options.get("enable_diarization", True)
@@ -989,12 +1081,12 @@ def transcribe_audio(
             meta={'status': 'Initializing transcription', 'progress': 0}
         )
 
-        # Step 1: Get transcription from database
-        logger.info(f"Starting transcription for transcription ID {transcription_id}")
-        transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+        # Step 1: Get transcription from database using GID
+        logger.info(f"Starting transcription for transcription GID {transcription_gid}")
+        transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
 
         if not transcription:
-            raise TranscriptionError(f"Transcription {transcription_id} not found")
+            raise TranscriptionError(f"Transcription with GID {transcription_gid} not found")
 
         # Update transcription status
         transcription.status = DocumentStatus.PROCESSING
@@ -1301,27 +1393,32 @@ def transcribe_audio(
             ]
             return colors[index % len(colors)]
 
-        speakers = {}
-        speaker_index = 0
+        speaker_counts: "OrderedDict[str, int]" = OrderedDict()
         for segment in diarized_segments:
-            speaker_id = segment.get('speaker', 'SPEAKER_01')
-            if speaker_id not in speakers:
-                # Generate human-readable name from speaker ID
-                # Use the current speaker_index + 1 for consistent numbering
-                speaker_name = f"Speaker {speaker_index + 1}"
+            speaker_id = segment.get('speaker') or 'SPEAKER_01'
+            segment['speaker'] = speaker_id
+            speaker_counts[speaker_id] = speaker_counts.get(speaker_id, 0) + 1
 
-                speakers[speaker_id] = {
-                    'id': speaker_id,
-                    'name': speaker_name,
-                    'color': generate_speaker_color(speaker_index),
-                    'segments_count': 0
-                }
-                speaker_index += 1
-            speakers[speaker_id]['segments_count'] += 1
+        speakers: Dict[str, Dict[str, Any]] = {}
+        for speaker_index, (speaker_id, segment_count) in enumerate(speaker_counts.items()):
+            speaker_name = f"Speaker {speaker_index + 1}"
+            speakers[speaker_id] = {
+                'id': speaker_id,
+                'name': speaker_name,
+                'color': generate_speaker_color(speaker_index),
+                'segments_count': segment_count
+            }
 
         # Step 5.5: AI-powered speaker name inference (if enabled)
         inference_metadata = None
         enable_name_inference = options.get("enable_name_inference", settings.ENABLE_SPEAKER_NAME_INFERENCE)
+
+        logger.info(
+            "Speaker inference gate for %s -> enabled=%s, detected_speakers=%d",
+            transcription_gid,
+            enable_name_inference,
+            len(speakers),
+        )
 
         if enable_name_inference and len(speakers) > 0:
             try:
@@ -1367,6 +1464,13 @@ def transcribe_audio(
                     'error': str(e),
                     'applied_names': {}
                 }
+        else:
+            logger.info(
+                "Skipping speaker name inference for %s (enabled=%s, speakers=%d)",
+                transcription_gid,
+                enable_name_inference,
+                len(speakers),
+            )
 
         # Step 6: Export to multiple formats
         self.update_state(
@@ -1379,7 +1483,7 @@ def transcribe_audio(
 
         # Prepare metadata (include inference metadata if available)
         metadata = {
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription.gid,
             'filename': transcription.filename,
             'language': language,
             'duration': duration,
@@ -1466,7 +1570,7 @@ def transcribe_audio(
         # Calculate total processing time
         total_time = time.time() - time.time()  # Will be updated below
 
-        logger.info(f"Transcription completed successfully for transcription ID {transcription_id}")
+        logger.info(f"Transcription completed successfully for transcription GID {transcription_gid} (UUID: {transcription.id})")
         logger.info("=" * 80)
         logger.info("PERFORMANCE SUMMARY:")
         logger.info(f"  Audio duration: {duration:.1f}s ({duration/60:.1f} minutes)")
@@ -1481,8 +1585,8 @@ def transcribe_audio(
         # Step 9: Queue transcript indexing for search
         try:
             from app.workers.tasks.transcript_indexing import index_transcript
-            logger.info(f"Queueing transcript indexing for transcription {transcription.id}")
-            index_transcript.delay(transcription.id)
+            logger.info(f"Queueing transcript indexing for transcription {transcription.gid}")
+            index_transcript.delay(transcription.gid)
         except Exception as e:
             logger.warning(f"Failed to queue transcript indexing: {e}")
             # Don't fail the whole transcription if indexing fails to queue
@@ -1490,7 +1594,7 @@ def transcribe_audio(
         # Step 10: Return success result
         return {
             'status': 'completed',
-            'transcription_id': transcription.id,
+            'transcription_gid': transcription.gid,
             'filename': transcription.filename,
             'duration': duration,
             'segments_count': len(diarized_segments),
@@ -1502,11 +1606,11 @@ def transcribe_audio(
         }
 
     except Exception as e:
-        logger.error(f"Transcription failed for transcription ID {transcription_id}: {str(e)}", exc_info=True)
+        logger.error(f"Transcription failed for transcription GID {transcription_gid}: {str(e)}", exc_info=True)
 
         # Update transcription status to FAILED
         try:
-            transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+            transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
             if transcription:
                 transcription.status = DocumentStatus.FAILED
                 db.commit()
@@ -1522,7 +1626,7 @@ def transcribe_audio(
         return {
             'status': 'failed',
             'error': str(e),
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'task_id': self.request.id
         }
 
@@ -1542,8 +1646,8 @@ def transcribe_audio(
 @celery_app.task(name="process_transcription", bind=True)
 def process_transcription(
     self,
-    transcription_id: str,
-    case_id: str,
+    transcription_id: UUID,
+    case_id: UUID,
     extract_entities: bool = True
 ) -> Dict[str, Any]:
     """
@@ -1553,8 +1657,8 @@ def process_transcription(
     It will handle post-transcription processing and NLP tasks.
 
     Args:
-        transcription_id: Unique identifier for the transcription
-        case_id: Unique identifier for the case
+        transcription_id: UUID of the transcription
+        case_id: UUID of the case
         extract_entities: Whether to extract named entities (default: True)
 
     Returns:
@@ -1571,8 +1675,8 @@ def process_transcription(
 
     return {
         "status": "pending",
-        "transcription_id": transcription_id,
-        "case_id": case_id,
+        "transcription_id": str(transcription_id),
+        "case_id": str(case_id),
         "extract_entities": extract_entities,
         "task_id": self.request.id,
     }

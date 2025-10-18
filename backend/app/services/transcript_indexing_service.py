@@ -5,8 +5,9 @@ This module provides the TranscriptIndexingService class for indexing
 transcription segments into Qdrant for semantic search alongside documents.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import logging
+import uuid
 from datetime import datetime
 from collections import defaultdict
 

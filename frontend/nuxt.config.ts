@@ -59,5 +59,20 @@ export default defineNuxtConfig({
   colorMode: {
     preference: 'dark',
     fallback: 'dark'
+  },
+
+  vite: {
+    optimizeDeps: {
+      esbuildOptions: {
+        supported: {
+          'top-level-await': true
+        }
+      }
+    },
+    esbuild: {
+      supported: {
+        'top-level-await': true
+      }
+    }
   }
 })

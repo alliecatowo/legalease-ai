@@ -4,21 +4,20 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, Enum, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
+from app.models.base import UUIDMixin
 
 
 class CaseStatus(str, PyEnum):
     """Case status enumeration."""
 
-    STAGING = "STAGING"
-    PROCESSING = "PROCESSING"
-    ACTIVE = "ACTIVE"
-    UNLOADED = "UNLOADED"
-    ARCHIVED = "ARCHIVED"
+    ACTIVE = "ACTIVE"      # Case is open and being worked on
+    CLOSED = "CLOSED"      # Case is complete but searchable
+    ARCHIVED = "ARCHIVED"  # Case is archived (hidden by default)
 
 
-class Case(Base):
+class Case(UUIDMixin, Base):
     """
     Case model representing a legal case.
 
@@ -27,8 +26,6 @@ class Case(Base):
     """
 
     __tablename__ = "cases"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String(255), nullable=False, index=True)
     case_number = Column(String(100), unique=True, nullable=False, index=True)
     client = Column(String(255), nullable=False, index=True)
@@ -36,7 +33,7 @@ class Case(Base):
     status = Column(
         Enum(CaseStatus, native_enum=True, create_constraint=True),
         nullable=False,
-        default=CaseStatus.STAGING,
+        default=CaseStatus.ACTIVE,
         index=True
     )
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

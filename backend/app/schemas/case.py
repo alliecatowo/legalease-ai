@@ -33,7 +33,7 @@ class CaseUpdate(BaseModel):
 class DocumentSummary(BaseModel):
     """Minimal document information for case responses."""
 
-    id: int
+    gid: str = Field(..., description="Document global identifier")
     filename: str
     mime_type: Optional[str]
     size: int
@@ -46,7 +46,7 @@ class DocumentSummary(BaseModel):
 class TranscriptionSummary(BaseModel):
     """Minimal transcription information for case responses."""
 
-    id: int
+    gid: str = Field(..., description="Transcription global identifier")
     filename: str
     mime_type: Optional[str]
     size: int
@@ -60,7 +60,7 @@ class TranscriptionSummary(BaseModel):
 class CaseResponse(CaseBase):
     """Schema for case responses with all fields."""
 
-    id: int
+    gid: str = Field(..., description="Case global identifier")
     status: CaseStatus
     created_at: datetime
     updated_at: datetime
@@ -74,7 +74,7 @@ class CaseResponse(CaseBase):
 class CaseListItem(BaseModel):
     """Schema for case list items (without nested relationships)."""
 
-    id: int
+    gid: str = Field(..., description="Case global identifier")
     name: str
     case_number: str
     client: str
@@ -101,7 +101,7 @@ class CaseListResponse(BaseModel):
 class CaseStatusUpdate(BaseModel):
     """Schema for status update responses."""
 
-    id: int
+    gid: str = Field(..., description="Case global identifier")
     case_number: str
     status: CaseStatus
     message: str
@@ -112,7 +112,7 @@ class CaseStatusUpdate(BaseModel):
 class CaseDeleteResponse(BaseModel):
     """Schema for case deletion responses."""
 
-    id: int
+    gid: str = Field(..., description="Case global identifier")
     case_number: str
     message: str
     deleted_at: datetime

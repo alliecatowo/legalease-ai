@@ -23,7 +23,7 @@ const casesData = computed(() => casesCache.data.value || { cases: [], total: 0 
 // Transform backend data to frontend format
 const cases = computed(() => {
   return (casesData.value?.cases || []).map((c: any) => ({
-    id: String(c.id),
+    id: c.gid,
     name: c.name,
     caseNumber: c.case_number,
     type: c.matter_type || 'General',
@@ -34,6 +34,7 @@ const cases = computed(() => {
     lastActivity: c.updated_at,
     parties: [c.client], // TODO: Add proper parties to backend
     documents: c.document_count || 0,
+    transcripts: c.transcript_count || 0,
     deadlines: 0, // TODO: Add to backend
     description: c.matter_type ? `${c.matter_type} case` : 'Legal case',
     tags: c.matter_type ? [c.matter_type.toLowerCase()] : [],
@@ -44,8 +45,8 @@ const cases = computed(() => {
 const statusOptions = [
   { label: 'All Status', value: 'all' },
   { label: 'Active', value: 'active' },
-  { label: 'Pending', value: 'pending' },
-  { label: 'Closed', value: 'closed' }
+  { label: 'Closed', value: 'closed' },
+  { label: 'Archived', value: 'archived' }
 ]
 
 const typeOptions = [
@@ -71,17 +72,16 @@ const filteredCases = computed(() => {
 const stats = computed(() => ({
   total: cases.value.length,
   active: cases.value.filter((c: any) => c.status === 'active').length,
-  pending: cases.value.filter((c: any) => c.status === 'staging').length,
-  closed: cases.value.filter((c: any) => c.status === 'unloaded').length,
-  totalDocuments: cases.value.reduce((acc: number, c: any) => acc + c.documents, 0)
+  closed: cases.value.filter((c: any) => c.status === 'closed').length,
+  archived: cases.value.filter((c: any) => c.status === 'archived').length,
+  totalDocuments: cases.value.reduce((acc: number, c: any) => acc + c.documents, 0),
+  totalTranscripts: cases.value.reduce((acc: number, c: any) => acc + (c.transcripts || 0), 0)
 }))
 
 const statusColors: Record<string, string> = {
   active: 'success',
-  staging: 'warning',
-  pending: 'warning',
-  unloaded: 'neutral',
-  closed: 'neutral'
+  closed: 'neutral',
+  archived: 'gray'
 }
 
 async function onCaseCreated(caseData: any) {
@@ -109,7 +109,7 @@ async function onCaseCreated(caseData: any) {
     <template #body>
       <div class="max-w-7xl mx-auto space-y-6">
         <!-- Stats Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
           <UCard :ui="{ body: 'p-4' }">
             <div class="flex items-center gap-3">
               <div class="p-2 bg-primary/10 rounded-lg">
@@ -136,18 +136,6 @@ async function onCaseCreated(caseData: any) {
 
           <UCard :ui="{ body: 'p-4' }">
             <div class="flex items-center gap-3">
-              <div class="p-2 bg-warning/10 rounded-lg">
-                <UIcon name="i-lucide-clock" class="size-5 text-warning" />
-              </div>
-              <div>
-                <p class="text-xs text-muted">Pending</p>
-                <p class="text-2xl font-bold">{{ stats.pending }}</p>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard :ui="{ body: 'p-4' }">
-            <div class="flex items-center gap-3">
               <div class="p-2 bg-neutral/10 rounded-lg">
                 <UIcon name="i-lucide-check-circle" class="size-5 text-neutral" />
               </div>
@@ -160,12 +148,36 @@ async function onCaseCreated(caseData: any) {
 
           <UCard :ui="{ body: 'p-4' }">
             <div class="flex items-center gap-3">
+              <div class="p-2 bg-gray/10 rounded-lg">
+                <UIcon name="i-lucide-archive" class="size-5 text-gray" />
+              </div>
+              <div>
+                <p class="text-xs text-muted">Archived</p>
+                <p class="text-2xl font-bold">{{ stats.archived }}</p>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard :ui="{ body: 'p-4' }">
+            <div class="flex items-center gap-3">
               <div class="p-2 bg-info/10 rounded-lg">
                 <UIcon name="i-lucide-files" class="size-5 text-info" />
               </div>
               <div>
                 <p class="text-xs text-muted">Documents</p>
                 <p class="text-2xl font-bold">{{ stats.totalDocuments }}</p>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard :ui="{ body: 'p-4' }">
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-primary/10 rounded-lg">
+                <UIcon name="i-lucide-mic" class="size-5 text-primary" />
+              </div>
+              <div>
+                <p class="text-xs text-muted">Transcripts</p>
+                <p class="text-2xl font-bold">{{ stats.totalTranscripts }}</p>
               </div>
             </div>
           </UCard>
@@ -265,9 +277,15 @@ async function onCaseCreated(caseData: any) {
                 </div>
 
                 <div class="flex items-center justify-between pt-3 border-t border-default">
-                  <div class="flex items-center gap-2 text-sm text-muted">
-                    <UIcon name="i-lucide-file-text" class="size-4" />
-                    <span>{{ case_.documents }} docs</span>
+                  <div class="flex items-center gap-3 text-sm text-muted">
+                    <span class="flex items-center gap-1.5">
+                      <UIcon name="i-lucide-file-text" class="size-4" />
+                      {{ case_.documents }} docs
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                      <UIcon name="i-lucide-mic" class="size-4" />
+                      {{ case_.transcripts }} transcripts
+                    </span>
                   </div>
                   <div class="flex items-center gap-2 text-xs text-muted">
                     <UIcon name="i-lucide-clock" class="size-3.5" />
@@ -313,6 +331,10 @@ async function onCaseCreated(caseData: any) {
                       <span class="flex items-center gap-1.5 text-muted">
                         <UIcon name="i-lucide-file-text" class="size-4" />
                         {{ case_.documents }} docs
+                      </span>
+                      <span class="flex items-center gap-1.5 text-muted">
+                        <UIcon name="i-lucide-mic" class="size-4" />
+                        {{ case_.transcripts }} transcripts
                       </span>
                       <span class="flex items-center gap-1.5 text-muted">
                         <UIcon name="i-lucide-clock" class="size-4" />

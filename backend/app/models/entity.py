@@ -2,8 +2,10 @@
 
 from typing import Optional, List
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, Table, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
+from app.models.base import UUIDMixin
 
 
 # Association table for many-to-many relationship between Document and Entity
@@ -12,20 +14,20 @@ document_entities = Table(
     Base.metadata,
     Column(
         "document_id",
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
         primary_key=True
     ),
     Column(
         "entity_id",
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("entities.id", ondelete="CASCADE"),
         primary_key=True
     )
 )
 
 
-class Entity(Base):
+class Entity(UUIDMixin, Base):
     """
     Entity model representing a named entity extracted from documents.
 
@@ -34,8 +36,6 @@ class Entity(Base):
     """
 
     __tablename__ = "entities"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     text = Column(String(255), nullable=False, index=True)
     entity_type = Column(String(100), nullable=False, index=True)  # e.g., 'PERSON', 'ORG', 'DATE', 'LOCATION'
     confidence = Column(Float, nullable=True)  # NLP model confidence score
