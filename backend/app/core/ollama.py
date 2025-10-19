@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Union
 import httpx
 
 from .config import settings
+from .retry import retry_ollama
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class OllamaClient:
         """Close the HTTP client"""
         await self.client.aclose()
 
+    @retry_ollama
     async def list_models(self) -> List[Dict]:
         """List available models"""
         try:
@@ -52,6 +54,7 @@ class OllamaClient:
         models = await self.list_models()
         return any(model["name"] == model_name for model in models)
 
+    @retry_ollama
     async def pull_model(self, model_name: str) -> bool:
         """Pull a model from the registry"""
         try:
@@ -78,6 +81,7 @@ class OllamaClient:
             logger.error(f"Failed to pull Ollama model {model_name}: {e}")
             return False
 
+    @retry_ollama
     async def generate(
         self,
         model: str,
@@ -142,6 +146,7 @@ class OllamaClient:
             logger.error(f"Failed to generate with Ollama: {e}")
             raise
 
+    @retry_ollama
     async def chat(
         self,
         model: str,

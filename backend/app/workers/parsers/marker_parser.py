@@ -27,6 +27,7 @@ from app.workers.parsers.base import (
     ParserType,
     ParsingError,
 )
+from app.core.retry import retry_gemini
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,7 @@ class MarkerParser(DocumentParser):
 
         return self._converter
 
+    @retry_gemini
     def parse(
         self,
         file_content: bytes,

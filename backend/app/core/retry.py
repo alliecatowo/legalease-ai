@@ -2,7 +2,15 @@
 Retry utilities for external service calls using tenacity.
 
 Usage:
-    from app.core.retry import retry_qdrant, retry_minio, retry_gemini, retry_database
+    from app.core.retry import (
+        retry_qdrant,
+        retry_minio,
+        retry_gemini,
+        retry_database,
+        retry_ollama,
+        retry_neo4j,
+        retry_redis,
+    )
 
     @retry_qdrant
     def my_vector_operation():
@@ -12,6 +20,21 @@ Usage:
     @retry_gemini
     async def my_llm_call():
         # Your Gemini API code here
+        pass
+
+    @retry_ollama
+    async def my_ollama_call():
+        # Your Ollama API code here
+        pass
+
+    @retry_neo4j
+    def my_graph_operation():
+        # Your Neo4j code here
+        pass
+
+    @retry_redis
+    async def my_cache_operation():
+        # Your Redis code here
         pass
 
 Features:
@@ -84,6 +107,57 @@ try:
     _GEMINI_EXCEPTIONS = (ResourceExhausted, ServiceUnavailable, DeadlineExceeded, GoogleAPIError, ConnectionError)
 except ImportError:
     _GEMINI_EXCEPTIONS = (ConnectionError, TimeoutError)
+
+# Ollama/HTTPX exceptions
+try:
+    from httpx import (
+        HTTPStatusError,
+        TimeoutException,
+        ConnectError,
+        NetworkError,
+        RemoteProtocolError,
+    )
+    _OLLAMA_EXCEPTIONS = (
+        HTTPStatusError,
+        TimeoutException,
+        ConnectError,
+        NetworkError,
+        RemoteProtocolError,
+        ConnectionError,
+        TimeoutError,
+    )
+except ImportError:
+    _OLLAMA_EXCEPTIONS = (ConnectionError, TimeoutError)
+
+# Neo4j exceptions
+try:
+    from neo4j.exceptions import (
+        ServiceUnavailable as Neo4jServiceUnavailable,
+        SessionExpired,
+        TransientError,
+        DatabaseUnavailable,
+    )
+    _NEO4J_EXCEPTIONS = (
+        Neo4jServiceUnavailable,
+        SessionExpired,
+        TransientError,
+        DatabaseUnavailable,
+        ConnectionError,
+        TimeoutError,
+    )
+except ImportError:
+    _NEO4J_EXCEPTIONS = (ConnectionError, TimeoutError)
+
+# Redis exceptions
+try:
+    from redis.exceptions import (
+        ConnectionError as RedisConnectionError,
+        TimeoutError as RedisTimeoutError,
+        ResponseError,
+    )
+    _REDIS_EXCEPTIONS = (RedisConnectionError, RedisTimeoutError, ResponseError, ConnectionError, TimeoutError)
+except ImportError:
+    _REDIS_EXCEPTIONS = (ConnectionError, TimeoutError)
 
 
 logger = logging.getLogger(__name__)
@@ -261,5 +335,137 @@ def retry_database(func: Callable[..., T]) -> Callable[..., T]:
                 return retry_decorator(func)(*args, **kwargs)
             except RetryError as e:
                 logger.error(f"Database operation failed after retries: {func.__name__}")
+                raise e.last_attempt.exception()
+        return sync_wrapper
+
+
+def retry_ollama(func: Callable[..., T]) -> Callable[..., T]:
+    """
+    Retry decorator for Ollama API calls.
+
+    Strategy:
+    - Max 5 attempts (API can have transient errors)
+    - Exponential backoff: 2s, 4s, 8s, 16s, 32s with jitter
+    - Retries on HTTP 5xx, connection errors, timeouts
+    - Does NOT retry on HTTP 4xx (except 429)
+
+    Args:
+        func: Function to decorate (sync or async)
+
+    Returns:
+        Decorated function with retry logic
+    """
+    retry_decorator = retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=2, max=30),
+        retry=retry_if_exception_type(_OLLAMA_EXCEPTIONS),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+
+    if asyncio.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
+            try:
+                return await retry_decorator(func)(*args, **kwargs)
+            except RetryError as e:
+                logger.error(f"Ollama API call failed after retries: {func.__name__}")
+                raise e.last_attempt.exception()
+        return async_wrapper
+    else:
+        @wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> T:
+            try:
+                return retry_decorator(func)(*args, **kwargs)
+            except RetryError as e:
+                logger.error(f"Ollama API call failed after retries: {func.__name__}")
+                raise e.last_attempt.exception()
+        return sync_wrapper
+
+
+def retry_neo4j(func: Callable[..., T]) -> Callable[..., T]:
+    """
+    Retry decorator for Neo4j graph database operations.
+
+    Strategy:
+    - Max 3 attempts (graph DB should be stable)
+    - Exponential backoff: 0.5s, 1s, 2s, 4s, 8s with jitter
+    - Retries on ServiceUnavailable, SessionExpired, connection errors
+    - Does NOT retry on constraint violations, invalid queries
+
+    Args:
+        func: Function to decorate (sync or async)
+
+    Returns:
+        Decorated function with retry logic
+    """
+    retry_decorator = retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=10),
+        retry=retry_if_exception_type(_NEO4J_EXCEPTIONS),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+
+    if asyncio.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
+            try:
+                return await retry_decorator(func)(*args, **kwargs)
+            except RetryError as e:
+                logger.error(f"Neo4j operation failed after retries: {func.__name__}")
+                raise e.last_attempt.exception()
+        return async_wrapper
+    else:
+        @wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> T:
+            try:
+                return retry_decorator(func)(*args, **kwargs)
+            except RetryError as e:
+                logger.error(f"Neo4j operation failed after retries: {func.__name__}")
+                raise e.last_attempt.exception()
+        return sync_wrapper
+
+
+def retry_redis(func: Callable[..., T]) -> Callable[..., T]:
+    """
+    Retry decorator for Redis operations.
+
+    Strategy:
+    - Max 3 attempts (cache should be stable)
+    - Exponential backoff: 0.1s, 0.2s, 0.4s, 0.8s with jitter
+    - Retries on ConnectionError, TimeoutError, ResponseError
+    - Does NOT retry on data type errors
+
+    Args:
+        func: Function to decorate (sync or async)
+
+    Returns:
+        Decorated function with retry logic
+    """
+    retry_decorator = retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.1, min=0.1, max=5),
+        retry=retry_if_exception_type(_REDIS_EXCEPTIONS),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+
+    if asyncio.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
+            try:
+                return await retry_decorator(func)(*args, **kwargs)
+            except RetryError as e:
+                logger.error(f"Redis operation failed after retries: {func.__name__}")
+                raise e.last_attempt.exception()
+        return async_wrapper
+    else:
+        @wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> T:
+            try:
+                return retry_decorator(func)(*args, **kwargs)
+            except RetryError as e:
+                logger.error(f"Redis operation failed after retries: {func.__name__}")
                 raise e.last_attempt.exception()
         return sync_wrapper

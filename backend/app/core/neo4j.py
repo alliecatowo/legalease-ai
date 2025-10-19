@@ -10,6 +10,7 @@ from neo4j import GraphDatabase, AsyncGraphDatabase
 from neo4j.exceptions import ServiceUnavailable
 
 from .config import settings
+from .retry import retry_neo4j
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class Neo4jClient:
         await self.async_driver.close()
         self.driver.close()
 
+    @retry_neo4j
     def health_check(self) -> bool:
         """Check if Neo4j is accessible"""
         try:
@@ -56,6 +58,7 @@ class Neo4jClient:
             logger.error(f"Neo4j health check failed: {e}")
             return False
 
+    @retry_neo4j
     def create_constraints(self):
         """Create database constraints for performance"""
         constraints = [
@@ -71,12 +74,14 @@ class Neo4jClient:
                 except Exception as e:
                     logger.warning(f"Failed to create constraint: {e}")
 
+    @retry_neo4j
     def clear_database(self):
         """Clear all data (for testing)"""
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
 
     # Document operations
+    @retry_neo4j
     def create_document_node(self, doc_data: Dict[str, Any]) -> str:
         """Create a document node"""
         query = """
@@ -95,6 +100,7 @@ class Neo4jClient:
             result = session.run(query, **doc_data)
             return result.single()["d.id"]
 
+    @retry_neo4j
     def create_case_node(self, case_data: Dict[str, Any]) -> str:
         """Create a case node"""
         query = """
@@ -113,6 +119,7 @@ class Neo4jClient:
             return result.single()["c.id"]
 
     # Entity operations
+    @retry_neo4j
     def create_entity_node(self, entity_data: Dict[str, Any]) -> str:
         """Create an entity node"""
         query = """
@@ -127,6 +134,7 @@ class Neo4jClient:
             result = session.run(query, **entity_data)
             return result.single()["e.text"]
 
+    @retry_neo4j
     def link_document_entity(self, doc_id: str, entity_text: str, context: str = None):
         """Create relationship between document and entity"""
         query = """
@@ -139,6 +147,7 @@ class Neo4jClient:
             session.run(query, doc_id=doc_id, entity_text=entity_text, context=context)
 
     # Citation operations
+    @retry_neo4j
     def create_citation_relationship(self, citing_doc_id: str, cited_doc_id: str, citation_data: Dict[str, Any]):
         """Create citation relationship between documents"""
         query = """
@@ -155,6 +164,7 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.run(query, citing_doc_id=citing_doc_id, cited_doc_id=cited_doc_id, **citation_data)
 
+    @retry_neo4j
     def find_citation_chain(self, doc_id: str, depth: int = 3) -> List[Dict]:
         """Find citation chain for a document"""
         query = """
@@ -169,6 +179,7 @@ class Neo4jClient:
             return [dict(record) for record in results]
 
     # Query operations
+    @retry_neo4j
     def find_related_documents(self, entity_texts: List[str], case_id: Optional[str] = None) -> List[Dict]:
         """Find documents related to entities"""
         query = """
@@ -189,6 +200,7 @@ class Neo4jClient:
             results = session.run(query, entity_texts=entity_texts, case_id=case_id)
             return [dict(record) for record in results]
 
+    @retry_neo4j
     def find_entity_connections(self, entity_text: str, case_id: Optional[str] = None) -> Dict[str, Any]:
         """Find all connections for an entity"""
         # Find co-occurring entities
@@ -231,6 +243,7 @@ class Neo4jClient:
                 "documents": documents
             }
 
+    @retry_neo4j
     def get_case_graph(self, case_id: str) -> Dict[str, Any]:
         """Get complete graph for a case"""
         # Get all documents in case
