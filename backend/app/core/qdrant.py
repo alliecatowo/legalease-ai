@@ -24,6 +24,7 @@ from qdrant_client.models import (
     SparseVector,
     SparseVectorParams,
     SparseIndexParams,
+    Modifier,
 )
 
 from app.core.config import settings
@@ -111,7 +112,8 @@ def create_collection(
                 "bm25": SparseVectorParams(
                     index=SparseIndexParams(
                         on_disk=False,
-                    )
+                    ),
+                    modifier=Modifier.IDF,  # Enable native IDF for BM25
                 )
             },
         )
