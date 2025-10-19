@@ -6,7 +6,8 @@ Utilities for converting between different bbox formats used by various PDF pars
 - Docling: {"l": left, "t": top, "r": right, "b": bottom}
 - PyMuPDF: {"x0": left, "y0": top, "x1": right, "y1": bottom}
 
-All formats are normalized to a standard format for consistent processing and frontend rendering.
+All formats are normalized to Docling format {"l", "t", "r", "b"} for consistent
+processing and frontend rendering.
 """
 
 import logging
@@ -27,7 +28,7 @@ def normalize_bbox(
     bbox_type: Optional[str] = None,
 ) -> BBoxDict:
     """
-    Convert any bbox format to standard normalized format.
+    Convert any bbox format to standard normalized format (Docling-compatible).
 
     Args:
         bbox: Bounding box in any supported format
@@ -39,10 +40,10 @@ def normalize_bbox(
     Returns:
         Normalized bbox dictionary with keys:
         - page: Page number (int)
-        - left: Left x-coordinate (float)
-        - top: Top y-coordinate (float)
-        - right: Right x-coordinate (float)
-        - bottom: Bottom y-coordinate (float)
+        - l: Left x-coordinate (float)
+        - t: Top y-coordinate (float)
+        - r: Right x-coordinate (float)
+        - b: Bottom y-coordinate (float)
         - text: Text content (str)
         - type: Bbox type/category (str)
 
@@ -53,17 +54,17 @@ def normalize_bbox(
         >>> # Marker polygon format
         >>> marker_bbox = {"polygon": [[10, 20], [100, 20], [100, 50], [10, 50]]}
         >>> normalize_bbox(marker_bbox, page_num=1, source="marker")
-        {'page': 1, 'left': 10.0, 'top': 20.0, 'right': 100.0, 'bottom': 50.0, ...}
+        {'page': 1, 'l': 10.0, 't': 20.0, 'r': 100.0, 'b': 50.0, ...}
 
         >>> # Docling format
         >>> docling_bbox = {"l": 10, "t": 20, "r": 100, "b": 50}
         >>> normalize_bbox(docling_bbox, page_num=1, source="docling")
-        {'page': 1, 'left': 10.0, 'top': 20.0, 'right': 100.0, 'bottom': 50.0, ...}
+        {'page': 1, 'l': 10.0, 't': 20.0, 'r': 100.0, 'b': 50.0, ...}
 
         >>> # PyMuPDF format
         >>> pymupdf_bbox = {"x0": 10, "y0": 20, "x1": 100, "y1": 50}
         >>> normalize_bbox(pymupdf_bbox, page_num=1, source="pymupdf")
-        {'page': 1, 'left': 10.0, 'top': 20.0, 'right': 100.0, 'bottom': 50.0, ...}
+        {'page': 1, 'l': 10.0, 't': 20.0, 'r': 100.0, 'b': 50.0, ...}
     """
     # Auto-detect source format if needed
     if source == "auto":
@@ -83,10 +84,10 @@ def normalize_bbox(
         if not all(k in bbox for k in ["l", "t", "r", "b"]):
             raise ValueError(f"Docling format requires keys: l, t, r, b. Got: {bbox.keys()}")
         normalized = {
-            "left": float(bbox["l"]),
-            "top": float(bbox["t"]),
-            "right": float(bbox["r"]),
-            "bottom": float(bbox["b"]),
+            "l": float(bbox["l"]),
+            "t": float(bbox["t"]),
+            "r": float(bbox["r"]),
+            "b": float(bbox["b"]),
         }
 
     elif source == "pymupdf":
@@ -94,31 +95,31 @@ def normalize_bbox(
         if not all(k in bbox for k in ["x0", "y0", "x1", "y1"]):
             raise ValueError(f"PyMuPDF format requires keys: x0, y0, x1, y1. Got: {bbox.keys()}")
         normalized = {
-            "left": float(bbox["x0"]),
-            "top": float(bbox["y0"]),
-            "right": float(bbox["x1"]),
-            "bottom": float(bbox["y1"]),
+            "l": float(bbox["x0"]),
+            "t": float(bbox["y0"]),
+            "r": float(bbox["x1"]),
+            "b": float(bbox["y1"]),
         }
 
     elif source == "standard":
-        # Already in standard format
+        # Already in standard format (old {left, top, right, bottom} format)
         if not all(k in bbox for k in ["left", "top", "right", "bottom"]):
             raise ValueError(f"Standard format requires keys: left, top, right, bottom. Got: {bbox.keys()}")
         normalized = {
-            "left": float(bbox["left"]),
-            "top": float(bbox["top"]),
-            "right": float(bbox["right"]),
-            "bottom": float(bbox["bottom"]),
+            "l": float(bbox["left"]),
+            "t": float(bbox["top"]),
+            "r": float(bbox["right"]),
+            "b": float(bbox["bottom"]),
         }
 
     else:
         raise ValueError(f"Unknown bbox source format: {source}")
 
     # Validate coordinates
-    if normalized["left"] > normalized["right"]:
-        logger.warning(f"Invalid bbox: left > right ({normalized['left']} > {normalized['right']})")
-    if normalized["top"] > normalized["bottom"]:
-        logger.warning(f"Invalid bbox: top > bottom ({normalized['top']} > {normalized['bottom']})")
+    if normalized["l"] > normalized["r"]:
+        logger.warning(f"Invalid bbox: left > right ({normalized['l']} > {normalized['r']})")
+    if normalized["t"] > normalized["b"]:
+        logger.warning(f"Invalid bbox: top > bottom ({normalized['t']} > {normalized['b']})")
 
     # Add metadata
     normalized["page"] = page_num
@@ -130,7 +131,7 @@ def normalize_bbox(
 
 def polygon_to_bbox(polygon: List[List[float]]) -> Dict[str, float]:
     """
-    Convert polygon coordinates to bounding box.
+    Convert polygon coordinates to bounding box (Docling format).
 
     Extracts minimum and maximum x/y coordinates from polygon points
     to create a rectangular bounding box.
@@ -140,7 +141,7 @@ def polygon_to_bbox(polygon: List[List[float]]) -> Dict[str, float]:
                  Example: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
 
     Returns:
-        Dictionary with keys: left, top, right, bottom
+        Dictionary with keys: l, t, r, b
 
     Raises:
         ValueError: If polygon is empty or has invalid format
@@ -148,12 +149,12 @@ def polygon_to_bbox(polygon: List[List[float]]) -> Dict[str, float]:
     Examples:
         >>> polygon = [[10, 20], [100, 20], [100, 50], [10, 50]]
         >>> polygon_to_bbox(polygon)
-        {'left': 10.0, 'top': 20.0, 'right': 100.0, 'bottom': 50.0}
+        {'l': 10.0, 't': 20.0, 'r': 100.0, 'b': 50.0}
 
         >>> # Works with non-rectangular polygons too
         >>> irregular = [[10, 20], [50, 15], [100, 30], [80, 60], [20, 55]]
         >>> polygon_to_bbox(irregular)
-        {'left': 10.0, 'top': 15.0, 'right': 100.0, 'bottom': 60.0}
+        {'l': 10.0, 't': 15.0, 'r': 100.0, 'b': 60.0}
     """
     if not polygon:
         raise ValueError("Polygon is empty")
@@ -172,10 +173,10 @@ def polygon_to_bbox(polygon: List[List[float]]) -> Dict[str, float]:
 
     # Find bounding box
     return {
-        "left": min(x_coords),
-        "top": min(y_coords),
-        "right": max(x_coords),
-        "bottom": max(y_coords),
+        "l": min(x_coords),
+        "t": min(y_coords),
+        "r": max(x_coords),
+        "b": max(y_coords),
     }
 
 
@@ -185,7 +186,7 @@ def normalize_bboxes(
     source: str = "auto",
 ) -> List[BBoxDict]:
     """
-    Batch normalize a list of bboxes.
+    Batch normalize a list of bboxes to Docling format.
 
     Args:
         bboxes: List of bboxes in any supported format
@@ -193,7 +194,7 @@ def normalize_bboxes(
         source: Source format ("auto", "marker", "docling", "pymupdf")
 
     Returns:
-        List of normalized bbox dictionaries
+        List of normalized bbox dictionaries with {l, t, r, b} format
 
     Examples:
         >>> marker_bboxes = [
@@ -201,7 +202,7 @@ def normalize_bboxes(
         ...     {"polygon": [[10, 60], [100, 60], [100, 90], [10, 90]], "text": "World"},
         ... ]
         >>> normalize_bboxes(marker_bboxes, page_num=1, source="marker")
-        [{'page': 1, 'left': 10.0, 'top': 20.0, ...}, {'page': 1, 'left': 10.0, 'top': 60.0, ...}]
+        [{'page': 1, 'l': 10.0, 't': 20.0, ...}, {'page': 1, 'l': 10.0, 't': 60.0, ...}]
     """
     normalized = []
     errors = 0
@@ -275,18 +276,18 @@ def bbox_area(bbox: Dict[str, float]) -> float:
     Calculate the area of a bounding box.
 
     Args:
-        bbox: Bounding box with keys: left, top, right, bottom
+        bbox: Bounding box with keys: l, t, r, b
 
     Returns:
         Area in square units
 
     Examples:
-        >>> bbox = {"left": 10, "top": 20, "right": 100, "bottom": 50}
+        >>> bbox = {"l": 10, "t": 20, "r": 100, "b": 50}
         >>> bbox_area(bbox)
         2700.0
     """
-    width = bbox["right"] - bbox["left"]
-    height = bbox["bottom"] - bbox["top"]
+    width = bbox["r"] - bbox["l"]
+    height = bbox["b"] - bbox["t"]
     return width * height
 
 
@@ -295,24 +296,24 @@ def bbox_iou(bbox1: Dict[str, float], bbox2: Dict[str, float]) -> float:
     Calculate Intersection over Union (IoU) of two bounding boxes.
 
     Args:
-        bbox1: First bounding box
-        bbox2: Second bounding box
+        bbox1: First bounding box (l, t, r, b format)
+        bbox2: Second bounding box (l, t, r, b format)
 
     Returns:
         IoU value between 0.0 and 1.0
 
     Examples:
-        >>> bbox1 = {"left": 10, "top": 20, "right": 100, "bottom": 50}
-        >>> bbox2 = {"left": 50, "top": 30, "right": 150, "bottom": 60}
+        >>> bbox1 = {"l": 10, "t": 20, "r": 100, "b": 50}
+        >>> bbox2 = {"l": 50, "t": 30, "r": 150, "b": 60}
         >>> iou = bbox_iou(bbox1, bbox2)
         >>> 0 < iou < 1  # Partial overlap
         True
     """
     # Calculate intersection
-    left = max(bbox1["left"], bbox2["left"])
-    top = max(bbox1["top"], bbox2["top"])
-    right = min(bbox1["right"], bbox2["right"])
-    bottom = min(bbox1["bottom"], bbox2["bottom"])
+    left = max(bbox1["l"], bbox2["l"])
+    top = max(bbox1["t"], bbox2["t"])
+    right = min(bbox1["r"], bbox2["r"])
+    bottom = min(bbox1["b"], bbox2["b"])
 
     # Check if there's no intersection
     if left >= right or top >= bottom:
@@ -338,7 +339,7 @@ def merge_overlapping_bboxes(
     Merge overlapping bounding boxes.
 
     Args:
-        bboxes: List of normalized bboxes
+        bboxes: List of normalized bboxes (l, t, r, b format)
         iou_threshold: IoU threshold for merging (0.0 to 1.0)
 
     Returns:
@@ -346,8 +347,8 @@ def merge_overlapping_bboxes(
 
     Examples:
         >>> bboxes = [
-        ...     {"left": 10, "top": 20, "right": 100, "bottom": 50, "page": 1, "text": "Hello", "type": "Text"},
-        ...     {"left": 50, "top": 30, "right": 150, "bottom": 60, "page": 1, "text": " World", "type": "Text"},
+        ...     {"l": 10, "t": 20, "r": 100, "b": 50, "page": 1, "text": "Hello", "type": "Text"},
+        ...     {"l": 50, "t": 30, "r": 150, "b": 60, "page": 1, "text": " World", "type": "Text"},
         ... ]
         >>> merged = merge_overlapping_bboxes(bboxes, iou_threshold=0.3)
         >>> len(merged) < len(bboxes)  # Should merge overlapping boxes
@@ -357,7 +358,7 @@ def merge_overlapping_bboxes(
         return []
 
     # Sort by left coordinate
-    sorted_bboxes = sorted(bboxes, key=lambda b: b["left"])
+    sorted_bboxes = sorted(bboxes, key=lambda b: b["l"])
     merged = []
     current = sorted_bboxes[0].copy()
 
@@ -367,10 +368,10 @@ def merge_overlapping_bboxes(
 
         if iou >= iou_threshold:
             # Merge: expand current bbox
-            current["left"] = min(current["left"], bbox["left"])
-            current["top"] = min(current["top"], bbox["top"])
-            current["right"] = max(current["right"], bbox["right"])
-            current["bottom"] = max(current["bottom"], bbox["bottom"])
+            current["l"] = min(current["l"], bbox["l"])
+            current["t"] = min(current["t"], bbox["t"])
+            current["r"] = max(current["r"], bbox["r"])
+            current["b"] = max(current["b"], bbox["b"])
             # Concatenate text
             current["text"] = f"{current['text']} {bbox['text']}".strip()
         else:

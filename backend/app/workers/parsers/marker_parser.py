@@ -459,7 +459,7 @@ class MarkerParser(DocumentParser):
             page_num: Page number for this block
 
         Returns:
-            List of normalized bbox dictionaries with {left, top, right, bottom, page, text, type}
+            List of normalized bbox dictionaries with {l, t, r, b, page, text, type} (Docling format)
         """
         bboxes = []
 
@@ -476,7 +476,7 @@ class MarkerParser(DocumentParser):
                     "page": page_num,
                 }
 
-                # Normalize to standard {left, top, right, bottom, page, text, type} format
+                # Normalize to Docling {l, t, r, b, page, text, type} format
                 normalized = normalize_bbox(raw_bbox, page_num=page_num, source="marker")
                 bboxes.append(normalized)
 

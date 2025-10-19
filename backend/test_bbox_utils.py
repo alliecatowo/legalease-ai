@@ -26,7 +26,7 @@ def test_polygon_to_bbox():
     bbox = polygon_to_bbox(polygon)
     print(f"\nPolygon (rectangle): {polygon}")
     print(f"BBox: {bbox}")
-    assert bbox == {"left": 10.0, "top": 20.0, "right": 100.0, "bottom": 50.0}
+    assert bbox == {"l": 10.0, "t": 20.0, "r": 100.0, "b": 50.0}
     print("✓ Rectangle conversion passed")
 
     # Example 2: Irregular polygon
@@ -34,7 +34,7 @@ def test_polygon_to_bbox():
     bbox = polygon_to_bbox(irregular)
     print(f"\nPolygon (irregular): {irregular}")
     print(f"BBox: {bbox}")
-    assert bbox == {"left": 10.0, "top": 15.0, "right": 100.0, "bottom": 60.0}
+    assert bbox == {"l": 10.0, "t": 15.0, "r": 100.0, "b": 60.0}
     print("✓ Irregular polygon conversion passed")
 
 
@@ -55,10 +55,10 @@ def test_normalize_marker_bbox():
     print(f"Normalized: {normalized}")
 
     assert normalized["page"] == 1
-    assert normalized["left"] == 10.0
-    assert normalized["top"] == 20.0
-    assert normalized["right"] == 100.0
-    assert normalized["bottom"] == 50.0
+    assert normalized["l"] == 10.0
+    assert normalized["t"] == 20.0
+    assert normalized["r"] == 100.0
+    assert normalized["b"] == 50.0
     assert normalized["text"] == "Hello World"
     assert normalized["type"] == "Text"
     print("✓ Marker normalization passed")
@@ -84,10 +84,10 @@ def test_normalize_docling_bbox():
     print(f"Normalized: {normalized}")
 
     assert normalized["page"] == 2
-    assert normalized["left"] == 10.0
-    assert normalized["top"] == 20.0
-    assert normalized["right"] == 100.0
-    assert normalized["bottom"] == 50.0
+    assert normalized["l"] == 10.0
+    assert normalized["t"] == 20.0
+    assert normalized["r"] == 100.0
+    assert normalized["b"] == 50.0
     assert normalized["text"] == "Docling text"
     assert normalized["type"] == "Paragraph"
     print("✓ Docling normalization passed")
@@ -112,10 +112,10 @@ def test_normalize_pymupdf_bbox():
     print(f"Normalized: {normalized}")
 
     assert normalized["page"] == 3
-    assert normalized["left"] == 10.0
-    assert normalized["top"] == 20.0
-    assert normalized["right"] == 100.0
-    assert normalized["bottom"] == 50.0
+    assert normalized["l"] == 10.0
+    assert normalized["t"] == 20.0
+    assert normalized["r"] == 100.0
+    assert normalized["b"] == 50.0
     assert normalized["text"] == "PyMuPDF text"
     print("✓ PyMuPDF normalization passed")
 
@@ -130,21 +130,21 @@ def test_auto_detect():
     marker = {"polygon": [[10, 20], [100, 50]]}
     normalized = normalize_bbox(marker, page_num=1, source="auto")
     print(f"\nAuto-detected Marker: {normalized['type']}")
-    assert normalized["left"] == 10.0
+    assert normalized["l"] == 10.0
     print("✓ Marker auto-detection passed")
 
     # Test Docling auto-detection
     docling = {"l": 10, "t": 20, "r": 100, "b": 50}
     normalized = normalize_bbox(docling, page_num=1, source="auto")
     print(f"Auto-detected Docling: {normalized}")
-    assert normalized["left"] == 10.0
+    assert normalized["l"] == 10.0
     print("✓ Docling auto-detection passed")
 
     # Test PyMuPDF auto-detection
     pymupdf = {"x0": 10, "y0": 20, "x1": 100, "y1": 50}
     normalized = normalize_bbox(pymupdf, page_num=1, source="auto")
     print(f"Auto-detected PyMuPDF: {normalized}")
-    assert normalized["left"] == 10.0
+    assert normalized["l"] == 10.0
     print("✓ PyMuPDF auto-detection passed")
 
 
@@ -184,7 +184,7 @@ def test_batch_normalize():
 
     print("\nNormalized BBoxes:")
     for i, bbox in enumerate(normalized, 1):
-        print(f"  {i}. Page {bbox['page']}: [{bbox['left']}, {bbox['top']}, {bbox['right']}, {bbox['bottom']}] - {bbox['text'][:20]}...")
+        print(f"  {i}. Page {bbox['page']}: [{bbox['l']}, {bbox['t']}, {bbox['r']}, {bbox['b']}] - {bbox['text'][:20]}...")
 
     print("✓ Batch normalization passed")
 
@@ -195,7 +195,7 @@ def test_bbox_area():
     print("TEST: BBox Area Calculation")
     print("=" * 60)
 
-    bbox = {"left": 10, "top": 20, "right": 100, "bottom": 50}
+    bbox = {"l": 10, "t": 20, "r": 100, "b": 50}
     area = bbox_area(bbox)
     print(f"\nBBox: {bbox}")
     print(f"Area: {area}")
@@ -212,8 +212,8 @@ def test_bbox_iou():
     print("=" * 60)
 
     # Overlapping bboxes
-    bbox1 = {"left": 10, "top": 20, "right": 100, "bottom": 50}
-    bbox2 = {"left": 50, "top": 30, "right": 150, "bottom": 60}
+    bbox1 = {"l": 10, "t": 20, "r": 100, "b": 50}
+    bbox2 = {"l": 50, "t": 30, "r": 150, "b": 60}
 
     iou = bbox_iou(bbox1, bbox2)
     print(f"\nBBox1: {bbox1}")
@@ -224,7 +224,7 @@ def test_bbox_iou():
     print("✓ IoU calculation passed (partial overlap)")
 
     # Non-overlapping bboxes
-    bbox3 = {"left": 200, "top": 200, "right": 300, "bottom": 300}
+    bbox3 = {"l": 200, "t": 200, "r": 300, "b": 300}
     iou = bbox_iou(bbox1, bbox3)
     print(f"\nBBox1: {bbox1}")
     print(f"BBox3: {bbox3}")
@@ -241,20 +241,20 @@ def test_merge_overlapping():
     print("=" * 60)
 
     bboxes = [
-        {"left": 10, "top": 20, "right": 100, "bottom": 50, "page": 1, "text": "Hello", "type": "Text"},
-        {"left": 50, "top": 30, "right": 150, "bottom": 60, "page": 1, "text": "World", "type": "Text"},
-        {"left": 200, "top": 20, "right": 300, "bottom": 50, "page": 1, "text": "Separate", "type": "Text"},
+        {"l": 10, "t": 20, "r": 100, "b": 50, "page": 1, "text": "Hello", "type": "Text"},
+        {"l": 50, "t": 30, "r": 150, "b": 60, "page": 1, "text": "World", "type": "Text"},
+        {"l": 200, "t": 20, "r": 300, "b": 50, "page": 1, "text": "Separate", "type": "Text"},
     ]
 
     print(f"\nOriginal BBoxes: {len(bboxes)}")
     for i, bbox in enumerate(bboxes, 1):
-        print(f"  {i}. [{bbox['left']}, {bbox['top']}, {bbox['right']}, {bbox['bottom']}] - {bbox['text']}")
+        print(f"  {i}. [{bbox['l']}, {bbox['t']}, {bbox['r']}, {bbox['b']}] - {bbox['text']}")
 
     merged = merge_overlapping_bboxes(bboxes, iou_threshold=0.3)
 
     print(f"\nMerged BBoxes: {len(merged)}")
     for i, bbox in enumerate(merged, 1):
-        print(f"  {i}. [{bbox['left']}, {bbox['top']}, {bbox['right']}, {bbox['bottom']}] - {bbox['text']}")
+        print(f"  {i}. [{bbox['l']}, {bbox['t']}, {bbox['r']}, {bbox['b']}] - {bbox['text']}")
 
     # Should merge first two, keep third separate
     assert len(merged) == 2
