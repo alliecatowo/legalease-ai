@@ -4,7 +4,6 @@ Knowledge Graph Service
 Provides knowledge graph functionality using Neo4j for entity relationships,
 citations, and document connections in legal cases.
 """
-import logging
 import re
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
@@ -16,7 +15,7 @@ from ..core.neo4j import neo4j_client
 from ..models.document import Document
 from ..models.entity import Entity, EntityMention
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class KnowledgeGraphService:
@@ -425,6 +424,7 @@ class KnowledgeGraphService:
 
             if format == "json":
                 import json
+from app.core.logging_config import get_logger
                 return json.dumps(graph_data, indent=2, default=str)
             elif format == "csv":
                 # Convert to CSV format

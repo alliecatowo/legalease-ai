@@ -5,14 +5,13 @@ Celery tasks for document generation, processing, and analysis.
 These are stub implementations - full functionality will be implemented in Phase 3.
 """
 from typing import Dict, Any
-import logging
 from uuid import UUID
 
 from app.workers.celery_app import celery_app
 from app.core.database_utils import database_session
 from app.models.document import Document, DocumentStatus
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @celery_app.task(name="process_document", bind=True)
@@ -192,6 +191,7 @@ def process_uploaded_document(self, document_gid: str) -> Dict[str, Any]:
             # Fetch chunks from Qdrant and save to PostgreSQL for document viewer
             from app.core.qdrant import get_qdrant_client
             from app.core.config import settings
+from app.core.logging_config import get_logger
 
             try:
                 qdrant_client = get_qdrant_client()

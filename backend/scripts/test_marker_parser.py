@@ -19,7 +19,6 @@ Usage:
 
 import sys
 import time
-import logging
 from pathlib import Path
 from typing import Dict, Any
 
@@ -28,13 +27,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.workers.parsers.factory import ParserFactory
 from app.workers.parsers.base import ParserType
+from app.core.logging_config import get_logger, setup_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Configure structured logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 class TestResult:

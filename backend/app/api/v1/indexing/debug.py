@@ -1,14 +1,14 @@
 """Debug endpoints for Qdrant indexing inspection."""
 
-import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel, Field
 
 from app.core.qdrant import get_qdrant_client
 from qdrant_client.models import Filter, FieldCondition, MatchValue
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

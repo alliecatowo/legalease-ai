@@ -4,7 +4,6 @@ Entity Extraction Service
 Provides entity extraction using GLiNER (zero-shot NER) and LexNLP (legal-specific extraction).
 Supports legal entities, dates, amounts, citations, and more.
 """
-import logging
 import re
 from typing import Dict, List, Optional, Any, Tuple, Set
 from datetime import datetime
@@ -15,7 +14,7 @@ from sqlalchemy import select, update, insert
 from ..core.config import settings
 from ..models.entity import Entity, EntityMention
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EntityExtractionService:
@@ -249,6 +248,7 @@ class EntityExtractionService:
         entities = []
         try:
             from lexnlp.extract.en import acts
+from app.core.logging_config import get_logger
 
             for act in acts.get_act_list(text):
                 entities.append({

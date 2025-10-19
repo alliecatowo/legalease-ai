@@ -1,7 +1,6 @@
 """Service for managing forensic discovery exports."""
 
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -11,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.forensic_export import ForensicExport
 from app.models.case import Case
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ForensicExportService:

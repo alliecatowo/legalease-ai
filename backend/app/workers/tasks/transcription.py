@@ -6,7 +6,6 @@ Production-ready implementation with WhisperX integration.
 """
 import os
 import json
-import logging
 import tempfile
 import subprocess
 import uuid
@@ -33,8 +32,9 @@ from app.core.minio_client import minio_client
 from app.models.transcription import Transcription
 from app.models.document import Document, DocumentStatus
 from app.workers.audio import AudioProcessor, TranscriptionExporter
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptionError(Exception):

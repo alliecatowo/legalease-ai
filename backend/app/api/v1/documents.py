@@ -1,6 +1,5 @@
 """Document API endpoints."""
 
-import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse, Response
@@ -22,8 +21,9 @@ from app.schemas.search import (
 )
 from app.services.document_service import DocumentService
 from app.services.page_image_service import PageImageService
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

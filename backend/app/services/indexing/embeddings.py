@@ -7,11 +7,11 @@ semantic search capabilities.
 """
 
 from typing import Dict, List
-import logging
 
 from sentence_transformers import SentenceTransformer
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EmbeddingGenerator:

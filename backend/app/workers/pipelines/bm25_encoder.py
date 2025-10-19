@@ -1,29 +1,26 @@
 """
-BM25 Sparse Vector Encoder
+BM25 Sparse Vector Encoder - FastEmbed Implementation
 
-Generates sparse vectors for BM25-based keyword matching.
-Used alongside dense embeddings for hybrid search in Qdrant.
+Generates sparse vectors for BM25-based keyword matching using FastEmbed's
+Qdrant/bm25 model. This replaces the custom BM25 implementation with a
+production-ready FastEmbed model that leverages Qdrant's native IDF support.
 """
 
-import logging
 from typing import List, Dict, Optional, Tuple
-import re
-from collections import Counter
-import math
-import hashlib
-import numpy as np
+from fastembed import SparseTextEmbedding
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BM25Encoder:
     """
-    BM25 encoder for generating sparse vectors for keyword-based retrieval.
+    BM25 encoder using FastEmbed's Qdrant/bm25 model.
 
     Features:
-    - TF-IDF-based sparse vectors
-    - Configurable BM25 parameters (k1, b)
-    - Token preprocessing for legal documents
+    - Production-ready BM25 implementation via FastEmbed
+    - Leverages Qdrant's native IDF support (Modifier.IDF)
+    - Drop-in replacement for custom BM25 encoder
     - Qdrant-compatible sparse vector format
     """
 
@@ -35,108 +32,76 @@ class BM25Encoder:
         use_legal_stopwords: bool = True,
     ):
         """
-        Initialize BM25 encoder.
+        Initialize BM25 encoder with FastEmbed.
 
         Args:
-            k1: BM25 k1 parameter (term frequency saturation)
-            b: BM25 b parameter (length normalization)
-            epsilon: Small value to avoid division by zero
-            use_legal_stopwords: Whether to filter legal-specific stopwords
+            k1: BM25 k1 parameter (kept for interface compatibility, not used)
+            b: BM25 b parameter (kept for interface compatibility, not used)
+            epsilon: Small value (kept for interface compatibility, not used)
+            use_legal_stopwords: Whether to filter stopwords (kept for interface compatibility, not used)
+
+        Note: Parameters are kept for backward compatibility but not used.
+        FastEmbed's Qdrant/bm25 model uses its own internal parameters.
         """
         self.k1 = k1
         self.b = b
         self.epsilon = epsilon
         self.use_legal_stopwords = use_legal_stopwords
 
-        # Document statistics
+        # Initialize FastEmbed BM25 model
+        # This model is specifically designed for Qdrant and produces
+        # sparse vectors with proper BM25 scoring
+        self.model = SparseTextEmbedding(model_name="Qdrant/bm25")
+
+        # Statistics (for compatibility with old interface)
+        self.num_docs = 0
         self.doc_freqs: Dict[str, int] = {}
         self.idf: Dict[str, float] = {}
         self.doc_lengths: List[int] = []
         self.avg_doc_length: float = 0.0
-        self.num_docs: int = 0
 
-        # Legal-specific stopwords (in addition to common English stopwords)
-        self.legal_stopwords = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'be',
-            'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
-            'would', 'should', 'could', 'may', 'might', 'must', 'can', 'shall',
-            'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
-            'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why', 'how',
-        }
-
-        logger.info(f"Initialized BM25Encoder (k1={k1}, b={b})")
+        logger.info("Initialized BM25Encoder with FastEmbed (model=Qdrant/bm25)")
 
     def tokenize(self, text: str) -> List[str]:
         """
-        Tokenize text for BM25 encoding.
+        Tokenize text (for interface compatibility).
+
+        Note: FastEmbed handles tokenization internally.
+        This method is kept for backward compatibility.
 
         Args:
             text: Input text
 
         Returns:
-            List of tokens
+            Empty list (tokenization handled by FastEmbed)
         """
-        # Convert to lowercase
-        text = text.lower()
-
-        # Remove special characters but keep alphanumeric and spaces
-        text = re.sub(r'[^a-z0-9\s]', ' ', text)
-
-        # Split into tokens
-        tokens = text.split()
-
-        # Filter stopwords if enabled
-        if self.use_legal_stopwords:
-            tokens = [t for t in tokens if t not in self.legal_stopwords]
-
-        # Remove very short tokens (< 2 chars)
-        tokens = [t for t in tokens if len(t) >= 2]
-
-        return tokens
+        # FastEmbed handles tokenization internally
+        # Return empty list for compatibility
+        return []
 
     def fit(self, documents: List[str]) -> None:
         """
-        Fit the BM25 model on a corpus of documents.
+        Fit the BM25 model (for interface compatibility).
 
-        This computes document frequencies and IDF scores.
+        Note: FastEmbed's Qdrant/bm25 model is pre-trained and doesn't
+        require fitting. This method is kept for backward compatibility
+        and logs a warning.
 
         Args:
-            documents: List of document texts
+            documents: List of document texts (ignored)
         """
-        logger.info(f"Fitting BM25 on {len(documents)} documents")
-
+        logger.info(
+            f"BM25Encoder.fit() called with {len(documents)} documents - "
+            "FastEmbed model is pre-trained, no fitting needed"
+        )
         self.num_docs = len(documents)
-        self.doc_freqs = {}
-        self.doc_lengths = []
-
-        # Count document frequencies
-        for doc in documents:
-            tokens = self.tokenize(doc)
-            self.doc_lengths.append(len(tokens))
-
-            # Count unique tokens in this document
-            unique_tokens = set(tokens)
-            for token in unique_tokens:
-                self.doc_freqs[token] = self.doc_freqs.get(token, 0) + 1
-
-        # Compute average document length
-        self.avg_doc_length = sum(self.doc_lengths) / max(len(self.doc_lengths), 1)
-
-        # Compute IDF scores
-        self.idf = {}
-        for token, df in self.doc_freqs.items():
-            # IDF formula: log((N - df + 0.5) / (df + 0.5) + 1)
-            idf_score = math.log(
-                (self.num_docs - df + 0.5) / (df + 0.5) + 1
-            )
-            self.idf[token] = idf_score
-
-        logger.info(f"BM25 fitted: {len(self.doc_freqs)} unique tokens, avg_doc_len={self.avg_doc_length:.2f}")
 
     def encode(self, text: str) -> Dict[str, float]:
         """
         Encode a single document into a BM25 sparse vector.
+
+        Note: This returns a dictionary format for compatibility.
+        For Qdrant indexing, use encode_to_qdrant_format() instead.
 
         Args:
             text: Document text
@@ -144,48 +109,20 @@ class BM25Encoder:
         Returns:
             Dictionary mapping token indices to BM25 scores
         """
-        tokens = self.tokenize(text)
-        doc_length = len(tokens)
+        # Use FastEmbed to generate sparse embedding
+        embeddings = list(self.model.embed([text]))
 
-        # Count term frequencies
-        term_freqs = Counter(tokens)
+        if not embeddings:
+            return {}
 
-        # Compute BM25 scores
-        bm25_scores = {}
+        embedding = embeddings[0]
 
-        # If not fitted, use default values for better keyword matching
-        if not self.idf:
-            # Not fitted - use TF-based scoring with default IDF
-            default_idf = 2.0  # Reasonable default IDF value
-            avg_len = 100.0  # Assume average document length
+        # Convert to dictionary format (index -> score)
+        result = {}
+        for idx, value in zip(embedding.indices, embedding.values):
+            result[str(idx)] = float(value)
 
-            for token, tf in term_freqs.items():
-                # BM25 formula with default values
-                numerator = tf * (self.k1 + 1)
-                denominator = tf + self.k1 * (
-                    1 - self.b + self.b * (doc_length / avg_len)
-                )
-                bm25_score = default_idf * (numerator / denominator)
-
-                if bm25_score > 0:
-                    bm25_scores[token] = float(bm25_score)
-        else:
-            # Fitted - use actual IDF scores
-            for token, tf in term_freqs.items():
-                # Get IDF (or use default if token not seen during fitting)
-                idf_score = self.idf.get(token, 1.0)  # Increased from epsilon (0.25) to 1.0
-
-                # BM25 formula
-                numerator = tf * (self.k1 + 1)
-                denominator = tf + self.k1 * (
-                    1 - self.b + self.b * (doc_length / max(self.avg_doc_length, 1))
-                )
-                bm25_score = idf_score * (numerator / denominator)
-
-                if bm25_score > 0:
-                    bm25_scores[token] = float(bm25_score)
-
-        return bm25_scores
+        return result
 
     def encode_queries(self, queries: List[str]) -> List[Dict[str, float]]:
         """
@@ -208,40 +145,29 @@ class BM25Encoder:
         """
         Encode text to Qdrant sparse vector format.
 
+        This is the primary method for generating sparse vectors for Qdrant.
+        FastEmbed produces vectors in the correct format directly.
+
         Args:
             text: Document text
-            token_to_id: Optional mapping from tokens to indices
+            token_to_id: Optional mapping (ignored, FastEmbed handles this)
 
         Returns:
             Tuple of (indices, values) for Qdrant sparse vector
         """
-        bm25_scores = self.encode(text)
+        # Use FastEmbed to generate sparse embedding
+        embeddings = list(self.model.embed([text]))
 
-        if token_to_id is None:
-            # Auto-generate token IDs based on hash
-            token_to_id = {}
-
-        indices = []
-        values = []
-
-        for token, score in bm25_scores.items():
-            # Get or create token ID using deterministic hash
-            if token not in token_to_id:
-                # Use SHA256 for deterministic hashing across Python processes
-                token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
-                token_to_id[token] = int(token_hash[:8], 16)  # Use first 8 hex chars (32-bit)
-
-            token_id = token_to_id[token]
-            indices.append(token_id)
-            values.append(score)
-
-        # Sort by indices
-        sorted_pairs = sorted(zip(indices, values))
-        if sorted_pairs:
-            indices, values = zip(*sorted_pairs)
-            return list(indices), list(values)
-        else:
+        if not embeddings:
             return [], []
+
+        embedding = embeddings[0]
+
+        # FastEmbed already returns indices and values in correct format
+        indices = [int(idx) for idx in embedding.indices]
+        values = [float(val) for val in embedding.values]
+
+        return indices, values
 
     def batch_encode_to_qdrant_format(
         self,
@@ -249,6 +175,9 @@ class BM25Encoder:
     ) -> List[Tuple[List[int], List[float]]]:
         """
         Batch encode texts to Qdrant sparse vector format.
+
+        This is optimized for batch processing using FastEmbed's
+        built-in batching capabilities.
 
         Args:
             texts: List of document texts
@@ -258,13 +187,13 @@ class BM25Encoder:
         """
         logger.info(f"Batch encoding {len(texts)} texts to Qdrant format")
 
-        # Build shared token_to_id mapping
-        token_to_id: Dict[str, int] = {}
-
         results = []
-        for text in texts:
-            sparse_vec = self.encode_to_qdrant_format(text, token_to_id)
-            results.append(sparse_vec)
+
+        # FastEmbed's embed() method handles batching efficiently
+        for embedding in self.model.embed(texts):
+            indices = [int(idx) for idx in embedding.indices]
+            values = [float(val) for val in embedding.values]
+            results.append((indices, values))
 
         return results
 
@@ -272,16 +201,24 @@ class BM25Encoder:
         """
         Get the top-k tokens with highest BM25 scores.
 
+        Note: FastEmbed doesn't expose token strings, only indices.
+        This method returns (index_as_string, score) for compatibility.
+
         Args:
             text: Document text
             top_k: Number of top tokens to return
 
         Returns:
-            List of (token, score) tuples sorted by score
+            List of (token_index, score) tuples sorted by score
         """
-        bm25_scores = self.encode(text)
-        sorted_tokens = sorted(bm25_scores.items(), key=lambda x: x[1], reverse=True)
-        return sorted_tokens[:top_k]
+        indices, values = self.encode_to_qdrant_format(text)
+
+        # Combine and sort by values
+        token_scores = list(zip(indices, values))
+        token_scores.sort(key=lambda x: x[1], reverse=True)
+
+        # Return top-k as (index_as_string, score)
+        return [(str(idx), score) for idx, score in token_scores[:top_k]]
 
     def get_stats(self) -> Dict[str, any]:
         """
@@ -291,9 +228,11 @@ class BM25Encoder:
             Dictionary with model statistics
         """
         return {
+            "model_name": "Qdrant/bm25",
+            "model_type": "FastEmbed SparseTextEmbedding",
             "num_docs": self.num_docs,
-            "vocab_size": len(self.doc_freqs),
-            "avg_doc_length": self.avg_doc_length,
+            "vocab_size": 0,  # Not exposed by FastEmbed
+            "avg_doc_length": 0.0,  # Not tracked by FastEmbed
             "k1": self.k1,
             "b": self.b,
             "use_legal_stopwords": self.use_legal_stopwords,
@@ -310,20 +249,16 @@ def encode_bm25(
     """
     Convenience function to encode text with BM25.
 
+    Note: Corpus parameter is ignored as FastEmbed model is pre-trained.
+
     Args:
         text: Text to encode
-        corpus: Optional corpus to fit BM25 model (if None, fits on single text)
-        k1: BM25 k1 parameter
-        b: BM25 b parameter
+        corpus: Optional corpus (ignored)
+        k1: BM25 k1 parameter (ignored)
+        b: BM25 b parameter (ignored)
 
     Returns:
         BM25 sparse vector as dictionary
     """
     encoder = BM25Encoder(k1=k1, b=b)
-
-    if corpus:
-        encoder.fit(corpus)
-    else:
-        encoder.fit([text])
-
     return encoder.encode(text)

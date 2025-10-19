@@ -5,13 +5,13 @@ Handles audio preprocessing with FFmpeg.
 Extracted from app.workers.tasks.transcription for better modularity.
 """
 import os
-import logging
 import subprocess
 import array
 import wave
 from typing import Dict, Any, Optional, Tuple
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AudioProcessor:

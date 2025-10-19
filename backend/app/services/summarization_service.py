@@ -4,7 +4,6 @@ Summarization Service
 Provides document summarization using Ollama local LLMs.
 Supports different types of legal documents with specialized prompts.
 """
-import logging
 from typing import Dict, Optional, Any, List
 from datetime import datetime
 
@@ -15,8 +14,9 @@ from ..core.ollama import summarize_text, ollama_client, ensure_model_available
 from ..core.config import settings
 from ..models.document import Document
 from ..models.chunk import Chunk
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SummarizationService:

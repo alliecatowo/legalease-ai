@@ -1,6 +1,5 @@
 """Document indexing endpoints for Qdrant vector search."""
 
-import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy.orm import Session
@@ -9,8 +8,9 @@ from pydantic import BaseModel, Field
 from app.core.database import get_db
 from app.services.indexing.core import get_indexing_service, IndexingService
 from app.models.document import Document
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

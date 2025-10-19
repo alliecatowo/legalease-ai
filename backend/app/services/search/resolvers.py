@@ -5,14 +5,14 @@ Handles resolution between document/case UUIDs and GIDs with in-memory caching.
 """
 
 from typing import Dict, Optional, Any
-import logging
 from uuid import UUID
 
 from app.core.database import SessionLocal
 from app.models.document import Document
 from app.models.case import Case
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class GidResolver:

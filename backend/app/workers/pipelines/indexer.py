@@ -5,15 +5,15 @@ Handles indexing of document chunks with embeddings into Qdrant vector database.
 Supports multi-vector (summary, section, microblock) and hybrid (dense + sparse) indexing.
 """
 
-import logging
 from typing import List, Dict, Any, Optional, Tuple, Union
 import uuid
 from qdrant_client.models import PointStruct, SparseVector
 
 from app.core.qdrant import get_qdrant_client, upsert_points
 from app.core.config import settings
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_gid_from_uuid(model_class, uuid_id: uuid.UUID) -> Optional[str]:

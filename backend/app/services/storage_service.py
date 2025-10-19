@@ -4,11 +4,11 @@ Storage Service for Managing Case Documents in MinIO
 from typing import Optional, BinaryIO, Callable
 from datetime import timedelta
 from io import BytesIO
-import logging
 
 from app.core.minio_client import minio_client
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class StorageService:

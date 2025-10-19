@@ -1,13 +1,12 @@
 """Service for generating page images from PDF documents."""
 
 import io
-import logging
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
 from app.core.minio_client import minio_client
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PageImageService:
@@ -38,6 +37,7 @@ class PageImageService:
         """
         try:
             import fitz  # PyMuPDF
+from app.core.logging_config import get_logger
         except ImportError:
             logger.error("PyMuPDF not installed. Install with: pip install pymupdf")
             raise

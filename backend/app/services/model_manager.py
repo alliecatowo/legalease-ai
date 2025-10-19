@@ -5,14 +5,14 @@ Handles downloading and caching ML models for self-hosted inference.
 HuggingFace token optional - uses direct download URLs with auth if token provided.
 """
 import os
-import logging
 import hashlib
 from pathlib import Path
 from typing import Optional, Dict
 import httpx
 from tqdm import tqdm
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ModelManager:

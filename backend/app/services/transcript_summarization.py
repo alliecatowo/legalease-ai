@@ -10,7 +10,6 @@ local Ollama LLM (7B models). Includes:
 - Action items extraction
 - Topics and entities identification
 """
-import logging
 import json
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import timedelta
@@ -18,8 +17,9 @@ from collections import defaultdict
 
 from app.core.ollama import OllamaClient, ensure_model_available
 from app.core.config import settings
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptSummarizer:

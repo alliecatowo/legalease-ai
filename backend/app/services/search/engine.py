@@ -10,7 +10,6 @@ Modern hybrid search engine using Qdrant Query API with:
 """
 
 from typing import List, Dict, Any, Optional
-import logging
 import re
 import time
 
@@ -35,8 +34,9 @@ from app.workers.pipelines.reranker import CrossEncoderReranker
 from app.workers.pipelines.bm25_encoder import BM25Encoder
 from app.services.search.scoring import normalize_and_boost_scores
 from app.services.search.resolvers import GidResolver
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class HybridSearchEngine:

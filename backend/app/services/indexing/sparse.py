@@ -7,11 +7,11 @@ exact keyword matching capabilities.
 """
 
 from typing import Dict, Any, Optional, List
-import logging
 import re
 from collections import defaultdict
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SparseVectorGenerator:

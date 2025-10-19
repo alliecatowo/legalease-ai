@@ -5,9 +5,9 @@ Handles score normalization, boosting, and fusion for hybrid search results.
 """
 
 from typing import List, Dict, Any
-import logging
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def normalize_and_boost_scores(

@@ -8,11 +8,11 @@ Priority order for resource constraints:
 2. Reduce model size (medium → small → base → tiny)
 3. Last resort: disable diarization
 """
-import logging
 from typing import Dict, Tuple, Optional
 from app.core.config import settings
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ModelSelector:

@@ -3,15 +3,15 @@ Transcript Indexing Tasks
 
 Celery tasks for indexing transcription segments into Qdrant for search.
 """
-import logging
 from typing import Dict, Any, Optional, List
 
 from app.workers.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.services.transcript_indexing_service import get_transcript_indexing_service
 from app.models.transcription import Transcription
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptIndexingError(Exception):

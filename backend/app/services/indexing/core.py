@@ -7,7 +7,6 @@ Qdrant vector database.
 """
 
 from typing import List, Dict, Any, Optional
-import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -24,8 +23,9 @@ from app.models.chunk import Chunk
 from app.models.case import Case
 from app.services.indexing.embeddings import EmbeddingGenerator
 from app.services.indexing.sparse import SparseVectorGenerator
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class IndexingService:

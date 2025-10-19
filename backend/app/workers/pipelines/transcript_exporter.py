@@ -6,15 +6,15 @@ using docxtpl templates. Designed for legal proceedings, depositions, and
 court transcripts.
 """
 
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from docxtpl import DocxTemplate
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

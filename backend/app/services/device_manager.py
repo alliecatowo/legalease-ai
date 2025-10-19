@@ -4,12 +4,12 @@ Device Manager for CUDA and ROCm Support
 Handles automatic detection and configuration for both NVIDIA (CUDA) and AMD (ROCm) GPUs.
 Provides a unified interface for device selection and compute type determination.
 """
-import logging
 import os
 from typing import Optional, Tuple, Dict, Any
 from enum import Enum
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DeviceType(Enum):

@@ -1,7 +1,6 @@
 """Document service for managing document operations."""
 
 import io
-import logging
 import uuid
 from datetime import datetime
 from typing import List, Optional, BinaryIO
@@ -13,8 +12,9 @@ from app.models.document import Document, DocumentStatus
 from app.models.case import Case
 from app.core.minio_client import minio_client
 from app.workers.tasks.document_processing import process_uploaded_document
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DocumentService:

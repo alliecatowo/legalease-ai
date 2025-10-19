@@ -1,6 +1,5 @@
 """AI-powered summarization endpoints for transcriptions."""
 
-import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Body
 from sqlalchemy.orm import Session
@@ -15,8 +14,9 @@ from app.workers.tasks.summarization import (
     quick_summary,
 )
 from app.workers.celery_app import celery_app
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

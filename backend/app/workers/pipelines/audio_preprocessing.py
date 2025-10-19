@@ -8,12 +8,12 @@ Uses FFmpeg for format conversion and audio normalization.
 import os
 import subprocess
 import tempfile
-import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

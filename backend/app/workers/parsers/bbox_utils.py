@@ -10,10 +10,10 @@ All formats are normalized to Docling format {"l", "t", "r", "b"} for consistent
 processing and frontend rendering.
 """
 
-import logging
 from typing import Dict, List, Any, Optional, Union
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # Standard bbox format returned by all normalization functions

@@ -4,15 +4,15 @@ Neo4j Integration for Knowledge Graph
 This module provides a client for interacting with Neo4j graph database
 for storing entity relationships, citations, and document connections.
 """
-import logging
 from typing import Dict, List, Optional, Any
 from neo4j import GraphDatabase, AsyncGraphDatabase
 from neo4j.exceptions import ServiceUnavailable
 
 from .config import settings
 from .retry import retry_neo4j
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Neo4jClient:

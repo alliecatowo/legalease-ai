@@ -1,6 +1,5 @@
 """Audio/video streaming and waveform endpoints for transcriptions."""
 
-import logging
 import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Header
@@ -10,8 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.transcription import TranscriptionService
 from app.models.transcription import Transcription
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

@@ -5,12 +5,11 @@ Provides fast, lightweight dense vector embeddings using Qdrant's FastEmbed libr
 Optimized for production with ONNX runtime, smaller memory footprint, and faster inference.
 """
 
-import logging
 from typing import List, Optional, Dict, Any, Iterator
 import numpy as np
 from fastembed import TextEmbedding
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FastEmbedPipeline:
@@ -306,6 +305,7 @@ class FastEmbedPipeline:
         """
         try:
             from fastembed import TextEmbedding
+from app.core.logging_config import get_logger
             return TextEmbedding.list_supported_models()
         except Exception as e:
             logger.error(f"Error listing models: {e}")

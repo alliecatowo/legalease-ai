@@ -45,7 +45,6 @@ Features:
 - Automatic logging of retry attempts
 """
 
-import logging
 from typing import TypeVar, Callable, Any
 from functools import wraps
 import asyncio
@@ -58,6 +57,7 @@ from tenacity import (
     before_sleep_log,
     RetryError,
 )
+
 
 # SQLAlchemy and psycopg2 exceptions
 try:
@@ -160,7 +160,7 @@ except ImportError:
     _REDIS_EXCEPTIONS = (ConnectionError, TimeoutError)
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 T = TypeVar('T')
 

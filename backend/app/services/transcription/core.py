@@ -1,6 +1,5 @@
 """Core CRUD operations for transcription service."""
 
-import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from fastapi import HTTPException
@@ -9,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.transcription import Transcription, TranscriptSegment
 from app.models.case import Case
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptionCoreService:
@@ -439,6 +438,7 @@ class TranscriptionCoreService:
 
         # Mark the speakers column as modified for SQLAlchemy to detect the change
         from sqlalchemy.orm.attributes import flag_modified
+from app.core.logging_config import get_logger
         flag_modified(transcription, "speakers")
 
         # Commit the changes

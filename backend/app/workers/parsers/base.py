@@ -5,14 +5,15 @@ Defines abstract base classes and data structures for document parsing.
 All parsers (Marker, Docling, etc.) must implement the DocumentParser interface.
 """
 
-import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from enum import Enum
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from app.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ParserType(str, Enum):

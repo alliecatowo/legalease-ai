@@ -7,7 +7,6 @@ Parser -> Chunker -> Embedder -> Indexer
 Handles the complete workflow from raw document to indexed vectors in Qdrant.
 """
 
-import logging
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
@@ -18,8 +17,9 @@ from app.workers.pipelines.chunker import DocumentChunker
 from app.workers.pipelines.embeddings import FastEmbedPipeline as EmbeddingPipeline
 from app.workers.pipelines.bm25_encoder import BM25Encoder
 from app.workers.pipelines.indexer import QdrantIndexer
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ProcessingStage(str, Enum):

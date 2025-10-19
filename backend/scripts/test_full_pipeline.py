@@ -21,7 +21,6 @@ Environment:
 
 import sys
 import os
-import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import asyncio
@@ -37,7 +36,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Imports for pipeline components
 from app.workers.parsers.marker_parser import MarkerParser
@@ -50,6 +49,7 @@ from app.services.search.engine import HybridSearchEngine
 from app.schemas.search import HybridSearchRequest
 from app.core.qdrant import create_collection, get_qdrant_client, get_collection_info
 from app.core.config import settings
+from app.core.logging_config import get_logger
 
 
 class PipelineTestResult:

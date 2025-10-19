@@ -10,12 +10,11 @@ WhisperX: https://github.com/m-bain/whisperX
 """
 
 import os
-import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, asdict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -393,6 +392,7 @@ class WhisperXPipeline:
         # Clear CUDA cache if available
         try:
             import torch
+from app.core.logging_config import get_logger
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 logger.info("Cleared CUDA cache")

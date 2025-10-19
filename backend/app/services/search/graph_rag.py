@@ -7,14 +7,14 @@ Combines vector search with graph traversal to:
 3. Enhance search results with graph-based context
 """
 
-import logging
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.neo4j import Neo4jClient
 from app.services.entity_service import EntityExtractionService
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class GraphRAGEngine:

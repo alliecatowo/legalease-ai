@@ -5,11 +5,11 @@ Handles exporting transcriptions to various formats (DOCX, SRT, VTT, JSON).
 Extracted from app.workers.tasks.transcription for better modularity.
 """
 import json
-import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptionExporter:

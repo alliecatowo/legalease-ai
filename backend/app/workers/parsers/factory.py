@@ -5,13 +5,13 @@ Factory for creating document parsers with appropriate configuration.
 Supports strategy pattern for easy parser switching and testing.
 """
 
-import logging
 from typing import Dict, Any, Optional
 
 from app.workers.parsers.base import DocumentParser, ParserType
 from app.workers.parsers.marker_parser import MarkerParser
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ParserFactory:

@@ -4,15 +4,15 @@ Ollama Semaphore Service
 Manages concurrent access to Ollama using Redis-based distributed semaphore.
 Prevents RAM/VRAM exhaustion when multiple workers try to call Ollama simultaneously.
 """
-import logging
 import redis
 from contextlib import contextmanager
 from typing import Optional
 import time
 
 from app.core.config import settings
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OllamaSemaphore:

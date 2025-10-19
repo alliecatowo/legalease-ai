@@ -1,14 +1,14 @@
 """MinIO client configuration and utilities."""
 
 import io
-import logging
 from typing import BinaryIO, Optional
 from minio import Minio
 from minio.error import S3Error
 from app.core.config import settings
 from app.core.retry import retry_minio
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MinIOClient:

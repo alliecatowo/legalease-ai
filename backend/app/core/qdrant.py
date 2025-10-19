@@ -8,7 +8,6 @@ legal documents.
 
 from typing import List, Dict, Any, Optional, Tuple
 from functools import lru_cache
-import logging
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -29,8 +28,9 @@ from qdrant_client.models import (
 
 from app.core.config import settings
 from app.core.retry import retry_qdrant
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @lru_cache()

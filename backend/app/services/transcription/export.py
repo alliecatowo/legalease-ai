@@ -2,13 +2,12 @@
 
 import io
 import json
-import logging
 from sqlalchemy.orm import Session
 from docx import Document as DocxDocument
 
 from app.models.transcription import Transcription
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptionExportService:

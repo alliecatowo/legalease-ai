@@ -4,7 +4,6 @@ Auto-Tagging Service
 Provides automatic document tagging and categorization using LLM analysis.
 Supports legal document types, topics, and custom tags.
 """
-import logging
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime
 
@@ -15,7 +14,7 @@ from ..core.ollama import ollama_client, ensure_model_available
 from ..core.config import settings
 from ..models.document import Document
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AutoTaggingService:
@@ -133,6 +132,7 @@ class AutoTaggingService:
 
             # Fall back to chunk text
             from ..models.chunk import Chunk
+from app.core.logging_config import get_logger
             chunk_query = select(Chunk.content).where(Chunk.document_id == document_id).limit(5)
             chunk_result = await db.execute(chunk_query)
             chunks = chunk_result.scalars().all()

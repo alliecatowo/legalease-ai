@@ -6,7 +6,6 @@ transcription segments into Qdrant for semantic search alongside documents.
 """
 
 from typing import List, Dict, Any, Optional, Union
-import logging
 import uuid
 from datetime import datetime
 from collections import defaultdict
@@ -24,7 +23,7 @@ from app.core.config import settings
 from app.models.transcription import Transcription
 from app.models.case import Case
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptIndexingService:
@@ -208,6 +207,7 @@ class TranscriptIndexingService:
         # Generate unique point ID using UUID to avoid collision with document chunk IDs
         # Format: transcript-{transcription_id}-{segment_index}
         import uuid
+from app.core.logging_config import get_logger
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"transcript-{transcription_id}-{segment_index}"))
 
         # Create point with both dense and sparse vectors

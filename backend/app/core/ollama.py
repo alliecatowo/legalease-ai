@@ -6,14 +6,14 @@ Supports summarization, tagging, and other AI features.
 """
 import asyncio
 import json
-import logging
 from typing import Dict, List, Optional, Any, Union
 import httpx
 
 from .config import settings
 from .retry import retry_ollama
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OllamaClient:

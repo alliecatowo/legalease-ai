@@ -8,7 +8,6 @@ This module provides a tiered OCR system with:
 - Confidence scoring
 """
 
-import logging
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -16,8 +15,9 @@ from typing import Dict, List, Optional, Tuple
 from PIL import Image
 from pdf2image import convert_from_path
 import pytesseract
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OCRPipeline:

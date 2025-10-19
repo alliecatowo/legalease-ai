@@ -1,7 +1,6 @@
 """MinIO storage operations for transcription service."""
 
 import io
-import logging
 from typing import Optional, Tuple
 from datetime import datetime
 from fastapi import UploadFile, HTTPException
@@ -13,7 +12,7 @@ from app.models.document import DocumentStatus
 from app.models.case import Case
 from app.core.minio_client import minio_client
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TranscriptionStorageService:
@@ -203,6 +202,7 @@ class TranscriptionStorageService:
             HTTPException: If transcription not found or file info unavailable
         """
         from app.services.transcription.core import TranscriptionCoreService
+from app.core.logging_config import get_logger
 
         transcription = TranscriptionCoreService.get_transcription(transcription_gid, db)
 

@@ -1,6 +1,5 @@
 """Key moments management endpoints for transcriptions."""
 
-import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Path, Body
 from sqlalchemy.orm import Session
@@ -8,8 +7,9 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.services.transcription import TranscriptionService
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

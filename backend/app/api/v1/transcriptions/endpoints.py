@@ -1,6 +1,5 @@
 """Main CRUD endpoints for transcriptions."""
 
-import logging
 import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Path, Form, Body, Query
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
+from app.core.logging_config import get_logger
 from app.schemas.transcription import (
     TranscriptionResponse,
     TranscriptionListResponse,
@@ -23,7 +23,7 @@ from app.services.transcription import TranscriptionService
 from app.models.transcription import Transcription
 from app.models.case import Case
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

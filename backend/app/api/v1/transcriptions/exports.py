@@ -1,6 +1,5 @@
 """Export and download endpoints for transcriptions in various formats."""
 
-import logging
 import io
 from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import StreamingResponse
@@ -9,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.transcription import TranscriptionFormat
 from app.services.transcription import TranscriptionService
+from app.core.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
