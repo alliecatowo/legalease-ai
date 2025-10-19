@@ -166,11 +166,15 @@ class SpacyNERExtractor(NameExtractionStrategy):
             # Extract PERSON entities
             for ent in doc.ents:
                 if ent.label_ == "PERSON":
+                    logger.debug(f"spaCy found PERSON: '{ent.text}' in segment {idx}: {text[:50]}")
+
                     # Determine context type using linguistic analysis
                     context_type = self._classify_context(ent, doc, text)
 
                     # Confidence based on NER confidence and context clarity
                     confidence = self._compute_confidence(ent, context_type)
+
+                    logger.debug(f"  -> Context: {context_type.value}, Confidence: {confidence:.2f}")
 
                     evidence = NameEvidence(
                         name=ent.text,
@@ -280,11 +284,15 @@ class PatternBasedExtractor(NameExtractionStrategy):
         """Extract names using pattern matching with context classification"""
         evidence_list = []
 
+        # ULTRA-CONSERVATIVE patterns to avoid false positives
+        # Only match when there's STRONG evidence of a name (proper name context)
         patterns = {
-            'self_id': r'\b(?:I\'m|I am|my name is|this is|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b',
-            'greeting': r'\b(?:hi|hello|hey)\s+([A-Z][a-z]+)\b',
-            'vocative': r'\b([A-Z][a-z]+)[?!,]\s*(?:how|what|can|could|would)?',
-            'possessive': r'\b([A-Z][a-z]+)\'s\b',
+            # Only "My name is X" and "Call me X" (strongest indicators)
+            'self_id': r'\b(?:my name is|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b',
+            # Greeting with name ONLY if it's not sentence-initial
+            'greeting': r'(?<!^)\b(?:hi|hello|hey)\s+([A-Z][a-z]+)\b',
+            # Vocative removed entirely - too error prone
+            # Possessive removed - not reliable
         }
 
         for idx, segment in enumerate(context.segments):

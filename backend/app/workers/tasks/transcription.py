@@ -910,7 +910,7 @@ Return JSON with speaker names and confidence scores:"""
             duration=duration
         )
 
-        # Apply inferred names if confidence > 0.7 (lower than old 0.8 since we have better evidence)
+        # Apply inferred names if confidence > 0.6 (balanced threshold for spaCy + patterns)
         updated_speakers = speakers.copy()
         metadata = {
             'inference_performed': True,
@@ -927,7 +927,7 @@ Return JSON with speaker names and confidence scores:"""
             evidence_count = inference.get('evidence_count', 0)
 
             if speaker_id in updated_speakers:
-                if confidence > 0.7 and inferred_name:
+                if confidence > 0.6 and inferred_name:
                     # Apply inferred name
                     old_name = updated_speakers[speaker_id].get('name', speaker_id)
                     updated_speakers[speaker_id]['name'] = inferred_name
@@ -944,14 +944,14 @@ Return JSON with speaker names and confidence scores:"""
                     )
                 else:
                     logger.info(
-                        f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.7 "
+                        f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.6 "
                         f"(evidence: {evidence_count})"
                     )
 
         if metadata['applied_names']:
             logger.info(f"Successfully inferred {len(metadata['applied_names'])} speaker names")
         else:
-            logger.info("No speaker names met confidence threshold (0.7), using default names")
+            logger.info("No speaker names met confidence threshold (0.6), using default names")
 
         return updated_speakers, metadata
 
