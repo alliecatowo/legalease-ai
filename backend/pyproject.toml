@@ -31,6 +31,7 @@ dependencies = [
     "pymupdf",
     "pypdf",
     "pytesseract",
+    "tesserocr",
     "python-docx",
     "python-multipart",
     "qdrant-client>=1.14.0",

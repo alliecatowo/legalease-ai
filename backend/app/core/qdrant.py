@@ -42,7 +42,7 @@ def get_qdrant_client() -> QdrantClient:
     client = QdrantClient(
         host=settings.QDRANT_HOST,
         port=settings.QDRANT_PORT,
-        timeout=30.0,
+        timeout=300.0,  # 5 minutes - increased for large document indexing
     )
     logger.info(f"Qdrant client initialized: {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
     return client

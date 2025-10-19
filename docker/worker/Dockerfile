@@ -13,6 +13,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libgl1 \
     libglib2.0-0 \
+    tesseract-ocr \
+    libtesseract-dev \
+    libleptonica-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -78,6 +82,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libgl1 \
     libglib2.0-0 \
+    tesseract-ocr \
+    libtesseract-dev \
+    libleptonica-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv

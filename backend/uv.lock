@@ -1636,6 +1636,7 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "spacy" },
     { name = "sqlalchemy" },
+    { name = "tesserocr" },
     { name = "tiktoken" },
     { name = "transformers" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1692,6 +1693,7 @@ requires-dist = [
     { name = "sentence-transformers" },
     { name = "spacy" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "tesserocr" },
     { name = "tiktoken" },
     { name = "transformers" },
     { name = "uvicorn", extras = ["standard"] },
@@ -4307,6 +4309,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2b/c5/d4cc6e293fb837aaf9f76dd7745476aeba8ef7ef5146c3b3f9ee375fe7a5/tensorboardx-2.6.4.tar.gz", hash = "sha256:b163ccb7798b31100b9f5fa4d6bc22dad362d7065c2f24b51e50731adde86828", size = 4769801, upload-time = "2025-06-10T22:37:07.419Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/1d/b5d63f1a6b824282b57f7b581810d20b7a28ca951f2d5b59f1eb0782c12b/tensorboardx-2.6.4-py3-none-any.whl", hash = "sha256:5970cf3a1f0a6a6e8b180ccf46f3fe832b8a25a70b86e5a237048a7c0beb18e2", size = 87201, upload-time = "2025-06-10T22:37:05.44Z" },
+]
+
+[[package]]
+name = "tesserocr"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/64/2a6a82a677e9e3f7641ef9c74ed14b4ab82b1d1b1f3a50fc6231b8545831/tesserocr-2.9.1.tar.gz", hash = "sha256:cb809fde3421b347958f725afe70b341a02149078c7f02e4cffa80121d161219", size = 71947, upload-time = "2025-10-10T13:56:39.011Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/b8/b3087530aba4a3e474e9002d110e5e8d61db71cdc0d70c1a33da991a4acd/tesserocr-2.9.1-cp311-cp311-macosx_13_0_x86_64.whl", hash = "sha256:210dbab208c9e6a362add70241ac2e8f969356c37cb0d0f1e98ca916848e6116", size = 4116543, upload-time = "2025-10-10T13:55:49.915Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/72/aff6884276d3fe87fea35ec3fbf7b89619757901edfff454686c65c289ed/tesserocr-2.9.1-cp311-cp311-macosx_15_0_arm64.whl", hash = "sha256:c071927618edd917db353713fb14e3d9a9e22c8cd1ad4aeb6616a605e0e917b6", size = 3601881, upload-time = "2025-10-10T13:55:51.868Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/46/a085d17678e9ff1a6ea4cf3075000b3c0171ce5bcf5e658b9e9392484b2b/tesserocr-2.9.1-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c347b687c997cdb6d9dadaa32ea1d4cefea3e2dca3d04595fd0f23e95d35d8d4", size = 5199442, upload-time = "2025-10-10T13:55:53.639Z" },
+    { url = "https://files.pythonhosted.org/packages/00/de/cb4406b1d16e3fafdb1d054286863dcb14d182bb12c807499d11d951c660/tesserocr-2.9.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:dca9f3ddf18f51b9400c1023bad8b4d4a169e4988bac847652c6f2354ad579c2", size = 5484757, upload-time = "2025-10-10T13:55:55.33Z" },
+    { url = "https://files.pythonhosted.org/packages/57/83/e37d2401da2da79b2009285d7096aefbc22b5f0fec876d93164c9301a9fa/tesserocr-2.9.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:598e3b44bf201e125064f31c0705160e0527af248ef831fb8e5953d10bcf914b", size = 6874355, upload-time = "2025-10-10T13:55:57.918Z" },
+    { url = "https://files.pythonhosted.org/packages/70/c7/2cea6a86fc8fbef4d785c55832cb0446a14f58b78d9716fca8063cd75d06/tesserocr-2.9.1-cp312-cp312-macosx_13_0_x86_64.whl", hash = "sha256:b8eca932ee4142b9326f28abf173f21bc0225935fedc48ddebdd82694f3f2445", size = 4116563, upload-time = "2025-10-10T13:56:00.037Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/fa/00c28a7793cd7477804691012eee7724983c3b29b08f07b46bbec8fac1d1/tesserocr-2.9.1-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:6abf55e5eefe8d0f6ec69574ca71cedfaf640e65c3e7e296672a1edac034296e", size = 3602673, upload-time = "2025-10-10T13:56:01.696Z" },
+    { url = "https://files.pythonhosted.org/packages/06/7e/9c53a6f7c75f4768998507295e6601e9c85e82893960c5e8208e36510672/tesserocr-2.9.1-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:852494328474570378866a7f5f8bb2ec659e5c86e8dc5c605218a5f3a58975a4", size = 5187974, upload-time = "2025-10-10T13:56:04.796Z" },
+    { url = "https://files.pythonhosted.org/packages/61/60/a3ec6ac196225ab63dc588d12c6efe079579cba65ecf011af4244ff6a8e6/tesserocr-2.9.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7cb3e246391fccbfe7922a4701a83a9a34ef0ccec3e6aa35dfb986c0f682a867", size = 5486704, upload-time = "2025-10-10T13:56:07.075Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/f8/12cb206909ca9eeab550b1c7f95917bdd09e85d0a87694aa8628d9da3ce3/tesserocr-2.9.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:95d3ef17e153b0ea679764c27919e03ece8cea58f995e0f0f499c2a36390fb66", size = 6861047, upload-time = "2025-10-10T13:56:08.809Z" },
 ]
 
 [[package]]
