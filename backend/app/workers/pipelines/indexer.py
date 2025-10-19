@@ -146,42 +146,62 @@ class QdrantIndexer:
         Returns:
             List of PointStruct objects
         """
+        # Look up GIDs ONCE before the loop to avoid N+1 queries
+        document_gid = None
+        case_gid = None
+
+        if isinstance(document_id, uuid.UUID):
+            from app.models.document import Document
+            document_gid = get_gid_from_uuid(Document, document_id)
+
+        if isinstance(case_id, uuid.UUID):
+            from app.models.case import Case
+            case_gid = get_gid_from_uuid(Case, case_id)
+
         points = []
 
-        # Group chunks by type
+        # Group chunks by type, preserving original indices for sparse vector lookup
         chunks_by_type = {}
-        for chunk in chunks:
+        for original_idx, chunk in enumerate(chunks):
             chunk_type = chunk.get("chunk_type", "section")
             if chunk_type not in chunks_by_type:
                 chunks_by_type[chunk_type] = []
-            chunks_by_type[chunk_type].append(chunk)
+            # Store tuple of (original_index, chunk) to maintain sparse vector alignment
+            chunks_by_type[chunk_type].append((original_idx, chunk))
 
         # Create points for each chunk type
-        for chunk_type, type_chunks in chunks_by_type.items():
+        for chunk_type, type_chunks_with_idx in chunks_by_type.items():
             if chunk_type not in embeddings:
                 logger.warning(f"No embeddings found for chunk type: {chunk_type}")
                 continue
 
             type_embeddings = embeddings[chunk_type]
 
-            if len(type_chunks) != len(type_embeddings):
+            if len(type_chunks_with_idx) != len(type_embeddings):
                 logger.warning(
                     f"Chunk count mismatch for {chunk_type}: "
-                    f"{len(type_chunks)} chunks vs {len(type_embeddings)} embeddings"
+                    f"{len(type_chunks_with_idx)} chunks vs {len(type_embeddings)} embeddings"
                 )
                 # Use minimum to avoid index errors
-                count = min(len(type_chunks), len(type_embeddings))
-                type_chunks = type_chunks[:count]
+                count = min(len(type_chunks_with_idx), len(type_embeddings))
+                type_chunks_with_idx = type_chunks_with_idx[:count]
                 type_embeddings = type_embeddings[:count]
 
-            for i, (chunk, embedding) in enumerate(zip(type_chunks, type_embeddings)):
+            for i, ((original_idx, chunk), embedding) in enumerate(zip(type_chunks_with_idx, type_embeddings)):
+                # Use original_idx to get correct sparse vector from flat list
+                sparse_vec = None
+                if sparse_vectors and original_idx < len(sparse_vectors):
+                    sparse_vec = sparse_vectors[original_idx]
+
                 point = self._create_point(
                     chunk=chunk,
                     embedding=embedding,
                     chunk_type=chunk_type,
-                    sparse_vector=sparse_vectors[i] if sparse_vectors and i < len(sparse_vectors) else None,
+                    sparse_vector=sparse_vec,
                     document_id=document_id,
                     case_id=case_id,
+                    document_gid=document_gid,
+                    case_gid=case_gid,
                 )
                 points.append(point)
 
@@ -195,6 +215,8 @@ class QdrantIndexer:
         sparse_vector: Optional[Tuple[List[int], List[float]]] = None,
         document_id: Union[int, uuid.UUID] = None,
         case_id: Union[int, uuid.UUID] = None,
+        document_gid: Optional[str] = None,
+        case_gid: Optional[str] = None,
     ) -> PointStruct:
         """
         Create a single Qdrant point.
@@ -206,6 +228,8 @@ class QdrantIndexer:
             sparse_vector: Optional sparse vector (indices, values)
             document_id: Database document ID (UUID or legacy int)
             case_id: Database case ID (UUID or legacy int)
+            document_gid: Pre-computed document GID (avoids N+1 queries)
+            case_gid: Pre-computed case GID (avoids N+1 queries)
 
         Returns:
             PointStruct object
@@ -228,18 +252,20 @@ class QdrantIndexer:
         # Handle document_id (can be UUID or int)
         if document_id is not None:
             if isinstance(document_id, uuid.UUID):
-                from app.models.document import Document
                 payload["document_id"] = str(document_id)  # Store UUID as string for backwards compat
-                payload["document_gid"] = get_gid_from_uuid(Document, document_id)  # Query GID from DB
+                # Use pre-computed GID passed from _prepare_points() to avoid N+1 queries
+                if document_gid:
+                    payload["document_gid"] = document_gid
             else:
                 payload["document_id"] = document_id  # Legacy int support
 
         # Handle case_id (can be UUID or int)
         if case_id is not None:
             if isinstance(case_id, uuid.UUID):
-                from app.models.case import Case
                 payload["case_id"] = str(case_id)  # Store UUID as string for backwards compat
-                payload["case_gid"] = get_gid_from_uuid(Case, case_id)  # Query GID from DB
+                # Use pre-computed GID passed from _prepare_points() to avoid N+1 queries
+                if case_gid:
+                    payload["case_gid"] = case_gid
             else:
                 payload["case_id"] = case_id  # Legacy int support
 

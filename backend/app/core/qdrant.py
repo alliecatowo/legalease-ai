@@ -147,26 +147,55 @@ def upsert_points(
 
     try:
         # Upload in batches
-        # Use wait=False for all but the last batch to improve performance
+        # Use wait=True for ALL batches to catch errors immediately
         total_batches = (len(points) + batch_size - 1) // batch_size
 
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
             batch_num = (i // batch_size) + 1
-            is_last_batch = (batch_num == total_batches)
 
-            client.upsert(
-                collection_name=collection_name,
-                points=batch,
-                wait=is_last_batch,  # Only wait on the last batch for confirmation
-            )
-            logger.info(f"Upserted batch {batch_num}/{total_batches}: {len(batch)} points")
+            try:
+                # Debug: Check ALL points in batch for dimension mismatches
+                if batch_num == 1:
+                    for idx, point in enumerate(batch):
+                        if isinstance(point.vector, dict):
+                            for key, vec in point.vector.items():
+                                if isinstance(vec, list):
+                                    if len(vec) != 384:
+                                        logger.error(f"FOUND BAD VECTOR! Point {idx} id={point.id}, vector '{key}' has length {len(vec)}, should be 384. Values: {vec}")
+                        else:
+                            logger.error(f"FOUND BAD POINT! Point {idx} id={point.id}, vector is not dict: {type(point.vector)}")
+
+                response = client.upsert(
+                    collection_name=collection_name,
+                    points=batch,
+                    wait=True,  # Wait for each batch to catch errors immediately
+                )
+                logger.info(f"Upsert response: {response}")
+                logger.info(f"Upserted batch {batch_num}/{total_batches}: {len(batch)} points")
+            except Exception as batch_error:
+                logger.error(f"Error upserting batch {batch_num}/{total_batches}: {batch_error}")
+                logger.error(f"Failed batch contains {len(batch)} points")
+                if len(batch) > 0:
+                    first_point = batch[0]
+                    logger.error(f"First point in failed batch: id={first_point.id}")
+                    if isinstance(first_point.vector, dict):
+                        logger.error(f"Vector keys: {list(first_point.vector.keys())}")
+                        for key, vec in first_point.vector.items():
+                            if hasattr(vec, 'indices'):
+                                logger.error(f"Vector '{key}': SparseVector with {len(vec.indices)} indices")
+                            elif isinstance(vec, list):
+                                logger.error(f"Vector '{key}': list length {len(vec)}, first 5: {vec[:5]}")
+                            else:
+                                logger.error(f"Vector '{key}': {type(vec)} = {vec}")
+                raise
 
         logger.info(f"Successfully upserted {len(points)} points to {collection_name}")
         return True
 
     except Exception as e:
         logger.error(f"Error upserting points to {collection_name}: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         raise
 
 

@@ -2,10 +2,11 @@
 
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 import io
+import re
 
 from app.core.database import get_db
 from app.schemas.document import (
@@ -217,32 +218,44 @@ def get_document(
 @router.get(
     "/documents/{document_gid}/download",
     summary="Download a document",
-    description="Download the actual file content from storage.",
+    description="Download the actual file content from storage with range request support for large PDFs.",
     responses={
         200: {
-            "description": "Document file",
+            "description": "Document file (full)",
             "content": {
                 "application/octet-stream": {},
                 "application/pdf": {},
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
                 "text/plain": {},
             },
+        },
+        206: {
+            "description": "Partial content (range request)",
+            "content": {
+                "application/pdf": {},
+            },
         }
     },
 )
 def download_document(
+    request: Request,
     document_gid: str,
     db: Session = Depends(get_db),
 ):
     """
-    Download a document file.
+    Download a document file with HTTP range request support.
+
+    Supports partial content delivery (HTTP 206) for PDF streaming in browsers.
+    This allows large PDFs to be loaded page-by-page by PDF.js/VuePDF instead of
+    downloading the entire file.
 
     Args:
+        request: FastAPI request object (for range header)
         document_gid: GID of the document
         db: Database session
 
     Returns:
-        StreamingResponse: File content as streaming response
+        Response: Full file (200) or partial content (206) with proper headers
     """
     logger.info(f"Downloading document {document_gid}")
 
@@ -250,13 +263,56 @@ def download_document(
         document_gid=document_gid, db=db
     )
 
-    # Return as streaming response with proper headers
-    return StreamingResponse(
-        io.BytesIO(content),
+    file_size = len(content)
+    range_header = request.headers.get("range")
+
+    # If no range header, return full file
+    if not range_header:
+        logger.debug(f"Serving full file: {filename} ({file_size} bytes)")
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes",
+                "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range",
+            },
+        )
+
+    # Parse range header (format: "bytes=start-end")
+    range_match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+    if not range_match:
+        raise HTTPException(status_code=416, detail="Invalid range header")
+
+    start = int(range_match.group(1))
+    end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+
+    # Validate range
+    if start >= file_size or end >= file_size or start > end:
+        raise HTTPException(
+            status_code=416,
+            detail=f"Range not satisfiable",
+            headers={"Content-Range": f"bytes */{file_size}"}
+        )
+
+    # Extract requested range
+    chunk = content[start:end + 1]
+    chunk_size = len(chunk)
+
+    logger.debug(f"Serving range {start}-{end}/{file_size} ({chunk_size} bytes) for {filename}")
+
+    # Return partial content with 206 status
+    return Response(
+        content=chunk,
+        status_code=206,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Length": str(len(content)),
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(chunk_size),
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range",
         },
     )
 
@@ -336,13 +392,19 @@ def get_document_page(
     """
     logger.info(f"Getting page {page_num} image for document {document_gid}")
 
-    # Get document to retrieve case_gid
+    # Get document to retrieve case and IDs
     document = DocumentService.get_document(document_gid=document_gid, db=db)
+
+    if not document.case:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Case not found for document {document_gid}",
+        )
 
     try:
         image_url = PageImageService.get_page_image_url(
-            case_gid=document.case_gid,
-            document_gid=document_gid,
+            case_id=document.case_id,
+            document_id=document.id,
             page_num=page_num,
             expires_in_seconds=expires_in,
         )
@@ -389,6 +451,12 @@ def list_document_pages(
     # Get document
     document = DocumentService.get_document(document_gid=document_gid, db=db)
 
+    if not document.case:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Case not found for document {document_gid}",
+        )
+
     # Get page count from metadata
     page_count = document.meta_data.get("page_count", 0) if document.meta_data else 0
 
@@ -402,8 +470,8 @@ def list_document_pages(
 
     try:
         pages = PageImageService.get_all_page_image_urls(
-            case_gid=document.case_gid,
-            document_gid=document_gid,
+            case_id=document.case_id,
+            document_id=document.id,
             page_count=page_count,
             expires_in_seconds=expires_in,
         )
