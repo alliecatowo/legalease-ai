@@ -31,16 +31,19 @@ COPY backend/pyproject.toml backend/uv.lock* ./
 # Development stage
 FROM base AS development
 
-# Install all dependencies including worker-specific dependencies
-RUN uv sync --group worker
+# Install dependencies FIRST (cached layer - only rebuilds when pyproject.toml or uv.lock changes)
+RUN uv sync --frozen --no-install-project --group worker
 
-# Copy application code
+# Copy application code SECOND (changes frequently)
 COPY backend/ ./
+
+# Install project itself LAST (fast - just links the project into the venv)
+RUN uv sync --frozen --group worker
 
 # Create cache directory for models
 RUN mkdir -p /root/.cache
 
-# Set library path for PyTorch's bundled NVIDIA CUDA libraries
+# Set environment variables
 ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cublas/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:\
@@ -48,6 +51,9 @@ ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cufft/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/curand/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cusolver/lib
+
+# Configure Tesseract language data path
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
 # Create CuDNN library symlinks for version compatibility
 RUN for lib_dir in cudnn cublas cuda_runtime cusparse cufft curand cusolver; do \
@@ -67,8 +73,8 @@ CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--logleve
 # Production dependencies stage
 FROM base AS dependencies
 
-# Install production dependencies with worker group
-RUN uv sync --no-dev --group worker
+# Install production dependencies with worker group (dependencies only, not the project)
+RUN uv sync --frozen --no-dev --no-install-project --group worker
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -92,11 +98,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
+# Copy dependency files first
+COPY backend/pyproject.toml backend/uv.lock ./
+
 # Copy installed dependencies from dependencies stage
 COPY --from=dependencies /app/.venv /app/.venv
 
 # Copy application code
 COPY backend/ ./
+
+# Install project itself (fast - just links)
+RUN uv sync --frozen --no-dev --group worker
 
 # Create non-root user
 RUN useradd -m -u 1000 legalease && \
@@ -108,7 +120,7 @@ USER legalease
 # Set cache directory
 ENV HOME=/home/legalease
 
-# Set library path for PyTorch's bundled NVIDIA CUDA libraries
+# Set environment variables
 ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cublas/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:\
@@ -116,6 +128,9 @@ ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cufft/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/curand/lib:\
 /app/.venv/lib/python3.11/site-packages/nvidia/cusolver/lib
+
+# Configure Tesseract language data path
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
 # Create CuDNN library symlinks for version compatibility
 RUN for lib_dir in cudnn cublas cuda_runtime cusparse cufft curand cusolver; do \
