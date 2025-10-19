@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.core.retry import retry_database
 
 
 class Settings(BaseSettings):
@@ -38,6 +39,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+@retry_database
 def get_db() -> Generator[Session, None, None]:
     """
     Dependency that provides a database session.

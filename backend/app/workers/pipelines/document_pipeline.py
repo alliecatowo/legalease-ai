@@ -12,7 +12,8 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 
-from app.workers.pipelines.docling_parser import DoclingParser
+from app.workers.parsers.factory import ParserFactory
+from app.workers.parsers.base import ParserType
 from app.workers.pipelines.chunker import DocumentChunker
 from app.workers.pipelines.embeddings import FastEmbedPipeline as EmbeddingPipeline
 from app.workers.pipelines.bm25_encoder import BM25Encoder
@@ -64,6 +65,7 @@ class DocumentProcessor:
         summary_max_tokens: int = 2000,
         section_max_tokens: int = 500,
         microblock_max_tokens: int = 128,
+        parser_type: ParserType = ParserType.MARKER,
     ):
         """
         Initialize the document processor.
@@ -75,12 +77,17 @@ class DocumentProcessor:
             summary_max_tokens: Max tokens for summary chunks
             section_max_tokens: Max tokens for section chunks
             microblock_max_tokens: Max tokens for microblock chunks
+            parser_type: Type of parser to use (default: Marker for better scanned doc handling)
         """
         self.use_ocr = use_ocr
         self.use_bm25 = use_bm25
 
-        # Initialize pipeline components
-        self.parser = DoclingParser(use_ocr=use_ocr)
+        # Initialize pipeline components using factory pattern
+        # Marker is preferred for legal documents with complex tables/forms
+        self.parser = ParserFactory.create_parser(
+            parser_type=parser_type,
+            config={"use_llm": True}  # Enable VLM for tables/forms
+        )
         self.chunker = DocumentChunker(
             summary_max_tokens=summary_max_tokens,
             section_max_tokens=section_max_tokens,
@@ -91,7 +98,7 @@ class DocumentProcessor:
         self.indexer = QdrantIndexer()
 
         logger.info(
-            f"Initialized DocumentProcessor (OCR={use_ocr}, BM25={use_bm25}, "
+            f"Initialized DocumentProcessor (parser={parser_type.value}, OCR={use_ocr}, BM25={use_bm25}, "
             f"model={embedding_model})"
         )
 
@@ -204,11 +211,28 @@ class DocumentProcessor:
             ProcessingResult
         """
         try:
-            parsed_data = self.parser.parse(
+            # Parse using new parser interface (returns ParsedDocument object)
+            parsed_doc = self.parser.parse(
                 file_content=file_content,
                 filename=filename,
-                mime_type=mime_type,
             )
+
+            # Convert ParsedDocument to legacy dict format for backward compatibility
+            # This maintains compatibility with existing chunker/embedder code
+            pages = []
+            for page in parsed_doc.pages:
+                pages.append({
+                    "page_number": page.page_number,
+                    "text": page.text,
+                    "items": page.blocks,
+                    "bboxes": page.bboxes,
+                })
+
+            parsed_data = {
+                "text": parsed_doc.text,
+                "pages": pages,
+                "metadata": parsed_doc.metadata,
+            }
 
             if not parsed_data.get("text"):
                 return ProcessingResult(

@@ -27,6 +27,7 @@ from qdrant_client.models import (
 )
 
 from app.core.config import settings
+from app.core.retry import retry_qdrant
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,9 @@ def get_qdrant_client() -> QdrantClient:
 
 def create_collection(
     collection_name: Optional[str] = None,
-    summary_vector_size: int = 768,
-    section_vector_size: int = 768,
-    microblock_vector_size: int = 768,
+    summary_vector_size: int = 384,
+    section_vector_size: int = 384,
+    microblock_vector_size: int = 384,
     recreate: bool = False,
 ) -> bool:
     """
@@ -64,9 +65,9 @@ def create_collection(
 
     Args:
         collection_name: Name of the collection (default: from settings)
-        summary_vector_size: Dimension of summary embeddings (default: 768 for all-MiniLM-L6-v2)
-        section_vector_size: Dimension of section embeddings (default: 768)
-        microblock_vector_size: Dimension of microblock embeddings (default: 768)
+        summary_vector_size: Dimension of summary embeddings (default: 384 for BAAI/bge-small-en-v1.5)
+        section_vector_size: Dimension of section embeddings (default: 384)
+        microblock_vector_size: Dimension of microblock embeddings (default: 384)
         recreate: If True, delete existing collection before creating
 
     Returns:
@@ -126,6 +127,7 @@ def create_collection(
         raise
 
 
+@retry_qdrant
 def upsert_points(
     points: List[PointStruct],
     collection_name: Optional[str] = None,
@@ -155,16 +157,20 @@ def upsert_points(
             batch_num = (i // batch_size) + 1
 
             try:
-                # Debug: Check ALL points in batch for dimension mismatches
+                # Validate embedding dimensions match collection config (384 for BAAI/bge-small-en-v1.5)
                 if batch_num == 1:
                     for idx, point in enumerate(batch):
                         if isinstance(point.vector, dict):
                             for key, vec in point.vector.items():
                                 if isinstance(vec, list):
                                     if len(vec) != 384:
-                                        logger.error(f"FOUND BAD VECTOR! Point {idx} id={point.id}, vector '{key}' has length {len(vec)}, should be 384. Values: {vec}")
+                                        error_msg = f"Dimension mismatch! Point {idx} id={point.id}, vector '{key}' has {len(vec)} dimensions, expected 384 (BAAI/bge-small-en-v1.5)"
+                                        logger.error(error_msg)
+                                        raise ValueError(error_msg)
                         else:
-                            logger.error(f"FOUND BAD POINT! Point {idx} id={point.id}, vector is not dict: {type(point.vector)}")
+                            error_msg = f"Invalid point structure! Point {idx} id={point.id}, vector must be dict, got {type(point.vector)}"
+                            logger.error(error_msg)
+                            raise ValueError(error_msg)
 
                 response = client.upsert(
                     collection_name=collection_name,
@@ -199,6 +205,7 @@ def upsert_points(
         raise
 
 
+@retry_qdrant
 def search_hybrid(
     query_vector: Dict[str, List[float]],
     query_sparse_vector: Optional[SparseVector] = None,
@@ -279,6 +286,7 @@ def search_hybrid(
         raise
 
 
+@retry_qdrant
 def delete_points(
     point_ids: List[int],
     collection_name: Optional[str] = None,
@@ -310,6 +318,7 @@ def delete_points(
         raise
 
 
+@retry_qdrant
 def delete_by_filter(
     filters: Filter,
     collection_name: Optional[str] = None,

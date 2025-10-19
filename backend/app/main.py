@@ -6,12 +6,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
+from app.core.logging_config import setup_logging
 from app.api.v1 import api_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events for startup and shutdown"""
+    # Initialize structured logging first
+    setup_logging()
+
     # Startup
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     print(f"Database URL: {settings.DATABASE_URL.split('@')[-1]}")  # Hide credentials

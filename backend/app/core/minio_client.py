@@ -6,6 +6,7 @@ from typing import BinaryIO, Optional
 from minio import Minio
 from minio.error import S3Error
 from app.core.config import settings
+from app.core.retry import retry_minio
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class MinIOClient:
             logger.error(f"Error ensuring bucket exists: {e}")
             raise
 
+    @retry_minio
     def upload_file(
         self,
         file_data: BinaryIO,
@@ -91,6 +93,7 @@ class MinIOClient:
             logger.error(f"Error uploading file to MinIO: {e}")
             raise
 
+    @retry_minio
     def download_file(self, object_name: str) -> bytes:
         """
         Download a file from MinIO.
@@ -119,6 +122,7 @@ class MinIOClient:
             logger.error(f"Error downloading file from MinIO: {e}")
             raise
 
+    @retry_minio
     def download_file_to_path(self, object_name: str, local_path: str, chunk_size: int = 8192) -> str:
         """
         Download a file from MinIO directly to disk using streaming (memory-efficient).
@@ -215,6 +219,7 @@ class MinIOClient:
             logger.error(f"Error getting object size from MinIO: {e}")
             raise
 
+    @retry_minio
     def delete_file(self, object_name: str) -> None:
         """
         Delete a file from MinIO.
@@ -250,6 +255,7 @@ class MinIOClient:
         except S3Error:
             return False
 
+    @retry_minio
     def get_presigned_url(
         self, object_name: str, expires_in_seconds: int = 3600
     ) -> str:

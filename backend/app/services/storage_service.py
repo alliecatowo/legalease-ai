@@ -6,7 +6,7 @@ from datetime import timedelta
 from io import BytesIO
 import logging
 
-from app.core.minio import minio_client
+from app.core.minio_client import minio_client
 
 logger = logging.getLogger(__name__)
 

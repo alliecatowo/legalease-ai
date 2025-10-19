@@ -5,6 +5,10 @@ from celery import Celery
 from kombu import Queue
 
 from app.core.config import settings
+from app.core.logging_config import setup_logging
+
+# Initialize structured logging for Celery workers
+setup_logging()
 
 # Create Celery app instance
 celery_app = Celery(
