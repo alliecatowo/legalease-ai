@@ -319,7 +319,7 @@ class MarkerParser(DocumentParser):
             # Extract page data
             page_text = self._extract_block_text(page_block)
             blocks = self._extract_blocks(page_block)
-            bboxes = self._extract_bboxes(page_block)
+            bboxes = self._extract_bboxes(page_block, page_num)
 
             # Create ParsedPage
             parsed_page = ParsedPage(
@@ -449,12 +449,13 @@ class MarkerParser(DocumentParser):
 
         return blocks
 
-    def _extract_bboxes(self, page_block: Any) -> List[Dict[str, Any]]:
+    def _extract_bboxes(self, page_block: Any, page_num: int) -> List[Dict[str, Any]]:
         """
         Extract bounding boxes from page block.
 
         Args:
             page_block: Page block object
+            page_num: Page number for this block
 
         Returns:
             List of bbox dictionaries
@@ -471,6 +472,7 @@ class MarkerParser(DocumentParser):
                     "type": str(child.block_type) if hasattr(child, 'block_type') else "Unknown",
                     "polygon": child.polygon,
                     "text": getattr(child, 'text', ''),
+                    "page": page_num,
                 }
                 bboxes.append(bbox)
 

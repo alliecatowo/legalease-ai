@@ -13,21 +13,6 @@ from app.workers.pipelines.document_pipeline import (
     ProcessingResult,
     ProcessingStage,
 )
-from app.workers.pipelines.chunking import (
-    BaseChunker,
-    LegalDocumentChunker,
-    LegalDocumentTemplate,
-    DocumentChunk,
-    ChunkMetadata,
-    create_chunker,
-)
-from app.workers.pipelines.legal_processing import (
-    LegalDocumentPipeline,
-    ProcessedDocument,
-    LegalMetadata,
-    DocumentType,
-    create_pipeline,
-)
 from app.workers.pipelines.subtitle_generator import (
     SubtitleGenerator,
     TranscriptionSegment,
@@ -61,18 +46,6 @@ __all__ = [
     "DocumentProcessor",
     "ProcessingResult",
     "ProcessingStage",
-    # RAGFlow-style legal chunking
-    "BaseChunker",
-    "LegalDocumentChunker",
-    "LegalDocumentTemplate",
-    "DocumentChunk",
-    "ChunkMetadata",
-    "create_chunker",
-    "LegalDocumentPipeline",
-    "ProcessedDocument",
-    "LegalMetadata",
-    "DocumentType",
-    "create_pipeline",
     # Subtitle generation
     "SubtitleGenerator",
     "TranscriptionSegment",
