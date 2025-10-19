@@ -28,6 +28,7 @@ from app.workers.parsers.base import (
 )
 from app.workers.parsers.bbox_utils import normalize_bbox
 from app.core.retry import retry_gemini
+from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -540,7 +541,6 @@ class MarkerParser(DocumentParser):
         """Log GPU memory usage."""
         try:
             import torch
-from app.core.logging_config import get_logger
 
             if torch.cuda.is_available():
                 allocated = torch.cuda.memory_allocated() / 1024**3

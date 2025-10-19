@@ -10,6 +10,7 @@ from uuid import UUID
 from app.workers.celery_app import celery_app
 from app.core.database_utils import database_session
 from app.models.document import Document, DocumentStatus
+from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -191,7 +192,6 @@ def process_uploaded_document(self, document_gid: str) -> Dict[str, Any]:
             # Fetch chunks from Qdrant and save to PostgreSQL for document viewer
             from app.core.qdrant import get_qdrant_client
             from app.core.config import settings
-from app.core.logging_config import get_logger
 
             try:
                 qdrant_client = get_qdrant_client()

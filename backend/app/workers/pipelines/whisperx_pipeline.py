@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, asdict
+from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -392,7 +393,6 @@ class WhisperXPipeline:
         # Clear CUDA cache if available
         try:
             import torch
-from app.core.logging_config import get_logger
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 logger.info("Cleared CUDA cache")

@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 
 from app.core.minio_client import minio_client
+from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,6 @@ class PageImageService:
         """
         try:
             import fitz  # PyMuPDF
-from app.core.logging_config import get_logger
         except ImportError:
             logger.error("PyMuPDF not installed. Install with: pip install pymupdf")
             raise

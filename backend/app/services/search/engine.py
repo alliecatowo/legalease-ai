@@ -30,7 +30,6 @@ from app.schemas.search import (
     SearchResult,
 )
 from app.workers.pipelines.embeddings import FastEmbedPipeline
-from app.workers.pipelines.reranker import CrossEncoderReranker
 from app.workers.pipelines.bm25_encoder import BM25Encoder
 from app.services.search.scoring import normalize_and_boost_scores
 from app.services.search.resolvers import GidResolver
@@ -80,10 +79,8 @@ class HybridSearchEngine:
         self.embed_pipeline = FastEmbedPipeline(model_name=embedding_model_name)
         self.bm25_encoder = BM25Encoder()
 
-        if enable_reranking:
-            self.reranker = CrossEncoderReranker(model_name=reranker_model_name)
-        else:
-            self.reranker = None
+        # Reranker disabled - using Qdrant native RRF fusion instead
+        self.reranker = None
 
         # Initialize GID resolver
         self.resolver = GidResolver()

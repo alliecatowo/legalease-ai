@@ -13,6 +13,7 @@ from sqlalchemy import select, update
 from ..core.ollama import ollama_client, ensure_model_available
 from ..core.config import settings
 from ..models.document import Document
+from ..core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -132,7 +133,6 @@ class AutoTaggingService:
 
             # Fall back to chunk text
             from ..models.chunk import Chunk
-from app.core.logging_config import get_logger
             chunk_query = select(Chunk.content).where(Chunk.document_id == document_id).limit(5)
             chunk_result = await db.execute(chunk_query)
             chunks = chunk_result.scalars().all()

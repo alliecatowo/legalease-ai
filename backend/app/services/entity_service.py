@@ -13,6 +13,7 @@ from sqlalchemy import select, update, insert
 
 from ..core.config import settings
 from ..models.entity import Entity, EntityMention
+from ..core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -248,7 +249,6 @@ class EntityExtractionService:
         entities = []
         try:
             from lexnlp.extract.en import acts
-from app.core.logging_config import get_logger
 
             for act in acts.get_act_list(text):
                 entities.append({

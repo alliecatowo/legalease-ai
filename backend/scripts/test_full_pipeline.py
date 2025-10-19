@@ -32,10 +32,8 @@ import uuid
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Configure logging with detailed output
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from app.core.logging_config import setup_logging, get_logger
+setup_logging(env="development")
 logger = get_logger(__name__)
 
 # Imports for pipeline components
@@ -268,11 +266,10 @@ async def test_stage_1_parsing(test_result: PipelineTestResult, pdf_bytes: bytes
     start_time = time.time()
 
     try:
-        # Initialize Marker parser with VLM support
-        logger.info("Initializing Marker parser (VLM enabled)...")
+        # Initialize Marker parser (VLM disabled for testing without API key)
+        logger.info("Initializing Marker parser (VLM disabled)...")
         parser = MarkerParser(
-            use_llm=True,
-            gemini_model_name="gemini-2.0-flash",
+            use_llm=False,  # Disabled - no GOOGLE_API_KEY
             output_format="json",
         )
 

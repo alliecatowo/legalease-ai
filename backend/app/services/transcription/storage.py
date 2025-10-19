@@ -11,6 +11,7 @@ from app.models.transcription import Transcription
 from app.models.document import DocumentStatus
 from app.models.case import Case
 from app.core.minio_client import minio_client
+from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -202,7 +203,6 @@ class TranscriptionStorageService:
             HTTPException: If transcription not found or file info unavailable
         """
         from app.services.transcription.core import TranscriptionCoreService
-from app.core.logging_config import get_logger
 
         transcription = TranscriptionCoreService.get_transcription(transcription_gid, db)
 

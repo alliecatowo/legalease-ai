@@ -62,6 +62,11 @@ class Document(UUIDMixin, Base):
         back_populates="documents",
         lazy="selectin"
     )
+    entity_mentions = relationship(
+        "EntityMention",
+        back_populates="document",
+        cascade="all, delete-orphan"
+    )
     transcription = relationship(
         "Transcription",
         back_populates="document",

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from ..core.neo4j import neo4j_client
 from ..models.document import Document
 from ..models.entity import Entity, EntityMention
+from ..core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -424,7 +425,6 @@ class KnowledgeGraphService:
 
             if format == "json":
                 import json
-from app.core.logging_config import get_logger
                 return json.dumps(graph_data, indent=2, default=str)
             elif format == "csv":
                 # Convert to CSV format

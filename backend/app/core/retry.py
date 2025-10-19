@@ -48,6 +48,7 @@ Features:
 from typing import TypeVar, Callable, Any
 from functools import wraps
 import asyncio
+import logging
 
 from tenacity import (
     retry,
@@ -58,6 +59,7 @@ from tenacity import (
     RetryError,
 )
 
+from app.core.logging_config import get_logger
 
 # SQLAlchemy and psycopg2 exceptions
 try:
