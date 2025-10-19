@@ -52,6 +52,10 @@ class DocumentProcessor:
     4. Index to Qdrant (vector storage)
     """
 
+    # Memory-efficient batch size for embedding generation
+    # This prevents OOM on large documents while maintaining performance
+    EMBEDDING_BATCH_SIZE = 100
+
     def __init__(
         self,
         use_ocr: bool = True,
@@ -316,14 +320,24 @@ class DocumentProcessor:
                     chunks_by_type[chunk_type] = []
                 chunks_by_type[chunk_type].append(chunk)
 
-            # Generate dense embeddings for each type
+            # Generate dense embeddings for each type with memory-efficient batching
             embeddings = {}
+            total_chunks = sum(len(chunks) for chunks in chunks_by_type.values())
+            processed_chunks = 0
+
             for chunk_type, type_chunks in chunks_by_type.items():
                 texts = [c["text"] for c in type_chunks]
                 logger.info(f"Generating {chunk_type} embeddings for {len(texts)} chunks")
 
-                type_embeddings = self.embedder.generate_embeddings(texts)
+                # Use memory-efficient batch size
+                type_embeddings = self.embedder.generate_embeddings(
+                    texts,
+                    batch_size=self.EMBEDDING_BATCH_SIZE
+                )
                 embeddings[chunk_type] = type_embeddings.tolist()
+
+                processed_chunks += len(texts)
+                logger.info(f"Progress: {processed_chunks}/{total_chunks} chunks embedded ({processed_chunks*100//total_chunks}%)")
 
             # Generate sparse vectors if enabled
             sparse_vectors = None

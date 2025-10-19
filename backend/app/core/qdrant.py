@@ -42,7 +42,7 @@ def get_qdrant_client() -> QdrantClient:
     client = QdrantClient(
         host=settings.QDRANT_HOST,
         port=settings.QDRANT_PORT,
-        timeout=30.0,
+        timeout=300.0,  # 5 minutes - increased for large document indexing
     )
     logger.info(f"Qdrant client initialized: {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
     return client
@@ -147,20 +147,55 @@ def upsert_points(
 
     try:
         # Upload in batches
+        # Use wait=True for ALL batches to catch errors immediately
+        total_batches = (len(points) + batch_size - 1) // batch_size
+
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
-            client.upsert(
-                collection_name=collection_name,
-                points=batch,
-                wait=True,
-            )
-            logger.info(f"Upserted batch {i // batch_size + 1}: {len(batch)} points")
+            batch_num = (i // batch_size) + 1
+
+            try:
+                # Debug: Check ALL points in batch for dimension mismatches
+                if batch_num == 1:
+                    for idx, point in enumerate(batch):
+                        if isinstance(point.vector, dict):
+                            for key, vec in point.vector.items():
+                                if isinstance(vec, list):
+                                    if len(vec) != 384:
+                                        logger.error(f"FOUND BAD VECTOR! Point {idx} id={point.id}, vector '{key}' has length {len(vec)}, should be 384. Values: {vec}")
+                        else:
+                            logger.error(f"FOUND BAD POINT! Point {idx} id={point.id}, vector is not dict: {type(point.vector)}")
+
+                response = client.upsert(
+                    collection_name=collection_name,
+                    points=batch,
+                    wait=True,  # Wait for each batch to catch errors immediately
+                )
+                logger.info(f"Upsert response: {response}")
+                logger.info(f"Upserted batch {batch_num}/{total_batches}: {len(batch)} points")
+            except Exception as batch_error:
+                logger.error(f"Error upserting batch {batch_num}/{total_batches}: {batch_error}")
+                logger.error(f"Failed batch contains {len(batch)} points")
+                if len(batch) > 0:
+                    first_point = batch[0]
+                    logger.error(f"First point in failed batch: id={first_point.id}")
+                    if isinstance(first_point.vector, dict):
+                        logger.error(f"Vector keys: {list(first_point.vector.keys())}")
+                        for key, vec in first_point.vector.items():
+                            if hasattr(vec, 'indices'):
+                                logger.error(f"Vector '{key}': SparseVector with {len(vec.indices)} indices")
+                            elif isinstance(vec, list):
+                                logger.error(f"Vector '{key}': list length {len(vec)}, first 5: {vec[:5]}")
+                            else:
+                                logger.error(f"Vector '{key}': {type(vec)} = {vec}")
+                raise
 
         logger.info(f"Successfully upserted {len(points)} points to {collection_name}")
         return True
 
     except Exception as e:
         logger.error(f"Error upserting points to {collection_name}: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         raise
 
 
@@ -340,7 +375,9 @@ def get_collection_info(
 
 def build_filter(
     case_ids: Optional[List[int]] = None,
+    case_gids: Optional[List[str]] = None,
     document_ids: Optional[List[int]] = None,
+    document_gids: Optional[List[str]] = None,
     chunk_types: Optional[List[str]] = None,
     additional_conditions: Optional[List[FieldCondition]] = None,
 ) -> Optional[Filter]:
@@ -348,8 +385,10 @@ def build_filter(
     Build a Qdrant filter from common query parameters.
 
     Args:
-        case_ids: Filter by case IDs
-        document_ids: Filter by document IDs
+        case_ids: Filter by case UUIDs
+        case_gids: Filter by case GIDs
+        document_ids: Filter by document UUIDs
+        document_gids: Filter by document GIDs
         chunk_types: Filter by chunk types (e.g., 'summary', 'section', 'microblock')
         additional_conditions: Additional custom filter conditions
 
@@ -359,7 +398,6 @@ def build_filter(
     conditions = []
 
     if case_ids:
-        # Handle single vs multiple case_ids properly
         if len(case_ids) == 1:
             conditions.append(
                 FieldCondition(
@@ -375,8 +413,23 @@ def build_filter(
                 )
             )
 
+    if case_gids:
+        if len(case_gids) == 1:
+            conditions.append(
+                FieldCondition(
+                    key="case_gid",
+                    match=MatchValue(value=case_gids[0]),
+                )
+            )
+        else:
+            conditions.append(
+                FieldCondition(
+                    key="case_gid",
+                    match=MatchAny(any=case_gids),
+                )
+            )
+
     if document_ids:
-        # Handle single vs multiple document_ids properly
         if len(document_ids) == 1:
             conditions.append(
                 FieldCondition(
@@ -389,6 +442,22 @@ def build_filter(
                 FieldCondition(
                     key="document_id",
                     match=MatchAny(any=document_ids),
+                )
+            )
+
+    if document_gids:
+        if len(document_gids) == 1:
+            conditions.append(
+                FieldCondition(
+                    key="document_gid",
+                    match=MatchValue(value=document_gids[0]),
+                )
+            )
+        else:
+            conditions.append(
+                FieldCondition(
+                    key="document_gid",
+                    match=MatchAny(any=document_gids),
                 )
             )
 

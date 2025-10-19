@@ -99,7 +99,7 @@ class DoclingParser:
         """
         try:
             from docling.document_converter import DocumentConverter, PdfFormatOption
-            from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions
             from docling.datamodel.base_models import InputFormat
             import torch
         except ImportError as e:
@@ -125,14 +125,6 @@ class DoclingParser:
             if hasattr(pipeline_options, 'accelerator_options'):
                 pipeline_options.accelerator_options.device = device
 
-            # Configure OCR options for scanned documents
-            if self.use_ocr:
-                ocr_options = EasyOcrOptions(force_full_page_ocr=self.force_full_page_ocr)
-                # Enable GPU for OCR if available
-                if device == "cuda" and hasattr(ocr_options, 'use_gpu'):
-                    ocr_options.use_gpu = True
-                pipeline_options.ocr_options = ocr_options
-
             # Create document converter
             converter = DocumentConverter(
                 format_options={
@@ -146,9 +138,30 @@ class DoclingParser:
                 tmp_path = tmp_file.name
 
             try:
-                # Convert document
+                # Estimate processing time based on file size
+                file_size_mb = len(file_content) / (1024 * 1024)
+                # Tesseract is 3-5x faster than EasyOCR
+                # Rough estimate: 0.3-0.5 seconds per MB on GPU, 1-2 seconds on CPU
+                est_time_sec = file_size_mb * (0.4 if device == "cuda" else 1.5)
+                ocr_method = "PyMuPDF" if not pipeline_options.do_ocr else "Tesseract OCR"
+                logger.info(
+                    f"Converting {file_size_mb:.1f}MB PDF with {device.upper()} + {ocr_method} "
+                    f"(estimated ~{int(est_time_sec/60)} minute(s) {int(est_time_sec%60)} seconds)..."
+                )
+
+                # Convert document (this is the long-running operation with no progress callbacks)
                 result = converter.convert(tmp_path)
                 doc = result.document
+
+                # Get actual page count from document before processing
+                # This ensures we report the correct page count even if some pages have no extractable items
+                actual_page_count = getattr(doc, 'num_pages', None)
+                # Check if num_pages is a method and call it
+                if callable(actual_page_count):
+                    actual_page_count = actual_page_count()
+                if actual_page_count is None:
+                    # Fallback: try to get from result metadata or count pages directly
+                    actual_page_count = len(getattr(doc, 'pages', [])) if hasattr(doc, 'pages') else None
 
                 # Extract pages with bounding boxes using doc.iterate_items()
                 pages_dict = {}  # page_num -> {"text": [], "items": []}
@@ -252,9 +265,13 @@ class DoclingParser:
                     })
                     full_text.append(page_text)
 
-                # Extract metadata
+                # Extract metadata - use actual page count from PDF, not just extracted pages
+                # This is critical for large PDFs where some pages may have no extractable content
+                page_count_from_extraction = len(pages)
+                final_page_count = actual_page_count if actual_page_count is not None else page_count_from_extraction
+
                 metadata = {
-                    "page_count": len(pages),
+                    "page_count": final_page_count,
                     "title": doc.metadata.get("title", "") if hasattr(doc, 'metadata') else "",
                     "author": doc.metadata.get("author", "") if hasattr(doc, 'metadata') else "",
                     "device": device,  # Track whether GPU was used
@@ -266,6 +283,13 @@ class DoclingParser:
                     1 for p in pages for item in p["items"] if "bbox" in item
                 )
 
+                # Warn if extracted page count doesn't match actual page count
+                if actual_page_count and page_count_from_extraction < actual_page_count:
+                    logger.warning(
+                        f"Docling only extracted {page_count_from_extraction}/{actual_page_count} pages! "
+                        f"({actual_page_count - page_count_from_extraction} pages with no extractable content)"
+                    )
+
                 result = {
                     "text": "\n\n".join(full_text),
                     "pages": pages,
@@ -274,10 +298,31 @@ class DoclingParser:
 
                 logger.info(
                     f"Successfully parsed PDF with Docling ({device}): "
-                    f"{len(pages)} pages, {total_items} items, "
+                    f"{page_count_from_extraction} pages extracted ({final_page_count} total), {total_items} items, "
                     f"{items_with_bbox} with bboxes "
-                    f"({items_with_bbox/total_items*100:.1f}% coverage)"
+                    f"({items_with_bbox/total_items*100:.1f}% coverage)" if total_items > 0 else
+                    f"Successfully parsed PDF with Docling ({device}): "
+                    f"{page_count_from_extraction} pages extracted ({final_page_count} total), 0 items"
                 )
+
+                # Force GPU memory cleanup after Docling processing
+                # This prevents GPU OOM when embedding pipeline loads its models
+                if device == "cuda":
+                    try:
+                        import torch
+                        import gc
+
+                        # Clear PyTorch cache
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            torch.cuda.synchronize()
+                            logger.info("Cleared GPU memory after Docling processing")
+
+                        # Force garbage collection to release Docling models
+                        gc.collect()
+                    except Exception as e:
+                        logger.warning(f"Failed to clear GPU memory: {e}")
+
                 return result
 
             finally:
@@ -343,7 +388,7 @@ class DoclingParser:
                 # Get text with word-level bounding boxes
                 words = page.get_text("words")  # Returns list of (x0, y0, x1, y1, word, block_no, line_no, word_no)
 
-                page_text = page.get_text()
+                page_text = page.get_text() or ""  # Ensure page_text is never None
                 page_bboxes = []
 
                 # Extract bounding boxes for each word

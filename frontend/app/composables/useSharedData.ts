@@ -129,10 +129,10 @@ export interface ForensicExportListResponse {
  * Individual forensic export item from API
  */
 export interface ForensicExportItem {
-  id: number
+  gid: string
   folder_name: string
   export_uuid?: string
-  case_id: number
+  case_gid: string
   case_name?: string
   total_records?: number
   num_attachments?: number
@@ -418,10 +418,10 @@ export function useSharedData() {
 
       // Enrich exports with case names from the cases cache
       const enriched = (response.exports || []).map((exp: any) => {
-        const caseItem = casesData.value?.cases?.find((c: any) => c.id === exp.case_id)
+        const caseItem = casesData.value?.cases?.find((c: any) => c.gid === exp.case_gid)
         return {
           ...exp,
-          case_name: caseItem?.name || `Case ${exp.case_id}`
+          case_name: exp.case_name || caseItem?.name || `Case ${exp.case_gid}`
         }
       })
 
@@ -669,13 +669,13 @@ export function useSharedDocument(documentId: Ref<string | number> | string | nu
  * Get computed transcription by ID
  * Useful for finding a specific transcription from the cache
  */
-export function useSharedTranscription(transcriptionId: Ref<number> | number) {
+export function useSharedTranscription(transcriptionGid: Ref<string | number> | string | number) {
   const { transcriptions } = useSharedData()
-  const id = computed(() => typeof transcriptionId === 'object' ? transcriptionId.value : transcriptionId)
+  const gid = computed(() => typeof transcriptionGid === 'object' ? String(transcriptionGid.value) : String(transcriptionGid))
 
   const transcriptionItem = computed(() => {
     if (!transcriptions.data.value?.transcriptions) return null
-    return transcriptions.data.value.transcriptions.find(t => t.id === id.value) || null
+    return transcriptions.data.value.transcriptions.find(t => String(t.gid) === gid.value) || null
   })
 
   return {

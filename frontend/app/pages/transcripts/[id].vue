@@ -45,9 +45,22 @@ const flashSegmentId = ref<string | null>(null)
 // Metadata sidebar defaults: visible and expanded
 const metadataSidebarOpen = ref(true)
 const metadataSidebarCollapsed = ref(false)
+// Video player state
+const videoPlayerOpen = ref(true)
+const videoSize = ref<'small' | 'theater'>('theater')
+const videoPlayerRef = ref<any>(null)
 
 // Perform smart search using backend API
+// Optimized: Add abort controller to cancel stale requests
+let searchAbortController: AbortController | null = null
+
 async function performSmartSearch() {
+  // Cancel any previous pending search request
+  if (searchAbortController) {
+    searchAbortController.abort()
+  }
+  searchAbortController = new AbortController()
+
   if (!transcript.value || !searchQuery.value.trim()) {
     searchResults.value = new Set()
     return
@@ -64,12 +77,14 @@ async function performSmartSearch() {
       chunk_types: ['transcript_segment']
     }
 
-    const docId = (transcript.value as any).document_id
+    const docId = (transcript.value as any).document_gid || (transcript.value as any).document_id
     if (docId) {
-      searchRequest.document_ids = [docId]
+      searchRequest.document_gids = [docId]
     }
 
-    const response = await api.search.hybrid(searchRequest)
+    const response = await api.search.hybrid(searchRequest, {
+      signal: searchAbortController.signal
+    })
 
     const segmentIndices = new Set<number>()
     response.results?.forEach((result: any) => {
@@ -81,6 +96,9 @@ async function performSmartSearch() {
 
     searchResults.value = segmentIndices
   } catch (err: any) {
+    // Ignore aborted requests
+    if (err.name === 'AbortError') return
+
     console.error('Smart search failed:', err)
     if (process.dev) {
       console.error('Error details:', err.response?._data || err.message)
@@ -88,6 +106,7 @@ async function performSmartSearch() {
     searchResults.value = new Set()
   } finally {
     isSearching.value = false
+    searchAbortController = null
   }
 }
 
@@ -103,6 +122,15 @@ const activeSegmentId = computed(() => {
   return segment?.id || null
 })
 
+// Computed property to determine if this is a video file
+const isVideoFile = computed(() => {
+  if (!transcript.value?.metadata?.format) return false
+  const format = transcript.value.metadata.format.toLowerCase()
+  // Common video formats
+  const videoFormats = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'wmv']
+  return videoFormats.includes(format)
+})
+
 // Watch for search changes
 watch([searchQuery, searchMode], () => {
   if (searchMode.value === 'smart' && searchQuery.value.trim()) {
@@ -113,45 +141,140 @@ watch([searchQuery, searchMode], () => {
 })
 
 // Auto-scroll to follow active segment
+// Optimized: Use Map for O(1) segment lookup instead of O(n) findIndex
 watch(activeSegmentId, (newSegmentId) => {
   if (!autoScrollEnabled.value || !newSegmentId || !transcript.value) return
 
-  const index = filteredSegments.value.findIndex(s => s.id === newSegmentId)
+  const index = segmentIndexMap.value.get(newSegmentId)
 
-  if (index !== -1 && rowVirtualizer.value) {
+  if (index !== undefined && rowVirtualizer.value) {
+    // Use 'center' alignment for better visibility of context
     rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 })
 
 // Computed
-const filteredSegments = computed(() => {
-  if (!transcript.value) return []
+// Optimized: Pre-compute segment ID to index map for O(1) lookups
+const segmentIndexMap = computed(() => {
+  const map = new Map<string, number>()
+  filteredSegments.value.forEach((seg, index) => {
+    map.set(seg.id, index)
+  })
+  return map
+})
 
-  let segments = transcript.value.segments
+// Helper: Simple Levenshtein distance for fuzzy matching
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = []
 
-  if (searchQuery.value.trim()) {
-    if (searchMode.value === 'smart') {
-      if (!isSearching.value) {
-        segments = segments.filter((s, index) => searchResults.value.has(index))
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i]
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        )
       }
-    } else {
-      const query = searchQuery.value.toLowerCase()
-      segments = segments.filter(s =>
-        s.text.toLowerCase().includes(query) ||
-        (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
-      )
     }
   }
 
+  return matrix[b.length][a.length]
+}
+
+// Helper: Check if text matches search query with fuzzy word matching
+function matchesSearchQuery(text: string, query: string): boolean {
+  const textLower = text.toLowerCase()
+  const textWords = textLower.split(/\s+/).filter(w => w.length > 0)
+  const queryWords = query.toLowerCase().trim().split(/\s+/).filter(w => w.length > 0)
+
+  if (queryWords.length === 0) return true
+
+  // All query words must appear in the text with fuzzy matching
+  return queryWords.every(queryWord => {
+    // Exact match
+    if (textWords.some(textWord => textWord.includes(queryWord))) return true
+
+    // Fuzzy match: allow up to 2 character differences for words > 4 chars
+    if (queryWord.length > 4) {
+      return textWords.some(textWord => {
+        // Check if words are similar length and similar spelling
+        const lengthDiff = Math.abs(textWord.length - queryWord.length)
+        if (lengthDiff > 2) return false
+
+        const distance = levenshteinDistance(queryWord, textWord)
+        return distance <= 2 // Allow max 2 edits
+      })
+    }
+
+    return false
+  })
+}
+
+// Optimized: Pre-compute searchable text and highlighted HTML for fast filtering
+const searchableSegments = computed(() => {
+  if (!transcript.value) return []
+
+  // Highlight in both keyword and smart mode when there's a search query
+  const shouldHighlight = searchQuery.value.trim().length > 0
+  const query = searchQuery.value.trim()
+
+  return transcript.value.segments.map((seg, index) => ({
+    segment: seg,
+    index,
+    searchText: `${seg.text} ${getSpeaker(seg.speaker)?.name || ''}`.toLowerCase(),
+    highlightedText: shouldHighlight ? highlightText(seg.text, query) : seg.text,
+    matchesQuery: matchesSearchQuery(`${seg.text} ${getSpeaker(seg.speaker)?.name || ''}`, query)
+  }))
+})
+
+const filteredSegments = computed(() => {
+  if (!transcript.value) return []
+
+  let filtered = searchableSegments.value
+
+  // Apply search filter
+  if (searchQuery.value.trim()) {
+    if (searchMode.value === 'smart') {
+      if (!isSearching.value) {
+        filtered = filtered.filter(item => searchResults.value.has(item.index))
+      }
+    } else {
+      // Use fuzzy word matching instead of exact substring match
+      filtered = filtered.filter(item => item.matchesQuery)
+    }
+  }
+
+  // Apply speaker filter
   if (selectedSpeaker.value) {
-    segments = segments.filter(s => s.speaker === selectedSpeaker.value)
+    filtered = filtered.filter(item => item.segment.speaker === selectedSpeaker.value)
   }
 
+  // Apply key moments filter
   if (showOnlyKeyMoments.value) {
-    segments = segments.filter(s => s.isKeyMoment)
+    filtered = filtered.filter(item => item.segment.isKeyMoment)
   }
 
-  return segments
+  return filtered.map(item => item.segment)
+})
+
+// Optimized: Pre-compute highlighted text map for O(1) access during rendering
+const highlightedTextMap = computed(() => {
+  const map = new Map<string, string>()
+  searchableSegments.value.forEach(item => {
+    map.set(item.segment.id, item.highlightedText)
+  })
+  return map
 })
 
 // TanStack Virtual Setup
@@ -161,7 +284,7 @@ const rowVirtualizerOptions = computed(() => {
   return {
     count: filteredSegments.value.length,
     getScrollElement: () => scrollContainerRef.value,
-    estimateSize: () => 128,
+    estimateSize: () => 80,
     overscan: 8,
   }
 })
@@ -182,19 +305,32 @@ const keyMoments = computed(() => {
   return transcript.value.segments.filter(s => s.isKeyMoment)
 })
 
+// Optimized: Cache word counts to avoid repeated string splitting
 const transcriptStats = computed(() => {
   if (!transcript.value) return null
 
-  const totalWords = transcript.value.segments.reduce((acc, seg) => {
-    return acc + seg.text.split(/\s+/).length
-  }, 0)
+  // Pre-compute word counts per segment to avoid re-splitting strings
+  const segmentWordCounts = new Map<string, number>()
+  const segmentsBySpeaker = new Map<string, typeof transcript.value.segments>()
+  let totalWords = 0
 
+  // Single pass through segments to compute word counts and group by speaker
+  transcript.value.segments.forEach(seg => {
+    const wordCount = seg.text.split(/\s+/).filter(w => w.length > 0).length
+    segmentWordCounts.set(seg.id, wordCount)
+    totalWords += wordCount
+
+    if (!segmentsBySpeaker.has(seg.speaker)) {
+      segmentsBySpeaker.set(seg.speaker, [])
+    }
+    segmentsBySpeaker.get(seg.speaker)!.push(seg)
+  })
+
+  // Compute speaker stats using cached data
   const speakerStats = transcript.value.speakers.map(speaker => {
-    const speakerSegments = transcript.value!.segments.filter(s => s.speaker === speaker.id)
+    const speakerSegments = segmentsBySpeaker.get(speaker.id) || []
     const speakingTime = speakerSegments.reduce((acc, seg) => acc + (seg.end - seg.start), 0)
-    const wordCount = speakerSegments.reduce((acc, seg) => {
-      return acc + seg.text.split(/\s+/).length
-    }, 0)
+    const wordCount = speakerSegments.reduce((acc, seg) => acc + (segmentWordCounts.get(seg.id) || 0), 0)
 
     return {
       speaker,
@@ -218,6 +354,37 @@ const transcriptStats = computed(() => {
 // Helper functions
 function getSpeaker(speakerId?: string): Speaker | undefined {
   return transcript.value?.speakers.find(s => s.id === speakerId)
+}
+
+// Optimized: Performant keyword highlighting with word boundary matching
+function highlightText(text: string, query: string): string {
+  if (!query || !text) return text
+
+  // Split query into individual words
+  const words = query.trim().split(/\s+/).filter(w => w.length > 0)
+  if (words.length === 0) return text
+
+  // Escape special regex characters for each word
+  const escapedWords = words.map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+
+  try {
+    // Match whole words OR partial matches within word boundaries
+    // This will match "no" in "no", "not" in "not", etc.
+    const pattern = escapedWords.join('|')
+    const regex = new RegExp(`\\b(${pattern})`, 'gi')
+
+    return text.replace(regex, '<mark class="bg-warning/30 text-warning-foreground rounded px-0.5">$1</mark>')
+  } catch (e) {
+    // If regex fails, fall back to case-insensitive includes
+    let result = text
+    escapedWords.forEach(word => {
+      const regex = new RegExp(word, 'gi')
+      result = result.replace(regex, match =>
+        `<mark class="bg-warning/30 text-warning-foreground rounded px-0.5">${match}</mark>`
+      )
+    })
+    return result
+  }
 }
 
 function formatTime(seconds: number): string {
@@ -251,7 +418,7 @@ function formatDate(dateStr: string) {
 
 function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
   selectedSegment.value = segment
-  currentTime.value = segment.start
+  videoPlayerRef.value?.seekTo(segment.start)
 
   if (fromWaveform) {
     flashSegmentId.value = segment.id
@@ -261,7 +428,7 @@ function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
 
   const index = filteredSegments.value.findIndex(s => s.id === segment.id)
   if (index !== -1 && rowVirtualizer.value) {
-    rowVirtualizer.value.scrollToIndex(index, { align: 'center' })
+    rowVirtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' })
   }
 }
 
@@ -274,6 +441,86 @@ function handleWaveformClick(time: number) {
 
   if (segment) {
     seekToSegment(segment, true)
+  }
+}
+
+// Helper function to download a file from blob data
+async function downloadFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+async function downloadAudio() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Downloading...', description: 'Fetching original audio file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/audio`)
+    if (!response.ok) throw new Error('Download failed')
+    const blob = await response.blob()
+    await downloadFile(blob, transcript.value.title)
+    toast.add({ title: 'Download complete', description: 'Audio file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Download failed', description: error.message || 'Failed to download audio', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function exportDOCX() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Exporting...', description: 'Generating DOCX file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/docx`)
+    if (!response.ok) throw new Error('Export failed')
+    const blob = await response.blob()
+    await downloadFile(blob, `${transcript.value.title}_transcription.docx`)
+    toast.add({ title: 'Export complete', description: 'DOCX file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function exportSRT() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Exporting...', description: 'Generating SRT file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/srt`)
+    if (!response.ok) throw new Error('Export failed')
+    const blob = await response.blob()
+    await downloadFile(blob, `${transcript.value.title}_transcription.srt`)
+    toast.add({ title: 'Export complete', description: 'SRT file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function exportVTT() {
+  if (!transcript.value) return
+  isExporting.value = true
+  toast.add({ title: 'Exporting...', description: 'Generating VTT file', color: 'primary' })
+  try {
+    const response = await fetch(`/api/v1/transcriptions/${transcript.value.id}/download/vtt`)
+    if (!response.ok) throw new Error('Export failed')
+    const blob = await response.blob()
+    await downloadFile(blob, `${transcript.value.title}_transcription.vtt`)
+    toast.add({ title: 'Export complete', description: 'VTT file downloaded', color: 'success' })
+  } catch (error: any) {
+    toast.add({ title: 'Export failed', description: error.message || 'Failed to export transcript', color: 'error' })
+  } finally {
+    isExporting.value = false
   }
 }
 
@@ -491,9 +738,49 @@ async function loadTranscript() {
 
   try {
     const response = await api.transcriptions.get(transcriptId.value)
+
+    const statusMap: Record<string, Transcription['status']> = {
+      COMPLETED: 'completed',
+      PROCESSING: 'processing',
+      PENDING: 'processing',
+      FAILED: 'failed'
+    }
+
+    const fallbackSpeakerColors = [
+      '#3B82F6',
+      '#8B5CF6',
+      '#10B981',
+      '#F59E0B',
+      '#EF4444',
+      '#EC4899',
+      '#6366F1',
+      '#14B8A6'
+    ]
+
+    const normalizedSpeakers: Speaker[] = (response.speakers || []).map((speaker: any, index: number) => ({
+      id: speaker.id || `speaker-${index}`,
+      name: speaker.name || `Speaker ${index + 1}`,
+      role: speaker.role,
+      color: speaker.color || fallbackSpeakerColors[index % fallbackSpeakerColors.length]
+    }))
+
     transcript.value = {
-      ...response,
-      audioUrl: response.audio_url || null
+      id: response.gid,
+      title: response.filename || response.gid,
+      audioUrl: response.audio_url || null,
+      duration: response.duration || 0,
+      status: statusMap[String(response.status || '').toUpperCase()] || 'processing',
+      caseId: response.case_gid,
+      caseName: (response as any).case_name,
+      createdAt: response.created_at,
+      segments: response.segments || [],
+      speakers: normalizedSpeakers,
+      metadata: {
+        format: response.format,
+        fileSize: (response as any).size,
+        sampleRate: (response as any).sample_rate,
+        bitRate: (response as any).bit_rate
+      } as Transcription['metadata']
     }
   } catch (err: any) {
     error.value = err.message || 'Failed to load transcript'
@@ -543,7 +830,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UDashboardPanel id="transcript-main" resizable>
+  <UDashboardPanel id="transcript-main" resizable :ui="{ body: 'flex flex-col flex-1 overflow-hidden' }">
     <template #header>
       <div class="h-16 px-4 sm:px-6 flex items-center justify-between gap-4 border-b border-default">
         <div class="flex items-center gap-4 min-w-0">
@@ -568,31 +855,13 @@ onMounted(async () => {
           <UDropdownMenu
             :items="[
               [
-                {
-                  label: 'Download Original Audio',
-                  icon: 'i-lucide-music',
-                  click: async () => {
-                    const audioUrl = transcript?.audioUrl
-                    if (audioUrl) {
-                      const link = document.createElement('a')
-                      link.href = audioUrl
-                      link.download = `${transcript.title}.mp3`
-                      link.click()
-                    } else {
-                      toast.add({
-                        title: 'Audio not available',
-                        description: 'No audio file found for this transcript',
-                        color: 'warning'
-                      })
-                    }
-                  }
-                },
-                { label: 'Export as DOCX', icon: 'i-lucide-file-text', click: () => exportTranscript('docx') },
-                { label: 'Export as SRT', icon: 'i-lucide-captions', click: () => exportTranscript('srt') },
-                { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
+                { label: 'Download Original Audio', icon: 'i-lucide-music', onSelect: () => downloadAudio() },
+                { label: 'Export as DOCX', icon: 'i-lucide-file-text', onSelect: () => exportDOCX() },
+                { label: 'Export as SRT', icon: 'i-lucide-subtitles', onSelect: () => exportSRT() },
+                { label: 'Export as VTT', icon: 'i-lucide-captions', onSelect: () => exportVTT() }
               ],
               [
-                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
+                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => deleteTranscription() }
               ]
             ]"
           >
@@ -615,9 +884,9 @@ onMounted(async () => {
     </template>
 
     <template #body>
-      <div class="h-full overflow-y-auto -m-4 sm:-m-6 p-4 sm:p-6">
-        <!-- Loading State -->
-        <div v-if="isLoading" class="flex items-center justify-center min-h-full p-6">
+      <!-- Loading State -->
+      <div v-if="isLoading" class="h-full flex items-center justify-center">
+        <div class="flex items-center justify-center min-h-full p-6">
           <div class="text-center space-y-4">
             <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
             <div>
@@ -626,9 +895,11 @@ onMounted(async () => {
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Error State -->
-        <div v-else-if="error" class="flex items-center justify-center min-h-full p-6">
+      <!-- Error State -->
+      <div v-else-if="error" class="h-full flex items-center justify-center">
+        <div class="flex items-center justify-center min-h-full p-6">
           <UCard class="max-w-md">
             <div class="text-center space-y-4">
               <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto" />
@@ -645,15 +916,136 @@ onMounted(async () => {
             </div>
           </UCard>
         </div>
+      </div>
 
-        <!-- Main Content -->
-        <div v-else-if="transcript" class="space-y-6">
-          <!-- Audio Player -->
-          <LazyWaveformPlayer
+      <!-- Unified Layout for Video and Audio -->
+      <div v-else-if="transcript" class="h-full flex flex-col overflow-hidden">
+        <!-- Video Player (Collapsible for video files) -->
+        <div v-if="isVideoFile" class="flex-shrink-0 border-b border-default">
+          <!-- Custom header with video controls -->
+          <div class="flex items-center justify-between gap-3 px-4 py-2 bg-elevated border-b border-default">
+            <div class="flex items-center gap-3">
+              <!-- Collapse toggle -->
+              <UButton
+                :icon="videoPlayerOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                @click="videoPlayerOpen = !videoPlayerOpen"
+              />
+
+              <UIcon name="i-lucide-video" class="size-4 text-muted" />
+              <span class="text-sm font-medium">Video Player</span>
+            </div>
+
+            <!-- Video controls (always visible) -->
+            <div class="flex items-center gap-2">
+              <!-- Skip back -->
+              <UTooltip text="Skip back 10s">
+                <UButton
+                  icon="i-lucide-skip-back"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!isPlaying && currentTime === 0"
+                  @click="currentTime = Math.max(0, currentTime - 10)"
+                />
+              </UTooltip>
+
+              <!-- Play/Pause -->
+              <UButton
+                :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
+                color="primary"
+                size="sm"
+                @click="isPlaying = !isPlaying"
+              />
+
+              <!-- Skip forward -->
+              <UTooltip text="Skip forward 10s">
+                <UButton
+                  icon="i-lucide-skip-forward"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  @click="currentTime = currentTime + 10"
+                />
+              </UTooltip>
+
+              <!-- Time display -->
+              <div class="text-xs text-muted min-w-[80px] text-center">
+                {{ formatTime(currentTime) }} / {{ formatTime(transcript.duration || 0) }}
+              </div>
+
+              <!-- Size controls -->
+              <UFieldGroup size="sm">
+                <UTooltip text="Compact view">
+                  <UButton
+                    icon="i-lucide-minimize-2"
+                    :color="videoSize === 'small' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'small' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'small'"
+                  />
+                </UTooltip>
+                <UTooltip text="Theater view">
+                  <UButton
+                    icon="i-lucide-rectangle-horizontal"
+                    :color="videoSize === 'theater' ? 'primary' : 'neutral'"
+                    :variant="videoSize === 'theater' ? 'soft' : 'ghost'"
+                    size="sm"
+                    @click="videoSize = 'theater'"
+                  />
+                </UTooltip>
+              </UFieldGroup>
+            </div>
+          </div>
+
+          <!-- Video player content (collapsible) -->
+          <div v-show="videoPlayerOpen" class="p-4 sm:p-6">
+            <LazyVideoPlayer
+              v-if="transcript.audioUrl"
+              ref="videoPlayerRef"
+              :media-url="transcript.audioUrl"
+              media-type="video"
+              :transcription-id="transcript.id"
+              :is-playing="isPlaying"
+              :segments="transcript.segments"
+              :selected-segment-id="selectedSegment?.id"
+              :key-moments="keyMoments"
+              :size="videoSize"
+              :hide-controls="true"
+              @update:current-time="currentTime = $event"
+              @update:is-playing="isPlaying = $event"
+              @segment-click="seekToSegment"
+              @waveform-click="handleWaveformClick"
+            />
+          </div>
+
+          <!-- Segment Timeline - visible when collapsed -->
+          <div v-show="!videoPlayerOpen" class="h-3 bg-muted/20 cursor-pointer relative overflow-hidden">
+            <div
+              v-for="segment in transcript.segments"
+              :key="segment.id"
+              class="absolute top-0 h-full transition-opacity"
+              :style="{
+                left: `${(segment.start / transcript.duration) * 100}%`,
+                width: `${((segment.end - segment.start) / transcript.duration) * 100}%`,
+                backgroundColor: segment.isKeyMoment ? '#F59E0B' : '#3B82F6',
+                opacity: segment.id === selectedSegment?.id ? 1 : 0.7
+              }"
+              @click="seekToSegment(segment)"
+            />
+          </div>
+        </div>
+
+        <!-- Audio Player (Simple for audio-only files) -->
+        <div v-else class="flex-shrink-0 p-4 sm:p-6 border-b border-default">
+          <LazyVideoPlayer
             v-if="transcript.audioUrl"
-            :audio-url="transcript.audioUrl"
+            ref="videoPlayerRef"
+            :media-url="transcript.audioUrl"
+            media-type="audio"
             :transcription-id="transcript.id"
-            :current-time="currentTime"
             :segments="transcript.segments"
             :selected-segment-id="selectedSegment?.id"
             :key-moments="keyMoments"
@@ -662,10 +1054,14 @@ onMounted(async () => {
             @segment-click="seekToSegment"
             @waveform-click="handleWaveformClick"
           />
+        </div>
 
-          <!-- Search and Filters -->
-          <div class="space-y-3">
-            <div class="flex items-center gap-3">
+        <!-- Transcript Content Section (Shared by both video and audio) -->
+        <div class="flex-1 overflow-hidden flex flex-col">
+          <div class="flex-1 flex flex-col min-h-0 gap-2 p-1">
+              <!-- Search and Filters -->
+              <div class="space-y-1">
+            <div class="flex items-center gap-2" :class="isVideoFile ? 'text-sm' : ''">
               <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
                 <UButton
                   :icon="autoScrollEnabled ? 'i-lucide-radio' : 'i-lucide-circle'"
@@ -803,10 +1199,10 @@ onMounted(async () => {
           </div>
 
           <!-- Transcript Segments Container -->
-          <div>
+          <div class="flex-1 flex flex-col min-h-0">
             <div
               ref="scrollContainerRef"
-              class="overflow-y-auto max-h-[60vh]"
+              class="flex-1 overflow-y-auto"
               data-transcript-container
             >
             <!-- Virtual list -->
@@ -828,34 +1224,27 @@ onMounted(async () => {
                   left: 0,
                   transform: `translateY(${virtualRow.start}px)`,
                   width: '100%',
-                  height: '120px',
-                  marginBottom: '8px',
+                  height: '74px',
+                  marginBottom: '6px',
                 }"
                 :class="[
-                  'p-4 rounded-lg cursor-pointer overflow-hidden transition-colors duration-200',
+                  'p-2 rounded cursor-pointer overflow-hidden transition-colors duration-200',
                   {
-                    'bg-primary/10 border-l-4 border-primary shadow-sm': filteredSegments[virtualRow.index].id === activeSegmentId,
+                    'bg-primary/10 border-l-2 border-primary': filteredSegments[virtualRow.index].id === activeSegmentId,
                     'hover:bg-muted/30': filteredSegments[virtualRow.index].id !== activeSegmentId,
                     'animate-pulse bg-warning/20': filteredSegments[virtualRow.index].id === flashSegmentId
                   }
                 ]"
-                @click="currentTime = filteredSegments[virtualRow.index].start"
+                @click="seekToSegment(filteredSegments[virtualRow.index])"
               >
                 <!-- Header -->
-                <div class="flex items-start justify-between gap-3 mb-3">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <UButton
-                      :label="formatTime(filteredSegments[virtualRow.index].start)"
-                      icon="i-lucide-clock"
-                      color="neutral"
-                      variant="soft"
-                      size="xs"
-                      @click.stop="seekToSegment(filteredSegments[virtualRow.index])"
-                    />
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs text-muted font-mono">{{ formatTime(filteredSegments[virtualRow.index].start) }}</span>
 
                     <div
                       v-if="getSpeaker(filteredSegments[virtualRow.index].speaker)"
-                      class="px-3 py-1 rounded-full text-sm font-medium"
+                      class="px-2 py-0.5 rounded-full text-xs font-medium"
                       :style="{
                         backgroundColor: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color + '20',
                         color: getSpeaker(filteredSegments[virtualRow.index].speaker)!.color
@@ -863,56 +1252,36 @@ onMounted(async () => {
                     >
                       {{ getSpeaker(filteredSegments[virtualRow.index].speaker)!.name }}
                     </div>
-                    <UBadge v-else label="Unknown Speaker" color="neutral" size="xs" variant="soft" />
-
-                    <UBadge v-if="filteredSegments[virtualRow.index].isKeyMoment" label="Key Moment" icon="i-lucide-star" color="warning" size="xs" />
-
-                    <UTooltip v-if="filteredSegments[virtualRow.index].confidence" :text="`Confidence: ${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`">
-                      <UBadge
-                        :label="`${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`"
-                        :color="filteredSegments[virtualRow.index].confidence > 0.9 ? 'success' : filteredSegments[virtualRow.index].confidence > 0.7 ? 'warning' : 'neutral'"
-                        size="xs"
-                        variant="subtle"
-                      />
-                    </UTooltip>
                   </div>
 
                   <!-- Actions -->
-                  <div class="flex items-center gap-1">
-                    <UTooltip :text="filteredSegments[virtualRow.index].isKeyMoment ? 'Remove Key Moment' : 'Mark as Key Moment'">
-                      <UButton
-                        icon="i-lucide-star"
-                        :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index].id)"
-                      />
-                    </UTooltip>
-
-                    <UTooltip text="Copy Segment">
-                      <UButton
-                        icon="i-lucide-copy"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
-                      />
-                    </UTooltip>
-
-                    <UTooltip text="Edit Text">
-                      <UButton
-                        icon="i-lucide-edit"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="startEdit(filteredSegments[virtualRow.index])"
-                      />
-                    </UTooltip>
+                  <div class="flex items-center gap-0.5">
+                    <UButton
+                      icon="i-lucide-star"
+                      :color="filteredSegments[virtualRow.index].isKeyMoment ? 'warning' : 'neutral'"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="toggleKeyMoment(filteredSegments[virtualRow.index].id)"
+                    />
+                    <UButton
+                      icon="i-lucide-copy"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="copySegmentToClipboard(filteredSegments[virtualRow.index])"
+                    />
+                    <UButton
+                      icon="i-lucide-edit"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click.stop="startEdit(filteredSegments[virtualRow.index])"
+                    />
                   </div>
                 </div>
 
                 <!-- Text Content -->
-                <div class="mt-2">
+                <div>
                   <div v-if="editingSegmentId === filteredSegments[virtualRow.index].id" class="space-y-2" @click.stop>
                     <UTextarea
                       v-model="editText"
@@ -941,21 +1310,8 @@ onMounted(async () => {
                   </div>
                   <p
                     v-else
-                    class="text-default leading-relaxed text-base line-clamp-3"
-                  >
-                    {{ filteredSegments[virtualRow.index].text }}
-                  </p>
-                </div>
-
-                <!-- Tags -->
-                <div v-if="filteredSegments[virtualRow.index].tags && filteredSegments[virtualRow.index].tags.length > 0" class="flex flex-wrap gap-1 mt-3">
-                  <UBadge
-                    v-for="tag in filteredSegments[virtualRow.index].tags"
-                    :key="tag"
-                    :label="tag"
-                    color="neutral"
-                    size="xs"
-                    variant="outline"
+                    class="text-sm leading-snug line-clamp-2"
+                    v-html="highlightedTextMap.get(filteredSegments[virtualRow.index].id) || filteredSegments[virtualRow.index].text"
                   />
                 </div>
               </div>
@@ -974,6 +1330,7 @@ onMounted(async () => {
               />
             </div>
             </div>
+          </div>
           </div>
         </div>
       </div>

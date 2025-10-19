@@ -9,10 +9,11 @@ Production hybrid search implementation using:
 - Proper named sparse vector handling
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import re
+from uuid import UUID
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -33,6 +34,9 @@ from app.schemas.search import (
 from app.workers.pipelines.embeddings import FastEmbedPipeline
 from app.workers.pipelines.reranker import CrossEncoderReranker
 from app.workers.pipelines.bm25_encoder import BM25Encoder
+from app.core.database import SessionLocal
+from app.models.document import Document
+from app.models.case import Case
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +87,17 @@ class HybridSearchEngine:
         else:
             self.reranker = None
 
+        # Simple in-memory caches for ID↔GID lookups within a single process
+        self._document_gid_cache: Dict[str, Optional[str]] = {}
+        self._case_gid_cache: Dict[str, Optional[str]] = {}
+        self._document_uuid_cache: Dict[str, Optional[str]] = {}
+        self._case_uuid_cache: Dict[str, Optional[str]] = {}
+
+        # Query vector caches to avoid recomputing embeddings/sparse encodings for repeated queries
+        self._query_cache_size = 128
+        self._dense_query_cache: "OrderedDict[str, Tuple[float, ...]]" = OrderedDict()
+        self._sparse_query_cache: "OrderedDict[str, Tuple[Tuple[int, ...], Tuple[float, ...]]]" = OrderedDict()
+
     def _create_sparse_vector(self, text: str) -> SparseVector:
         """
         Create BM25 sparse vector from text.
@@ -93,7 +108,23 @@ class HybridSearchEngine:
         Returns:
             Qdrant SparseVector
         """
+        normalized = text.strip()
+        if not normalized:
+            return SparseVector(indices=[], values=[])
+
+        cached = self._sparse_query_cache.get(normalized)
+        if cached is not None:
+            self._sparse_query_cache.move_to_end(normalized)
+            indices, values = cached
+            return SparseVector(indices=list(indices), values=list(values))
+
         indices, values = self.bm25_encoder.encode_to_qdrant_format(text)
+        cached_entry: Tuple[Tuple[int, ...], Tuple[float, ...]] = (tuple(indices), tuple(values))
+
+        if len(self._sparse_query_cache) >= self._query_cache_size:
+            self._sparse_query_cache.popitem(last=False)
+        self._sparse_query_cache[normalized] = cached_entry
+
         return SparseVector(indices=indices, values=values)
 
     def _create_dense_vector(self, text: str) -> List[float]:
@@ -106,8 +137,23 @@ class HybridSearchEngine:
         Returns:
             Embedding vector as list
         """
+        normalized = text.strip()
+        if not normalized:
+            return []
+
+        cached = self._dense_query_cache.get(normalized)
+        if cached is not None:
+            self._dense_query_cache.move_to_end(normalized)
+            return list(cached)
+
         embedding = self.embed_pipeline.generate_single_embedding(text)
-        return embedding.tolist()
+        vector = embedding.tolist()
+
+        if len(self._dense_query_cache) >= self._query_cache_size:
+            self._dense_query_cache.popitem(last=False)
+        self._dense_query_cache[normalized] = tuple(vector)
+
+        return vector
 
     def _normalize_and_boost_scores(
         self,
@@ -203,6 +249,104 @@ class HybridSearchEngine:
 
         return results
 
+    def _resolve_document_gid(self, document_id: Any) -> Optional[str]:
+        """Resolve document UUID to GID with simple caching."""
+        if document_id is None:
+            return None
+
+        doc_key = str(document_id)
+        if doc_key in self._document_gid_cache:
+            return self._document_gid_cache[doc_key]
+
+        try:
+            uuid_val = UUID(doc_key)
+        except (ValueError, TypeError):
+            self._document_gid_cache[doc_key] = None
+            return None
+
+        db = SessionLocal()
+        try:
+            document = db.query(Document).filter(Document.id == uuid_val).first()
+            gid = document.gid if document else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve document GID for {doc_key}: {exc}", exc_info=True)
+            gid = None
+        finally:
+            db.close()
+
+        self._document_gid_cache[doc_key] = gid
+        return gid
+
+    def _resolve_case_gid(self, case_id: Any) -> Optional[str]:
+        """Resolve case UUID to GID with simple caching."""
+        if case_id is None:
+            return None
+
+        case_key = str(case_id)
+        if case_key in self._case_gid_cache:
+            return self._case_gid_cache[case_key]
+
+        try:
+            uuid_val = UUID(case_key)
+        except (ValueError, TypeError):
+            self._case_gid_cache[case_key] = None
+            return None
+
+        db = SessionLocal()
+        try:
+            case = db.query(Case).filter(Case.id == uuid_val).first()
+            gid = case.gid if case else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve case GID for {case_key}: {exc}", exc_info=True)
+            gid = None
+        finally:
+            db.close()
+
+        self._case_gid_cache[case_key] = gid
+        return gid
+
+    def _resolve_document_uuid_from_gid(self, document_gid: str) -> Optional[str]:
+        """Resolve document GID back to UUID string with caching."""
+        if not document_gid:
+            return None
+
+        if document_gid in self._document_uuid_cache:
+            return self._document_uuid_cache[document_gid]
+
+        db = SessionLocal()
+        try:
+            document = db.query(Document).filter(Document.gid == document_gid).first()
+            uuid_value = str(document.id) if document else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve document UUID for GID {document_gid}: {exc}", exc_info=True)
+            uuid_value = None
+        finally:
+            db.close()
+
+        self._document_uuid_cache[document_gid] = uuid_value
+        return uuid_value
+
+    def _resolve_case_uuid_from_gid(self, case_gid: str) -> Optional[str]:
+        """Resolve case GID back to UUID string with caching."""
+        if not case_gid:
+            return None
+
+        if case_gid in self._case_uuid_cache:
+            return self._case_uuid_cache[case_gid]
+
+        db = SessionLocal()
+        try:
+            case = db.query(Case).filter(Case.gid == case_gid).first()
+            uuid_value = str(case.id) if case else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve case UUID for GID {case_gid}: {exc}", exc_info=True)
+            uuid_value = None
+        finally:
+            db.close()
+
+        self._case_uuid_cache[case_gid] = uuid_value
+        return uuid_value
+
     def search_keyword_only(
         self,
         request: HybridSearchRequest,
@@ -219,15 +363,43 @@ class HybridSearchEngine:
             List of search results with BM25 scores
         """
         try:
+            case_ids_filter_set = {str(cid) for cid in (request.case_ids or []) if cid is not None}
+            if request.case_gids:
+                for gid in request.case_gids:
+                    resolved = self._resolve_case_uuid_from_gid(gid)
+                    if resolved:
+                        case_ids_filter_set.add(resolved)
+
+            document_ids_filter_set = {str(did) for did in (request.document_ids or []) if did is not None}
+            if request.document_gids:
+                for gid in request.document_gids:
+                    resolved = self._resolve_document_uuid_from_gid(gid)
+                    if resolved:
+                        document_ids_filter_set.add(resolved)
+
+            case_ids_filter = list(case_ids_filter_set) if case_ids_filter_set else None
+            case_gids_filter = None if case_ids_filter else request.case_gids
+            document_ids_filter = list(document_ids_filter_set) if document_ids_filter_set else None
+            document_gids_filter = None if document_ids_filter else request.document_gids
+
             # Build filters
             filters = build_filter(
-                case_ids=request.case_ids,
-                document_ids=request.document_ids,
+                case_ids=case_ids_filter,
+                case_gids=case_gids_filter,
+                document_ids=document_ids_filter,
+                document_gids=document_gids_filter,
                 chunk_types=request.chunk_types,
             )
 
             # Log filter details
-            logger.info(f"Keyword-only search filters: case_ids={request.case_ids}, document_ids={request.document_ids}, chunk_types={request.chunk_types}")
+            logger.info(
+                "Keyword-only search filters: case_ids=%s, case_gids=%s, document_ids=%s, document_gids=%s, chunk_types=%s",
+                case_ids_filter,
+                case_gids_filter,
+                document_ids_filter,
+                document_gids_filter,
+                request.chunk_types,
+            )
             if filters:
                 logger.info(f"Filter conditions: {filters.model_dump() if hasattr(filters, 'model_dump') else filters}")
 
@@ -291,144 +463,124 @@ class HybridSearchEngine:
             List of search results with normalized scores
         """
         try:
+            case_ids_filter_set = {str(cid) for cid in (request.case_ids or []) if cid is not None}
+            if request.case_gids:
+                for gid in request.case_gids:
+                    resolved = self._resolve_case_uuid_from_gid(gid)
+                    if resolved:
+                        case_ids_filter_set.add(resolved)
+
+            document_ids_filter_set = {str(did) for did in (request.document_ids or []) if did is not None}
+            if request.document_gids:
+                for gid in request.document_gids:
+                    resolved = self._resolve_document_uuid_from_gid(gid)
+                    if resolved:
+                        document_ids_filter_set.add(resolved)
+
+            case_ids_filter = list(case_ids_filter_set) if case_ids_filter_set else None
+            case_gids_filter = None if case_ids_filter else request.case_gids
+            document_ids_filter = list(document_ids_filter_set) if document_ids_filter_set else None
+            document_gids_filter = None if document_ids_filter else request.document_gids
+
             # Build filters
             filters = build_filter(
-                case_ids=request.case_ids,
-                document_ids=request.document_ids,
+                case_ids=case_ids_filter,
+                case_gids=case_gids_filter,
+                document_ids=document_ids_filter,
+                document_gids=document_gids_filter,
                 chunk_types=request.chunk_types,
             )
 
             # Log filter details
-            logger.info(f"Query API search filters: case_ids={request.case_ids}, document_ids={request.document_ids}, chunk_types={request.chunk_types}")
+            logger.info(
+                "Query API search filters: case_ids=%s, case_gids=%s, document_ids=%s, document_gids=%s, chunk_types=%s",
+                case_ids_filter,
+                case_gids_filter,
+                document_ids_filter,
+                document_gids_filter,
+                request.chunk_types,
+            )
             if filters:
                 logger.info(f"Filter conditions: {filters.model_dump() if hasattr(filters, 'model_dump') else filters}")
 
-            # Step 1: Perform separate searches to get individual scores
-            bm25_results_map = {}  # Map point_id -> BM25 score
-            dense_results_map = {}  # Map point_id -> dense score
+            # Precompute query vectors once per request
+            sparse_vector: Optional[SparseVector] = None
+            dense_vector: Optional[List[float]] = None
+            prefetch_limit = max(request.top_k, 10)
+            fusion_limit = max(int(request.top_k * 1.25), request.top_k + 5)
 
-            # Perform BM25 search if enabled
             if request.use_bm25:
                 sparse_vector = self._create_sparse_vector(request.query)
-                logger.info(f"Performing BM25 search with {len(sparse_vector.indices)} tokens")
-
-                bm25_search = self.client.query_points(
-                    collection_name=self.collection_name,
-                    prefetch=[
-                        Prefetch(
-                            query=sparse_vector,
-                            using="bm25",
-                            filter=filters,
-                            limit=request.top_k * 2,
-                        )
-                    ],
-                    query=FusionQuery(fusion=Fusion.RRF),  # Single prefetch, no actual fusion
-                    limit=request.top_k * 2,
-                    with_payload=True,
-                )
-
-                for point in bm25_search.points:
-                    bm25_results_map[str(point.id)] = point.score if point.score else 0.0
-
-                logger.info(f"BM25 search returned {len(bm25_results_map)} results")
-
-            # Perform dense vector search if enabled
+                token_count = len(sparse_vector.indices)
+                if token_count == 0:
+                    logger.info("BM25 query vector empty; skipping BM25 stage")
+                else:
+                    logger.info(f"Performing BM25 search with {token_count} tokens")
+                    # No separate query; vector will be used in combined prefetch
             if request.use_dense:
                 dense_vector = self._create_dense_vector(request.query)
-                logger.info("Performing dense vector search across summary/section/microblock")
-
-                # Search all dense vector types
-                dense_prefetch = []
-                for vector_name in ["summary", "section", "microblock"]:
-                    dense_prefetch.append(
-                        Prefetch(
-                            query=dense_vector,
-                            using=vector_name,
-                            filter=filters,
-                            limit=request.top_k,
-                        )
-                    )
-
-                dense_search = self.client.query_points(
-                    collection_name=self.collection_name,
-                    prefetch=dense_prefetch,
-                    query=FusionQuery(fusion=Fusion.RRF),  # Fuse dense vectors together
-                    limit=request.top_k * 2,
-                    with_payload=True,
-                )
-
-                for point in dense_search.points:
-                    dense_results_map[str(point.id)] = point.score if point.score else 0.0
-
-                logger.info(f"Dense search returned {len(dense_results_map)} results")
+                if not dense_vector:
+                    logger.info("Dense query vector empty; skipping dense stage")
+                else:
+                    logger.info("Prepared dense query vector across summary/section/microblock")
 
             # Step 2: Perform hybrid fusion if both enabled
-            if request.use_bm25 and request.use_dense:
-                # Build prefetch queries for hybrid fusion
-                prefetch_queries = []
+            prefetch_queries = []
 
-                sparse_vector = self._create_sparse_vector(request.query)
+            if request.use_bm25 and sparse_vector and sparse_vector.indices:
                 prefetch_queries.append(
                     Prefetch(
-                        query=sparse_vector,
+                        query=sparse_vector.model_copy(deep=True),
                         using="bm25",
                         filter=filters,
-                        limit=request.top_k * 2,
+                        limit=fusion_limit,
                     )
                 )
 
-                dense_vector = self._create_dense_vector(request.query)
+            if request.use_dense and dense_vector:
                 for vector_name in ["summary", "section", "microblock"]:
                     prefetch_queries.append(
                         Prefetch(
                             query=dense_vector,
                             using=vector_name,
                             filter=filters,
-                            limit=request.top_k,
+                            limit=fusion_limit,
                         )
                     )
 
-                # Determine fusion method
-                if request.fusion_method == "rrf":
-                    fusion = Fusion.RRF
-                elif request.fusion_method == "dbsf":
-                    fusion = Fusion.DBSF
-                else:
-                    fusion = Fusion.RRF  # Default
-
-                # Execute hybrid fusion
-                logger.info(f"Performing hybrid fusion with {request.fusion_method}")
-                results = self.client.query_points(
-                    collection_name=self.collection_name,
-                    prefetch=prefetch_queries,
-                    query=FusionQuery(fusion=fusion),
-                    limit=request.top_k * 3,
-                    with_payload=True,
-                )
-            elif request.use_bm25:
-                # BM25 only
-                results = bm25_search
-            elif request.use_dense:
-                # Dense only
-                results = dense_search
-            else:
-                # No search enabled
-                logger.warning("Neither BM25 nor dense search enabled")
+            if not prefetch_queries:
+                logger.warning("No prefetch queries generated (bm25=%s, dense=%s)", request.use_bm25, request.use_dense)
                 return []
+
+            if request.fusion_method == "rrf":
+                fusion = Fusion.RRF
+            elif request.fusion_method == "dbsf":
+                fusion = Fusion.DBSF
+            else:
+                fusion = Fusion.RRF  # Default
+
+            logger.info(f"Performing hybrid query with {len(prefetch_queries)} prefetches using {request.fusion_method}")
+            results = self.client.query_points(
+                collection_name=self.collection_name,
+                prefetch=prefetch_queries,
+                query=FusionQuery(fusion=fusion),
+                limit=fusion_limit,
+                with_payload=True,
+            )
 
             # Step 3: Format results with actual BM25 and dense scores
             formatted_results = []
             raw_scores = []
-            bm25_scores = {}  # Track actual BM25 scores by point ID
+            bm25_scores: Dict[str, float] = {}  # Track actual BM25 scores by point ID
 
             for point in results.points:
                 score = point.score if point.score is not None else 0.0
                 raw_scores.append(score)
                 point_id = str(point.id)
 
-                # Get actual BM25 score from separate search (not fusion score!)
-                actual_bm25_score = bm25_results_map.get(point_id, 0.0)
-                actual_dense_score = dense_results_map.get(point_id, 0.0)
+                # Without separate source queries, treat component scores as unavailable
+                actual_bm25_score = 0.0
+                actual_dense_score = 0.0
 
                 formatted_results.append({
                     "id": point_id,
@@ -442,14 +594,17 @@ class HybridSearchEngine:
                 bm25_scores[point_id] = actual_bm25_score
 
             # Log search statistics
-            bm25_only_count = sum(1 for r in formatted_results if r["bm25_score"] > 0 and r["dense_score"] == 0)
-            dense_only_count = sum(1 for r in formatted_results if r["dense_score"] > 0 and r["bm25_score"] == 0)
-            both_count = sum(1 for r in formatted_results if r["bm25_score"] > 0 and r["dense_score"] > 0)
+            if any(r["bm25_score"] > 0 or r["dense_score"] > 0 for r in formatted_results):
+                bm25_only_count = sum(1 for r in formatted_results if r["bm25_score"] > 0 and r["dense_score"] == 0)
+                dense_only_count = sum(1 for r in formatted_results if r["dense_score"] > 0 and r["bm25_score"] == 0)
+                both_count = sum(1 for r in formatted_results if r["bm25_score"] > 0 and r["dense_score"] > 0)
 
-            logger.info(
-                f"Result breakdown: {bm25_only_count} BM25-only, "
-                f"{dense_only_count} dense-only, {both_count} in both"
-            )
+                logger.info(
+                    f"Result breakdown: {bm25_only_count} BM25-only, "
+                    f"{dense_only_count} dense-only, {both_count} in both"
+                )
+            else:
+                logger.info("Hybrid fusion completed (component scores unavailable; treated as fully fused results)")
 
             # Normalize and boost scores
             formatted_results = self._normalize_and_boost_scores(
@@ -496,47 +651,17 @@ class HybridSearchEngine:
 
         try:
             # Stage 1: Hybrid search with score normalization
-            # If no chunk_types filter specified, do separate searches for documents and transcripts
-            # to ensure both appear in results (transcripts score lower and get excluded otherwise)
+            # If no chunk_types filter specified, search across documents and transcripts together
             if not request.chunk_types or len(request.chunk_types) == 0:
-                logger.info("No chunk_types filter - performing separate document and transcript searches")
-
-                # Search documents (summary, section, microblock) - get top 40
-                doc_request = HybridSearchRequest(
-                    query=request.query,
-                    use_bm25=request.use_bm25,
-                    use_dense=request.use_dense,
-                    fusion_method=request.fusion_method,
-                    top_k=40,  # Reserve 40 slots for documents
-                    score_threshold=request.score_threshold,
-                    chunk_types=["summary", "section", "microblock"],
-                    case_ids=request.case_ids,
-                    document_ids=request.document_ids,
+                logger.info("No chunk_types filter - querying across documents and transcripts together")
+                combined_request = request.model_copy(
+                    update={
+                        "chunk_types": ["summary", "section", "microblock", "transcript_segment"],
+                        "top_k": max(request.top_k, 1),
+                    }
                 )
-                doc_results = self.search_with_query_api(doc_request)
-                logger.info(f"Document search returned {len(doc_results)} results")
-
-                # Search transcripts - get top 10
-                transcript_request = HybridSearchRequest(
-                    query=request.query,
-                    use_bm25=request.use_bm25,
-                    use_dense=request.use_dense,
-                    fusion_method=request.fusion_method,
-                    top_k=10,  # Reserve 10 slots for transcripts
-                    score_threshold=request.score_threshold,
-                    chunk_types=["transcript_segment"],
-                    case_ids=request.case_ids,
-                    document_ids=request.document_ids,
-                )
-                transcript_results = self.search_with_query_api(transcript_request)
-                logger.info(f"Transcript search returned {len(transcript_results)} results")
-
-                # Merge results and re-sort by score
-                search_results = doc_results + transcript_results
-                search_results.sort(key=lambda x: x["score"], reverse=True)
-                logger.info(f"Merged search: {len(search_results)} total results ({len(doc_results)} docs + {len(transcript_results)} transcripts)")
+                search_results = self.search_with_query_api(combined_request)
             else:
-                # Normal single search with chunk_types filter
                 search_results = self.search_with_query_api(request)
 
             # Stage 2: Apply score threshold filtering
@@ -601,22 +726,50 @@ class HybridSearchEngine:
                     # Neither found it (shouldn't happen, but default to hybrid)
                     match_type = "hybrid"
 
+                document_id_raw = payload.get("document_id")
+                document_id = str(document_id_raw) if document_id_raw is not None else None
+                if document_id is not None:
+                    payload["document_id"] = document_id
+
+                document_gid = payload.get("document_gid")
+                if not document_gid and document_id:
+                    document_gid = self._resolve_document_gid(document_id)
+                    if document_gid:
+                        payload["document_gid"] = document_gid
+
+                case_id_raw = payload.get("case_id")
+                case_id = str(case_id_raw) if case_id_raw is not None else None
+                if case_id is not None:
+                    payload["case_id"] = case_id
+
+                case_gid = payload.get("case_gid")
+                if not case_gid and case_id:
+                    case_gid = self._resolve_case_gid(case_id)
+                    if case_gid:
+                        payload["case_gid"] = case_gid
+
+                chunk_identifier = str(result["id"])
+
                 formatted_results.append(
                     SearchResult(
-                        id=result["id"],
+                        id=chunk_identifier,
+                        gid=chunk_identifier,
                         score=result["score"],
                         text=text,
                         match_type=match_type,
                         page_number=payload.get("page_number"),
                         bboxes=payload.get("bboxes", []),
                         metadata={
-                            "document_id": payload.get("document_id"),
-                            "case_id": payload.get("case_id"),
+                            "document_id": document_id,
+                            "document_gid": document_gid,
+                            "case_id": case_id,
+                            "case_gid": case_gid,
                             "chunk_type": payload.get("chunk_type"),
                             "position": payload.get("position"),
                             "bm25_score": actual_bm25_score,
                             "dense_score": actual_dense_score,
                             "score_debug": result.get("_score_debug"),
+                            "point_id": chunk_identifier,
                         },
                         highlights=highlights,
                         vector_type=payload.get("chunk_type"),
@@ -651,7 +804,9 @@ class HybridSearchEngine:
                     },
                     "filters_applied": {
                         "case_ids": request.case_ids,
+                        "case_gids": request.case_gids,
                         "document_ids": request.document_ids,
+                        "document_gids": request.document_gids,
                         "chunk_types": request.chunk_types,
                     },
                 },

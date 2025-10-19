@@ -25,7 +25,7 @@ export interface DocumentContentItem {
   text: string
   type: string
   bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
-  chunk_id?: number
+  chunk_id?: string | number
 }
 
 export interface PageData {

@@ -36,7 +36,7 @@ class ForensicExportService:
     @staticmethod
     def scan_for_exports(
         root_path: str,
-        case_id: int,
+        case_gid: str,
         db: Session
     ) -> Dict[str, List]:
         """
@@ -46,7 +46,7 @@ class ForensicExportService:
 
         Args:
             root_path: Root directory to start scanning from
-            case_id: ID of the case to associate exports with
+            case_gid: GID of the case to associate exports with
             db: Database session
 
         Returns:
@@ -83,10 +83,10 @@ class ForensicExportService:
                     # Register new export
                     try:
                         export = ForensicExportService.register_export(
-                            current_path, case_id, db
+                            current_path, case_gid, db
                         )
                         results["found"].append({
-                            "id": export.id,
+                            "gid": export.gid,
                             "path": str(current_path.absolute()),
                             "name": export.folder_name
                         })
@@ -139,7 +139,7 @@ class ForensicExportService:
     @staticmethod
     def register_export(
         export_path: Path,
-        case_id: int,
+        case_gid: str,
         db: Session
     ) -> ForensicExport:
         """
@@ -147,7 +147,7 @@ class ForensicExportService:
 
         Args:
             export_path: Path to the export folder
-            case_id: ID of the case to associate with
+            case_gid: GID of the case to associate with
             db: Database session
 
         Returns:
@@ -206,9 +206,14 @@ class ForensicExportService:
                 logger.warning(f"Failed to parse count '{count_str}': {e}")
                 return None
 
+        # Get case by GID to get the case_id
+        case = db.query(Case).filter(Case.gid == case_gid).first()
+        if not case:
+            raise ValueError(f"Case with GID {case_gid} not found")
+
         # Create export record
         export = ForensicExport(
-            case_id=case_id,
+            case_id=case.id,
             folder_path=str(export_path.absolute()),
             folder_name=export_path.name,
 
@@ -242,21 +247,24 @@ class ForensicExportService:
         db.commit()
         db.refresh(export)
 
-        logger.info(f"Created ForensicExport(id={export.id}, name='{export.folder_name}')")
+        logger.info(f"Created ForensicExport(gid={export.gid}, name='{export.folder_name}')")
         return export
 
     @staticmethod
-    def get_export(export_id: int, db: Session) -> Optional[ForensicExport]:
-        """Get a forensic export by ID."""
+    def get_export(export_gid: str, db: Session) -> Optional[ForensicExport]:
+        """Get a forensic export by GID."""
         return db.query(ForensicExport).filter(
-            ForensicExport.id == export_id
+            ForensicExport.gid == export_gid
         ).first()
 
     @staticmethod
-    def list_exports_for_case(case_id: int, db: Session) -> List[ForensicExport]:
+    def list_exports_for_case(case_gid: str, db: Session) -> List[ForensicExport]:
         """List all forensic exports for a case."""
+        case = db.query(Case).filter(Case.gid == case_gid).first()
+        if not case:
+            return []
         return db.query(ForensicExport).filter(
-            ForensicExport.case_id == case_id
+            ForensicExport.case_id == case.id
         ).order_by(ForensicExport.discovered_at.desc()).all()
 
     @staticmethod
@@ -267,16 +275,16 @@ class ForensicExportService:
         ).all()
 
     @staticmethod
-    def verify_export_exists(export_id: int, db: Session) -> Tuple[bool, str]:
+    def verify_export_exists(export_gid: str, db: Session) -> Tuple[bool, str]:
         """
         Verify that the export folder still exists on disk.
 
         Returns:
             Tuple of (exists: bool, path: str)
         """
-        export = ForensicExportService.get_export(export_id, db)
+        export = ForensicExportService.get_export(export_gid, db)
         if not export:
-            raise ValueError(f"Export {export_id} not found")
+            raise ValueError(f"Export with GID {export_gid} not found")
 
         exists = Path(export.folder_path).exists()
         export.last_verified_at = datetime.utcnow()
@@ -285,18 +293,18 @@ class ForensicExportService:
         return exists, export.folder_path
 
     @staticmethod
-    def delete_export(export_id: int, db: Session) -> ForensicExport:
+    def delete_export(export_gid: str, db: Session) -> ForensicExport:
         """
         Delete a forensic export record from the database.
 
         Note: This does NOT delete files from disk, only the database record.
         """
-        export = ForensicExportService.get_export(export_id, db)
+        export = ForensicExportService.get_export(export_gid, db)
         if not export:
-            raise ValueError(f"Export {export_id} not found")
+            raise ValueError(f"Export with GID {export_gid} not found")
 
         db.delete(export)
         db.commit()
 
-        logger.info(f"Deleted ForensicExport(id={export_id})")
+        logger.info(f"Deleted ForensicExport(gid={export_gid})")
         return export

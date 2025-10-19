@@ -3,14 +3,15 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, JSON, Boolean, BigInteger, Enum
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 from app.models.document import DocumentStatus
+from app.models.base import UUIDMixin
 import uuid
 
 
-class TranscriptSegment(Base):
+class TranscriptSegment(UUIDMixin, Base):
     """
     TranscriptSegment model for individual transcript segments.
 
@@ -21,9 +22,8 @@ class TranscriptSegment(Base):
 
     __tablename__ = "transcript_segments"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    transcript_id = Column(
-        Integer,
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("transcriptions.id", ondelete="CASCADE"),
         nullable=False,
         index=True
@@ -41,7 +41,7 @@ class TranscriptSegment(Base):
         return f"<TranscriptSegment(id={self.id}, transcript_id={self.transcript_id}, segment_id='{self.segment_id}', is_key_moment={self.is_key_moment})>"
 
 
-class Transcription(Base):
+class Transcription(UUIDMixin, Base):
     """
     Transcription model representing audio/video transcription results.
 
@@ -52,11 +52,9 @@ class Transcription(Base):
 
     __tablename__ = "transcriptions"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-
     # New decoupled fields - direct relationship to Case
-    case_id = Column(
-        Integer,
+    case_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True
@@ -74,8 +72,8 @@ class Transcription(Base):
     uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     # Legacy field - will be dropped in future migration
-    document_id = Column(
-        Integer,
+    document_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=True,  # Now nullable for backward compatibility
         unique=True,  # One-to-one relationship with Document

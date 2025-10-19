@@ -41,14 +41,15 @@ class ForensicExportBase(BaseModel):
 class ForensicExportCreate(ForensicExportBase):
     """Schema for creating a new forensic export."""
 
-    case_id: int = Field(..., gt=0, description="ID of the case this export belongs to")
+    case_gid: str = Field(..., description="Global identifier of the case this export belongs to")
 
 
 class ForensicExportResponse(ForensicExportBase):
     """Schema for forensic export responses with all fields."""
 
-    id: int
-    case_id: int
+    gid: str = Field(..., description="Forensic export global identifier")
+    case_gid: str = Field(..., description="Case global identifier")
+    case_name: Optional[str] = Field(None, description="Case name for display")
     summary_json: Optional[List[SummaryField]] = Field(None, description="Full summary array from JSON")
     export_options_json: Optional[List[ExportOption]] = Field(None, description="Export options from JSON")
     problems_json: Optional[List[Any]] = Field(None, description="Problems array from JSON")
@@ -61,8 +62,9 @@ class ForensicExportResponse(ForensicExportBase):
 class ForensicExportListItem(BaseModel):
     """Schema for forensic export list items (without full JSON)."""
 
-    id: int
-    case_id: int
+    gid: str = Field(..., description="Forensic export global identifier")
+    case_gid: str = Field(..., description="Case global identifier")
+    case_name: Optional[str] = Field(None, description="Case name for display")
     folder_name: Optional[str]
     export_uuid: Optional[str]
     total_records: Optional[int]
@@ -92,7 +94,7 @@ class ScanLocationRequest(BaseModel):
 class ScanResultItem(BaseModel):
     """Schema for a single scan result."""
 
-    id: int
+    gid: str = Field(..., description="Forensic export global identifier")
     path: str
     name: str
 
@@ -108,7 +110,7 @@ class ScanLocationResponse(BaseModel):
     """Schema for scan location response."""
 
     scanned_path: str
-    case_id: int
+    case_gid: str = Field(..., description="Case global identifier")
     found: List[ScanResultItem] = Field(default_factory=list, description="Newly discovered exports")
     existing: List[str] = Field(default_factory=list, description="Already registered export paths")
     errors: List[ScanErrorItem] = Field(default_factory=list, description="Errors during scanning")
@@ -125,6 +127,6 @@ class VerifyExportResponse(BaseModel):
 class DeleteForensicExportResponse(BaseModel):
     """Schema for forensic export deletion responses."""
 
-    id: int
+    gid: str = Field(..., description="Deleted forensic export global identifier")
     folder_path: str
     message: str

@@ -16,11 +16,11 @@ const searchSettings = ref({
   use_bm25: true,
   use_dense: true,
   fusion_method: 'rrf' as 'rrf' | 'weighted' | 'max',
-  top_k: 50, // Increased from 20 to fetch more results
+  top_k: 20, // Default batch size for interactive queries
   score_threshold: 0.0, // Minimum confidence score (0.0 = no filter)
   chunk_types: [] as string[], // Filter by chunk types
-  document_ids: [] as number[], // Filter by document IDs
-  case_ids: [] as number[] // Filter by case IDs
+  document_gids: [] as string[], // Filter by document GIDs
+  case_gids: [] as string[] // Filter by case GIDs
 })
 
 // Case filters - use shared cache system
@@ -29,7 +29,7 @@ await cases.get() // Load cases from cache or fetch if needed
 
 const availableCases = computed(() =>
   (cases.data.value?.cases || []).map((c: any) => ({
-    id: Number(c.id),
+    id: c.gid,
     name: c.name,
     label: c.name,
     case_number: c.case_number
@@ -37,7 +37,7 @@ const availableCases = computed(() =>
 )
 
 // Filter state
-const selectedCases = ref<number[]>([])
+const selectedCases = ref<string[]>([])
 const selectedDocumentTypes = ref<string[]>([])
 const selectedSpeakers = ref<string[]>([])
 const includeTranscripts = ref(true)
@@ -62,26 +62,6 @@ const chunkTypeOptions = [
   { value: 'transcript_segment', label: 'Transcript Segments', description: 'Audio/video transcript snippets' }
 ]
 
-// Watch search mode and update settings + trigger re-search
-watch(searchMode, (mode) => {
-  if (mode === 'hybrid') {
-    searchSettings.value.use_bm25 = true
-    searchSettings.value.use_dense = true
-  } else if (mode === 'semantic') {
-    searchSettings.value.use_bm25 = false
-    searchSettings.value.use_dense = true
-  } else if (mode === 'keyword') {
-    searchSettings.value.use_bm25 = true
-    searchSettings.value.use_dense = false
-  }
-
-  // Trigger re-search if there's an active query
-  if (searchQuery.value.trim()) {
-    debouncedSearch()
-  }
-})
-
-// Perform search with proper debouncing
 const performSearch = async () => {
   if (!searchQuery.value.trim()) {
     searchResults.value = []
@@ -92,23 +72,33 @@ const performSearch = async () => {
   isLoading.value = true
   isSearching.value = true
   try {
-    // Filter out null/undefined values and convert to integers
-    const validCaseIds = selectedCases.value.filter(id => id != null).map(id => Number(id))
+    // Filter out null/undefined values
+    const validCaseGids = selectedCases.value.filter(id => id != null)
 
-    // Build chunk_types from both selectedChunkTypes and selectedDocumentTypes
-    const chunkTypes = [...selectedChunkTypes.value]
+    // Build chunk_types from both selectedChunkTypes, selectedDocumentTypes, and transcript toggle
+    const chunkTypeSet = new Set<string>(selectedChunkTypes.value)
 
     // Map document types to chunk types
     if (selectedDocumentTypes.value.includes('transcript')) {
-      if (!chunkTypes.includes('transcript_segment')) {
-        chunkTypes.push('transcript_segment')
+      chunkTypeSet.add('transcript_segment')
+    }
+
+    // Default chunk coverage when nothing selected: include document chunks and optionally transcripts
+    if (chunkTypeSet.size === 0) {
+      chunkTypeSet.add('summary')
+      chunkTypeSet.add('section')
+      chunkTypeSet.add('microblock')
+      if (includeTranscripts.value) {
+        chunkTypeSet.add('transcript_segment')
       }
     }
-    // Add other document type mappings if needed in the future
-    // e.g., if (selectedDocumentTypes.value.includes('contract')) { ... }
 
-    // NOTE: When no chunk types are selected (chunkTypes.length === 0), we send undefined
-    // to the backend, which triggers separate document + transcript searches that are merged
+    // Respect transcript toggle even if added through document type mapping
+    if (!includeTranscripts.value) {
+      chunkTypeSet.delete('transcript_segment')
+    }
+
+    const chunkTypes = Array.from(chunkTypeSet)
 
     // Build search request with filters
     const request = {
@@ -119,8 +109,8 @@ const performSearch = async () => {
       top_k: searchSettings.value.top_k,
       score_threshold: searchSettings.value.score_threshold > 0 ? searchSettings.value.score_threshold : undefined,
       chunk_types: chunkTypes.length > 0 ? chunkTypes : undefined,
-      case_ids: validCaseIds.length > 0 ? validCaseIds : undefined,
-      document_ids: searchSettings.value.document_ids.length > 0 ? searchSettings.value.document_ids : undefined
+      case_gids: validCaseGids.length > 0 ? validCaseGids : undefined,
+      document_gids: searchSettings.value.document_gids.length > 0 ? searchSettings.value.document_gids : undefined
     }
 
     // DEBUG: Log search request details
@@ -156,23 +146,44 @@ const performSearch = async () => {
     }
 
     // Transform filtered results only (more efficient)
-    const results = rawResults.map((result: any) => ({
-      id: result.id,
-      title: extractTitle(result),
-      excerpt: formatExcerpt(result),
-      documentType: determineDocumentType(result),
-      date: result.metadata?.created_at || result.metadata?.uploaded_at || new Date().toISOString(),
-      jurisdiction: result.metadata?.jurisdiction || null,
-      relevanceScore: result.score,
-      entities: extractEntities(result.metadata),
-      caseNumber: result.metadata?.case_id ? `Case #${result.metadata.case_id}` : null,
-      metadata: result.metadata,
-      highlights: result.highlights,
-      vectorType: result.vector_type,
-      chunkType: result.metadata?.chunk_type,
-      pageNumber: result.metadata?.page_number,
-      filename: result.metadata?.filename
-    }))
+    const results = rawResults.map((result: any) => {
+      const pointId = String(result.id || '')
+      const documentGid = result.metadata?.document_gid || null
+      const documentId = result.metadata?.document_id || null
+      const caseGid = result.metadata?.case_gid || null
+      const caseId = result.metadata?.case_id || null
+      const metadata = {
+        ...result.metadata,
+        document_gid: documentGid,
+        document_id: documentId,
+        case_gid: caseGid,
+        case_id: caseId,
+        chunk_id: result.metadata?.chunk_id || null,
+        point_id: pointId
+      }
+
+      const caseLabel = metadata.case_number || metadata.case_gid || metadata.case_id || null
+
+      return {
+        id: pointId,
+        internalId: result.id,
+        gid: pointId,
+        title: extractTitle(result),
+        excerpt: formatExcerpt(result),
+        documentType: determineDocumentType(result),
+        date: metadata.created_at || metadata.uploaded_at || new Date().toISOString(),
+        jurisdiction: metadata.jurisdiction || null,
+        relevanceScore: result.score,
+        entities: extractEntities(metadata),
+        caseNumber: caseLabel ? `Case ${caseLabel}` : null,
+        metadata,
+        highlights: result.highlights,
+        vectorType: result.vector_type,
+        chunkType: metadata.chunk_type,
+        pageNumber: metadata.page_number,
+        filename: metadata.filename
+      }
+    })
 
     searchResults.value = results
   } catch (error) {
@@ -182,6 +193,63 @@ const performSearch = async () => {
     isLoading.value = false
     isSearching.value = false
   }
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  searchResults.value = []
+  isSearching.value = false
+}
+
+// Schedule background searches for filter/setting adjustments (no live typing)
+const scheduleSearch = useDebounceFn(() => {
+  if (!searchQuery.value.trim()) {
+    return
+  }
+  if (isLoading.value) {
+    return
+  }
+  isSearching.value = true
+  performSearch()
+}, 250)
+
+// Watch search mode and update settings + trigger re-search
+watch(searchMode, (mode) => {
+  if (mode === 'hybrid') {
+    searchSettings.value.use_bm25 = true
+    searchSettings.value.use_dense = true
+  } else if (mode === 'semantic') {
+    searchSettings.value.use_bm25 = false
+    searchSettings.value.use_dense = true
+  } else if (mode === 'keyword') {
+    searchSettings.value.use_bm25 = true
+    searchSettings.value.use_dense = false
+  }
+
+  // Trigger re-search if there's an active query
+  scheduleSearch()
+})
+
+// Watch for filter changes and re-run search when needed
+watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscripts], () => {
+  scheduleSearch()
+}, { deep: true })
+
+// Watch for search settings changes (confidence, fusion method, results limit) and re-run search
+watch(
+  () => [
+    searchSettings.value.score_threshold,
+    searchSettings.value.fusion_method,
+    searchSettings.value.top_k
+  ],
+  () => {
+    scheduleSearch()
+  }
+)
+
+const runExample = (example: string) => {
+  searchQuery.value = example
+  performSearch()
 }
 
 // Determine document type from metadata
@@ -309,7 +377,7 @@ function extractTitle(result: any): string {
 
   // Priority 4: Use chunk type and document ID
   const chunkType = metadata.chunk_type || 'Section'
-  const docId = metadata.document_id || result.id
+  const docId = metadata.document_gid || metadata.document_id || result.id
 
   return `${chunkType.charAt(0).toUpperCase() + chunkType.slice(1)} from Document #${docId}`
 }
@@ -433,38 +501,6 @@ function highlightText(text: string, query: string, isKeywordMatch: boolean, isS
   return highlighted
 }
 
-// Debounced search - 300ms for responsive feel
-const debouncedSearch = useDebounceFn(performSearch, 300)
-
-// Watch search query
-watch(searchQuery, () => {
-  // Set isSearching immediately when user types
-  if (searchQuery.value.trim()) {
-    isSearching.value = true
-  }
-  debouncedSearch()
-})
-
-// Watch for filter changes and re-run search
-watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscripts], () => {
-  if (searchQuery.value.trim()) {
-    debouncedSearch()
-  }
-}, { deep: true })
-
-// Watch for search settings changes (confidence, fusion method, results limit) and re-run search
-watch(
-  () => [
-    searchSettings.value.score_threshold,
-    searchSettings.value.fusion_method,
-    searchSettings.value.top_k
-  ],
-  () => {
-    if (searchQuery.value.trim()) {
-      debouncedSearch()
-    }
-  }
-)
 
 // Keyboard shortcuts - manage two refs for hero and compact inputs
 const heroSearchInput = useTemplateRef('heroSearchInput')
@@ -558,6 +594,7 @@ defineShortcuts({
                   size="xl"
                   :loading="isLoading"
                   autofocus
+                  @keydown.enter.prevent="performSearch"
                   class="!text-lg shadow-xl hover:shadow-2xl transition-shadow"
                   :ui="{
                     base: 'px-6 py-5 text-lg rounded-2xl',
@@ -565,7 +602,17 @@ defineShortcuts({
                   }"
                 >
                   <template #trailing>
-                    <UKbd value="/" />
+                    <div class="flex items-center gap-2">
+                      <UKbd value="/" />
+                      <UButton
+                        label="Search"
+                        color="primary"
+                        size="xs"
+                        :loading="isLoading"
+                        :disabled="!searchQuery.trim()"
+                        @click="performSearch"
+                      />
+                    </div>
                   </template>
                 </UInput>
 
@@ -591,7 +638,7 @@ defineShortcuts({
                   color="neutral"
                   variant="outline"
                   size="xs"
-                  @click="searchQuery = example"
+                  @click="runExample(example)"
                 />
               </div>
 
@@ -634,16 +681,28 @@ defineShortcuts({
                 placeholder="Search for legal terms, clauses, concepts..."
                 size="lg"
                 :loading="isLoading"
+                @keydown.enter.prevent="performSearch"
               >
                 <template #trailing>
-                  <UButton
-                    v-if="searchQuery"
-                    icon="i-lucide-x"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    @click="searchQuery = ''"
-                  />
+                  <div class="flex items-center gap-1">
+                    <UButton
+                      v-if="searchQuery"
+                      icon="i-lucide-x"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="clearSearch"
+                    />
+                    <UButton
+                      icon="i-lucide-search"
+                      color="primary"
+                      variant="solid"
+                      size="xs"
+                      :loading="isLoading"
+                      :disabled="!searchQuery.trim()"
+                      @click="performSearch"
+                    />
+                  </div>
                 </template>
               </UInput>
 

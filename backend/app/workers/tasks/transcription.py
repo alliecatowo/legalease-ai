@@ -14,9 +14,11 @@ import re
 import httpx
 import warnings
 import time
-from typing import Dict, Any, Optional, List, Tuple
+from collections import OrderedDict
+from typing import Dict, Any, Optional, List, Tuple, Set
 from datetime import datetime, timedelta
 from io import BytesIO
+from uuid import UUID
 
 # Suppress torchaudio deprecation warnings from pyannote
 warnings.filterwarnings("ignore", message=".*torchaudio.*deprecated.*", category=UserWarning)
@@ -30,6 +32,7 @@ from app.core.database import SessionLocal
 from app.core.minio_client import minio_client
 from app.models.transcription import Transcription
 from app.models.document import Document, DocumentStatus
+from app.workers.pipelines.speaker_identification import SpeakerIdentificationPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +137,12 @@ class AudioProcessor:
             Tuple of (success: bool, message: str)
         """
         try:
+            # Calculate dynamic timeout based on file size
+            # Allow 5 minutes per GB, minimum 5 minutes, maximum 60 minutes
+            file_size_gb = os.path.getsize(input_path) / (1024**3)
+            timeout_seconds = max(300, min(3600, int(file_size_gb * 300)))
+            logger.info(f"FFmpeg timeout set to {timeout_seconds}s for {file_size_gb:.2f}GB file")
+
             cmd = [
                 'ffmpeg',
                 '-i', input_path,
@@ -148,7 +157,7 @@ class AudioProcessor:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=300  # 5 minute timeout
+                timeout=timeout_seconds  # Dynamic timeout based on file size
             )
 
             if result.returncode == 0:
@@ -158,7 +167,7 @@ class AudioProcessor:
                 return False, f"FFmpeg error: {error_msg}"
 
         except subprocess.TimeoutExpired:
-            return False, "Audio preprocessing timed out"
+            return False, f"Audio preprocessing timed out after {timeout_seconds}s"
         except Exception as e:
             return False, f"Audio preprocessing failed: {str(e)}"
 
@@ -307,6 +316,124 @@ class WhisperTranscriber:
             raise TranscriptionError(f"Transcription failed: {str(e)}")
 
 
+class LocalWhisperTranscriber:
+    """
+    Handles transcription using the open-source Faster-Whisper implementation.
+
+    Provides an on-premise fallback when WhisperX or the OpenAI API are unavailable.
+    """
+
+    _model_cache: Dict[Tuple[str, str, str], Any] = {}
+
+    def __init__(
+        self,
+        model_size: str = "base",
+        device: str = "cuda",
+        compute_type: str = "float16",
+    ):
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+        except ImportError as exc:
+            raise TranscriptionError(
+                "Faster-Whisper is not installed. Install it with `pip install faster-whisper`."
+            ) from exc
+
+        # Ensure compute type is compatible with CPU usage
+        if device == "cpu" and compute_type.lower() in {"float16", "bfloat16"}:
+            logger.info("Adjusting compute_type to 'int8' for CPU inference")
+            compute_type = "int8"
+
+        cache_key = (model_size, device, compute_type)
+        if cache_key not in self._model_cache:
+            logger.info(
+                f"Loading Faster-Whisper model: size={model_size}, device={device}, compute_type={compute_type}"
+            )
+            self._model_cache[cache_key] = WhisperModel(
+                model_size,
+                device=device,
+                compute_type=compute_type,
+            )
+
+        self.model = self._model_cache[cache_key]
+        self.model_size = model_size
+        self.device = device
+        self.compute_type = compute_type
+
+    def transcribe(
+        self,
+        audio_path: str,
+        language: Optional[str] = None,
+        beam_size: int = 5,
+        temperature: float = 0.0,
+    ) -> Dict[str, Any]:
+        """
+        Transcribe audio using Faster-Whisper.
+
+        Args:
+            audio_path: Path to WAV audio file
+            language: Optional ISO language code, or None/'auto' to let the model decide
+            beam_size: Beam search size for decoding
+            temperature: Sampling temperature (not heavily used in deterministic decoding)
+
+        Returns:
+            Dict containing transcription text, segments, and metadata
+        """
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+            start_time = time.time()
+
+            language_option = None if language in (None, "auto") else language
+
+            segments_iter, info = self.model.transcribe(
+                audio_path,
+                language=language_option,
+                beam_size=beam_size,
+                temperature=temperature,
+                vad_filter=True,
+            )
+
+            segments_list = []
+            text_parts: List[str] = []
+
+            for segment in segments_iter:
+                segment_text = segment.text.strip()
+                text_parts.append(segment_text)
+                word_items = []
+                if getattr(segment, "words", None):
+                    for word in segment.words:
+                        word_items.append({
+                            "word": word.word,
+                            "start": word.start if word.start is not None else segment.start,
+                            "end": word.end if word.end is not None else segment.end,
+                        })
+
+                segments_list.append({
+                    "id": str(uuid.uuid4()),
+                    "start": segment.start if segment.start is not None else 0.0,
+                    "end": segment.end if segment.end is not None else 0.0,
+                    "text": segment_text,
+                    "words": word_items,
+                })
+
+            elapsed = time.time() - start_time
+            full_text = " ".join(text_parts).strip()
+
+            logger.info(
+                f"Faster-Whisper transcription completed in {elapsed:.1f}s "
+                f"(model={self.model_size}, device={self.device}) with {len(segments_list)} segments"
+            )
+
+            return {
+                "text": full_text,
+                "language": info.language if hasattr(info, "language") else language_option,
+                "duration": info.duration if hasattr(info, "duration") else None,
+                "segments": segments_list,
+            }
+        except Exception as exc:
+            logger.error(f"Faster-Whisper transcription failed: {exc}")
+            raise TranscriptionError(f"Faster-Whisper transcription failed: {exc}") from exc
+
+
 class SpeakerDiarizer:
     """Handles speaker diarization using simple heuristics."""
 
@@ -446,237 +573,70 @@ class SpeakerDiarizer:
 
 
 class SpeakerNameInferencer:
-    """Handles AI-powered speaker name inference from conversation content."""
+    """
+    Handles speaker name inference using spaCy NER and linguistic context analysis.
 
-    @staticmethod
-    def extract_name_patterns(segments: List[Dict[str, Any]], filename: Optional[str] = None) -> Dict[str, List[str]]:
-        """
-        Extract potential speaker names using pattern matching.
+    Uses SpeakerIdentificationPipeline for evidence-based name extraction from:
+    - spaCy NER (PERSON entities with context classification)
+    - Pattern matching (conservative fallback)
+    - Filename analysis
 
-        Patterns:
-        - "Hi [NAME]" / "Hello [NAME]"
-        - "I'm [NAME]" / "My name is [NAME]"
-        - "[NAME]?" / "[NAME]!"
-        - Filename patterns like "jane_mark_conversation.mp3"
-
-        Args:
-            segments: List of transcription segments
-            filename: Optional filename to extract names from
-
-        Returns:
-            Dict mapping potential names to their sources
-        """
-        patterns = {
-            'greeting': r'\b(?:hi|hello|hey)\s+([A-Z][a-z]+)\b',
-            'introduction': r'\b(?:I\'m|I am|my name is|this is)\s+([A-Z][a-z]+)\b',
-            'direct_address': r'\b([A-Z][a-z]+)[?!]\b',
-            'possessive': r'\b([A-Z][a-z]+)\'s\b'
-        }
-
-        potential_names = {}
-
-        # Extract from segments
-        for segment in segments[:20]:  # Check first 20 segments
-            text = segment.get('text', '')
-
-            for pattern_type, pattern in patterns.items():
-                matches = re.findall(pattern, text)
-                for name in matches:
-                    # Filter out common words that might match
-                    if name.lower() not in ['i', 'you', 'we', 'they', 'okay', 'yeah', 'sure', 'right', 'well']:
-                        if name not in potential_names:
-                            potential_names[name] = []
-                        potential_names[name].append(f"{pattern_type}: '{text[:50]}...'")
-
-        # Extract from filename
-        if filename:
-            # Pattern: "jane_mark_conversation.mp3" or "john-doe-interview.wav"
-            filename_clean = re.sub(r'\.(mp3|wav|m4a|mp4|avi|mov)$', '', filename.lower())
-            filename_parts = re.split(r'[_\-\s]+', filename_clean)
-
-            # Look for name-like parts (capitalized words)
-            for part in filename_parts:
-                if len(part) > 2 and part not in ['conversation', 'interview', 'call', 'meeting', 'recording', 'audio', 'video']:
-                    name_capitalized = part.capitalize()
-                    if name_capitalized not in potential_names:
-                        potential_names[name_capitalized] = []
-                    potential_names[name_capitalized].append(f"filename: '{filename}'")
-
-        logger.info(f"Extracted {len(potential_names)} potential names from patterns: {list(potential_names.keys())}")
-        return potential_names
-
-    @staticmethod
-    async def infer_names_with_llm(
-        segments: List[Dict[str, Any]],
-        speakers: List[str],
-        potential_names: Dict[str, List[str]],
-        ollama_url: str = "http://localhost:11434"
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Use LLM to infer speaker names from conversation context.
-
-        Uses Redis-based semaphore to prevent concurrent Ollama requests,
-        which can cause RAM/VRAM exhaustion and timeouts.
-
-        Args:
-            segments: List of transcription segments
-            speakers: List of unique speaker IDs
-            potential_names: Dictionary of potential names from pattern matching
-            ollama_url: Ollama API URL
-
-        Returns:
-            Dict mapping speaker IDs to inferred names with confidence scores
-        """
-        try:
-            from app.services.ollama_semaphore import get_ollama_semaphore
-
-            # Get semaphore for Ollama access control
-            semaphore = get_ollama_semaphore()
-
-            # Prepare conversation context (first ~10 segments)
-            context_segments = segments[:min(10, len(segments))]
-            conversation_text = "\n".join([
-                f"{seg.get('speaker', 'UNKNOWN')}: {seg.get('text', '')}"
-                for seg in context_segments
-            ])
-
-            # Build prompt
-            system_prompt = """You are an AI assistant that identifies speakers in conversations.
-Analyze the conversation and infer the most likely names for each speaker.
-Return ONLY valid JSON with no additional text or markdown formatting.
-
-Response format:
-{
-  "SPEAKER_00": {
-    "name": "John",
-    "confidence": 0.85,
-    "reasoning": "Speaker introduces themselves as John in the first segment"
-  },
-  "SPEAKER_01": {
-    "name": "Sarah",
-    "confidence": 0.75,
-    "reasoning": "Other speaker addresses them as Sarah"
-  }
-}
-
-Guidelines:
-- Only include speakers you can confidently identify
-- Confidence score: 0.0 to 1.0 (only suggest names with confidence > 0.8)
-- Use first names only unless full name is clear
-- If unsure, do not include that speaker"""
-
-            potential_names_str = ""
-            if potential_names:
-                potential_names_str = f"\n\nPotential names found: {', '.join(potential_names.keys())}"
-
-            prompt = f"""Analyze this conversation and identify the speakers:
-
-{conversation_text}
-{potential_names_str}
-
-Speakers to identify: {', '.join(speakers)}
-
-Return JSON with speaker names and confidence scores:"""
-
-            # Acquire semaphore before calling Ollama (prevents concurrent requests)
-            try:
-                with semaphore.acquire(blocking=True, timeout=60):
-                    logger.info("Ollama semaphore acquired, calling LLM for speaker name inference")
-
-                    # Call Ollama API with timeout
-                    from app.core.config import settings as app_settings
-
-                    async with httpx.AsyncClient(timeout=90.0) as client:
-                        response = await client.post(
-                            f"{ollama_url}/api/generate",
-                            json={
-                                "model": app_settings.OLLAMA_MODEL_SPEAKER_INFERENCE,
-                                "prompt": prompt,
-                                "system": system_prompt,
-                                "stream": False,
-                                "format": "json",
-                                "options": {
-                                    "temperature": 0.1,  # Low temperature for consistent results
-                                    "top_p": 0.9
-                                }
-                            }
-                        )
-
-                        if response.status_code == 200:
-                            result = response.json()
-                            response_text = result.get('response', '{}')
-
-                            # Parse JSON response
-                            try:
-                                inferred_names = json.loads(response_text)
-                                logger.info(f"LLM inference result: {inferred_names}")
-                                return inferred_names
-                            except json.JSONDecodeError as e:
-                                logger.error(f"Failed to parse LLM JSON response: {e}")
-                                logger.debug(f"Raw response: {response_text}")
-                                return {}
-                        else:
-                            logger.error(f"Ollama API error: {response.status_code}")
-                            logger.error(f"Ollama API response body: {response.text}")
-                            logger.error(f"Ollama API response headers: {response.headers}")
-                            return {}
-
-            except TimeoutError as e:
-                logger.warning(f"Ollama semaphore timeout: {e}")
-                logger.info("Skipping speaker name inference due to high system load")
-                return {}
-
-        except httpx.ReadTimeout:
-            logger.warning("Ollama API timeout - likely due to RAM/VRAM exhaustion")
-            logger.info("Using default speaker names instead")
-            return {}
-        except httpx.ConnectError:
-            logger.warning("Cannot connect to Ollama - service may be unavailable")
-            logger.info("Using default speaker names instead")
-            return {}
-        except Exception as e:
-            logger.error(f"LLM name inference failed: {e}", exc_info=True)
-            return {}
+    Replaces the old LLM-based approach with faster, more reliable linguistic analysis.
+    """
 
     @staticmethod
     async def infer_speaker_names(
         segments: List[Dict[str, Any]],
         speakers: Dict[str, Dict[str, Any]],
         filename: Optional[str] = None,
-        ollama_url: str = "http://localhost:11434"
+        ollama_url: str = "http://localhost:11434",
+        duration: float = 0.0
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         """
-        Main method to infer speaker names using pattern matching and LLM.
+        Infer speaker names using modular pipeline with spaCy NER and context analysis.
+
+        Uses the new SpeakerIdentificationPipeline which:
+        - Analyzes the FULL conversation (not just first N segments)
+        - Uses spaCy NER for linguistic understanding (PERSON entities, POS tags)
+        - Distinguishes context types (self-ID vs vocative vs mention)
+        - Provides evidence-based confidence scores
+        - Optionally validates with LLM for extra confidence
 
         Args:
             segments: List of transcription segments
             speakers: Dictionary of speaker information
             filename: Optional filename to extract names from
-            ollama_url: Ollama API URL
+            ollama_url: Ollama API URL (for optional LLM validation)
+            duration: Total audio duration
 
         Returns:
             Tuple of (updated_speakers, metadata with inference info)
         """
-        logger.info("Starting speaker name inference...")
-
-        # Step 1: Extract potential names using pattern matching
-        potential_names = SpeakerNameInferencer.extract_name_patterns(segments, filename)
-
-        # Step 2: Use LLM to infer names with confidence scores
-        speaker_ids = list(speakers.keys())
-        inferred_names = await SpeakerNameInferencer.infer_names_with_llm(
-            segments,
-            speaker_ids,
-            potential_names,
-            ollama_url
+        logger.info(
+            "Starting speaker name inference with new pipeline (segments=%d, speakers=%d)",
+            len(segments),
+            len(speakers),
         )
 
-        # Step 3: Apply inferred names if confidence > 0.8
+        # Use the new modular pipeline
+        pipeline = SpeakerIdentificationPipeline(use_spacy=True)
+        speaker_ids = list(speakers.keys())
+
+        # Run pipeline to get evidence-based name inferences
+        inferred_names = await pipeline.identify_speakers(
+            segments=segments,
+            speakers=speaker_ids,
+            filename=filename,
+            duration=duration
+        )
+
+        # Apply inferred names if confidence > 0.6 (balanced threshold for spaCy + patterns)
         updated_speakers = speakers.copy()
         metadata = {
             'inference_performed': True,
-            'potential_names': potential_names,
-            'llm_inferences': inferred_names,
+            'pipeline': 'SpeakerIdentificationPipeline',
+            'extractors_used': ['spacy_ner', 'patterns', 'filename'],
+            'inferred_names': inferred_names,
             'applied_names': {}
         }
 
@@ -684,9 +644,10 @@ Return JSON with speaker names and confidence scores:"""
             confidence = inference.get('confidence', 0.0)
             inferred_name = inference.get('name', '')
             reasoning = inference.get('reasoning', '')
+            evidence_count = inference.get('evidence_count', 0)
 
             if speaker_id in updated_speakers:
-                if confidence > 0.8 and inferred_name:
+                if confidence > 0.6 and inferred_name:
                     # Apply inferred name
                     old_name = updated_speakers[speaker_id].get('name', speaker_id)
                     updated_speakers[speaker_id]['name'] = inferred_name
@@ -694,16 +655,23 @@ Return JSON with speaker names and confidence scores:"""
                         'old_name': old_name,
                         'new_name': inferred_name,
                         'confidence': confidence,
+                        'evidence_count': evidence_count,
                         'reasoning': reasoning
                     }
-                    logger.info(f"Applied inferred name for {speaker_id}: '{inferred_name}' (confidence: {confidence:.2f})")
+                    logger.info(
+                        f"Applied inferred name for {speaker_id}: '{inferred_name}' "
+                        f"(confidence: {confidence:.2f}, evidence: {evidence_count}, reason: {reasoning})"
+                    )
                 else:
-                    logger.info(f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.8")
+                    logger.info(
+                        f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.6 "
+                        f"(evidence: {evidence_count})"
+                    )
 
         if metadata['applied_names']:
             logger.info(f"Successfully inferred {len(metadata['applied_names'])} speaker names")
         else:
-            logger.info("No speaker names met confidence threshold (0.8), using default names")
+            logger.info("No speaker names met confidence threshold (0.6), using default names")
 
         return updated_speakers, metadata
 
@@ -943,7 +911,7 @@ class TranscriptionExporter:
 @celery_app.task(name="transcribe_audio", bind=True)
 def transcribe_audio(
     self,
-    transcription_id: int,
+    transcription_gid: str,
     options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -960,7 +928,7 @@ def transcribe_audio(
     8. Handle errors gracefully with status updates
 
     Args:
-        transcription_id: ID of the transcription to process
+        transcription_gid: GID of the transcription to process
         options: Optional dict containing transcription configuration:
             - language: Language code or None for auto-detect
             - task: 'transcribe' or 'translate'
@@ -976,6 +944,15 @@ def transcribe_audio(
 
     # Parse options with defaults
     options = options or {}
+    if not isinstance(options, dict):
+        # Celery can deserialize into AttributeDict; convert to plain dict
+        options = dict(options)
+
+    logger.info(
+        "Transcription options resolved for %s: %s",
+        transcription_gid,
+        json.dumps(options, sort_keys=True),
+    )
     language = options.get("language")
     task = options.get("task", "transcribe")
     enable_diarization = options.get("enable_diarization", True)
@@ -989,28 +966,22 @@ def transcribe_audio(
             meta={'status': 'Initializing transcription', 'progress': 0}
         )
 
-        # Step 1: Get transcription from database
-        logger.info(f"Starting transcription for transcription ID {transcription_id}")
-        transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+        # Step 1: Get transcription from database using GID
+        logger.info(f"Starting transcription for transcription GID {transcription_gid}")
+        transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
 
         if not transcription:
-            raise TranscriptionError(f"Transcription {transcription_id} not found")
+            raise TranscriptionError(f"Transcription with GID {transcription_gid} not found")
 
         # Update transcription status
         transcription.status = DocumentStatus.PROCESSING
         db.commit()
 
-        # Step 2: Download audio/video from MinIO
+        # Step 2: Download audio/video from MinIO (STREAMING - memory efficient)
         self.update_state(
             state='PROCESSING',
             meta={'status': 'Downloading audio from storage', 'progress': 10}
         )
-
-        logger.info(f"Downloading file from MinIO: {transcription.file_path}")
-        file_content = minio_client.download_file(transcription.file_path)
-
-        if not file_content:
-            raise TranscriptionError("Failed to download file from MinIO")
 
         # Create temporary directory for processing
         temp_dir = tempfile.mkdtemp(prefix='transcription_')
@@ -1021,9 +992,15 @@ def transcribe_audio(
         original_file = os.path.join(temp_dir, f"original{ext}")
         processed_wav = os.path.join(temp_dir, "audio.wav")
 
-        # Save original file
-        with open(original_file, 'wb') as f:
-            f.write(file_content)
+        # Stream file directly to disk (no memory loading)
+        logger.info(f"Streaming file from MinIO: {transcription.file_path} -> {original_file}")
+        try:
+            minio_client.download_file_to_path(transcription.file_path, original_file)
+        except Exception as e:
+            logger.error(f"Failed to stream file from MinIO: {e}")
+            raise TranscriptionError(f"Failed to download file from MinIO: {e}")
+
+        logger.info(f"File streamed successfully to {original_file}")
 
         # Step 3: Preprocess audio with FFmpeg
         self.update_state(
@@ -1150,26 +1127,57 @@ def transcribe_audio(
 
                 # Cleanup WhisperX models from memory
                 pipeline.cleanup()
-
             except ImportError:
-                logger.info("WhisperX not available, using OpenAI Whisper API")
+                logger.info("WhisperX not available, attempting Faster-Whisper fallback")
 
-                # Fallback to OpenAI Whisper API
-                transcriber = WhisperTranscriber()
-                transcription_result = transcriber.transcribe(
-                    processed_wav,
-                    language=language,
-                    task=task,
-                    temperature=temperature,
-                    initial_prompt=initial_prompt,
-                    task_id=self.request.id
-                )
+                try:
+                    local_transcriber = LocalWhisperTranscriber(
+                        model_size=whisper_model,
+                        device=device,
+                        compute_type=compute_type,
+                    )
+                    local_start = time.time()
+                    transcription_result = local_transcriber.transcribe(
+                        processed_wav,
+                        language=language,
+                        beam_size=options.get("beam_size", 5),
+                        temperature=temperature,
+                    )
+                    local_time = time.time() - local_start
 
-                segments = transcription_result['segments']
-                full_text = transcription_result['text']
-                detected_language = transcription_result.get('language', language)
+                    segments = transcription_result['segments']
+                    full_text = transcription_result['text']
+                    detected_language = transcription_result.get('language', language)
 
-                logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+                    logger.info(
+                        f"Faster-Whisper transcription completed in {local_time:.1f}s "
+                        f"({len(segments)} segments, language={detected_language})"
+                    )
+                except TranscriptionError as local_error:
+                    logger.warning(f"Faster-Whisper unavailable: {local_error}")
+
+                    if os.getenv("OPENAI_API_KEY"):
+                        logger.info("Falling back to OpenAI Whisper API")
+                        transcriber = WhisperTranscriber()
+                        transcription_result = transcriber.transcribe(
+                            processed_wav,
+                            language=language,
+                            task=task,
+                            temperature=temperature,
+                            initial_prompt=initial_prompt,
+                            task_id=self.request.id
+                        )
+
+                        segments = transcription_result['segments']
+                        full_text = transcription_result['text']
+                        detected_language = transcription_result.get('language', language)
+
+                        logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+                    else:
+                        raise TranscriptionError(
+                            "No transcription backend available. Install WhisperX or Faster-Whisper, "
+                            "or configure OPENAI_API_KEY for the OpenAI Whisper API."
+                        ) from local_error
 
             # Step 5: Speaker diarization (if enabled)
             if enable_diarization:
@@ -1301,27 +1309,32 @@ def transcribe_audio(
             ]
             return colors[index % len(colors)]
 
-        speakers = {}
-        speaker_index = 0
+        speaker_counts: "OrderedDict[str, int]" = OrderedDict()
         for segment in diarized_segments:
-            speaker_id = segment.get('speaker', 'SPEAKER_01')
-            if speaker_id not in speakers:
-                # Generate human-readable name from speaker ID
-                # Use the current speaker_index + 1 for consistent numbering
-                speaker_name = f"Speaker {speaker_index + 1}"
+            speaker_id = segment.get('speaker') or 'SPEAKER_01'
+            segment['speaker'] = speaker_id
+            speaker_counts[speaker_id] = speaker_counts.get(speaker_id, 0) + 1
 
-                speakers[speaker_id] = {
-                    'id': speaker_id,
-                    'name': speaker_name,
-                    'color': generate_speaker_color(speaker_index),
-                    'segments_count': 0
-                }
-                speaker_index += 1
-            speakers[speaker_id]['segments_count'] += 1
+        speakers: Dict[str, Dict[str, Any]] = {}
+        for speaker_index, (speaker_id, segment_count) in enumerate(speaker_counts.items()):
+            speaker_name = f"Speaker {speaker_index + 1}"
+            speakers[speaker_id] = {
+                'id': speaker_id,
+                'name': speaker_name,
+                'color': generate_speaker_color(speaker_index),
+                'segments_count': segment_count
+            }
 
         # Step 5.5: AI-powered speaker name inference (if enabled)
         inference_metadata = None
         enable_name_inference = options.get("enable_name_inference", settings.ENABLE_SPEAKER_NAME_INFERENCE)
+
+        logger.info(
+            "Speaker inference gate for %s -> enabled=%s, detected_speakers=%d",
+            transcription_gid,
+            enable_name_inference,
+            len(speakers),
+        )
 
         if enable_name_inference and len(speakers) > 0:
             try:
@@ -1344,7 +1357,7 @@ def transcribe_audio(
                     asyncio.set_event_loop(loop)
 
                 # Perform inference
-                logger.info("Starting AI-powered speaker name inference...")
+                logger.info("Starting AI-powered speaker name inference with new pipeline...")
                 inference_start = time.time()
                 inferencer = SpeakerNameInferencer()
                 speakers, inference_metadata = loop.run_until_complete(
@@ -1352,7 +1365,8 @@ def transcribe_audio(
                         segments=diarized_segments,
                         speakers=speakers,
                         filename=transcription.filename,
-                        ollama_url=ollama_url
+                        ollama_url=ollama_url,
+                        duration=duration
                     )
                 )
                 inference_time = time.time() - inference_start
@@ -1367,6 +1381,13 @@ def transcribe_audio(
                     'error': str(e),
                     'applied_names': {}
                 }
+        else:
+            logger.info(
+                "Skipping speaker name inference for %s (enabled=%s, speakers=%d)",
+                transcription_gid,
+                enable_name_inference,
+                len(speakers),
+            )
 
         # Step 6: Export to multiple formats
         self.update_state(
@@ -1379,7 +1400,7 @@ def transcribe_audio(
 
         # Prepare metadata (include inference metadata if available)
         metadata = {
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription.gid,
             'filename': transcription.filename,
             'language': language,
             'duration': duration,
@@ -1466,7 +1487,7 @@ def transcribe_audio(
         # Calculate total processing time
         total_time = time.time() - time.time()  # Will be updated below
 
-        logger.info(f"Transcription completed successfully for transcription ID {transcription_id}")
+        logger.info(f"Transcription completed successfully for transcription GID {transcription_gid} (UUID: {transcription.id})")
         logger.info("=" * 80)
         logger.info("PERFORMANCE SUMMARY:")
         logger.info(f"  Audio duration: {duration:.1f}s ({duration/60:.1f} minutes)")
@@ -1481,8 +1502,8 @@ def transcribe_audio(
         # Step 9: Queue transcript indexing for search
         try:
             from app.workers.tasks.transcript_indexing import index_transcript
-            logger.info(f"Queueing transcript indexing for transcription {transcription.id}")
-            index_transcript.delay(transcription.id)
+            logger.info(f"Queueing transcript indexing for transcription {transcription.gid}")
+            index_transcript.delay(transcription.gid)
         except Exception as e:
             logger.warning(f"Failed to queue transcript indexing: {e}")
             # Don't fail the whole transcription if indexing fails to queue
@@ -1490,7 +1511,7 @@ def transcribe_audio(
         # Step 10: Return success result
         return {
             'status': 'completed',
-            'transcription_id': transcription.id,
+            'transcription_gid': transcription.gid,
             'filename': transcription.filename,
             'duration': duration,
             'segments_count': len(diarized_segments),
@@ -1502,11 +1523,11 @@ def transcribe_audio(
         }
 
     except Exception as e:
-        logger.error(f"Transcription failed for transcription ID {transcription_id}: {str(e)}", exc_info=True)
+        logger.error(f"Transcription failed for transcription GID {transcription_gid}: {str(e)}", exc_info=True)
 
         # Update transcription status to FAILED
         try:
-            transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+            transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
             if transcription:
                 transcription.status = DocumentStatus.FAILED
                 db.commit()
@@ -1522,7 +1543,7 @@ def transcribe_audio(
         return {
             'status': 'failed',
             'error': str(e),
-            'transcription_id': transcription_id,
+            'transcription_gid': transcription_gid,
             'task_id': self.request.id
         }
 
@@ -1542,8 +1563,8 @@ def transcribe_audio(
 @celery_app.task(name="process_transcription", bind=True)
 def process_transcription(
     self,
-    transcription_id: str,
-    case_id: str,
+    transcription_id: UUID,
+    case_id: UUID,
     extract_entities: bool = True
 ) -> Dict[str, Any]:
     """
@@ -1553,8 +1574,8 @@ def process_transcription(
     It will handle post-transcription processing and NLP tasks.
 
     Args:
-        transcription_id: Unique identifier for the transcription
-        case_id: Unique identifier for the case
+        transcription_id: UUID of the transcription
+        case_id: UUID of the case
         extract_entities: Whether to extract named entities (default: True)
 
     Returns:
@@ -1571,8 +1592,8 @@ def process_transcription(
 
     return {
         "status": "pending",
-        "transcription_id": transcription_id,
-        "case_id": case_id,
+        "transcription_id": str(transcription_id),
+        "case_id": str(case_id),
         "extract_entities": extract_entities,
         "task_id": self.request.id,
     }

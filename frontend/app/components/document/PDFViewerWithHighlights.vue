@@ -43,7 +43,9 @@ const error = ref<string | null>(null)
 // Sync with parent props
 watch(() => props.page, (newPage) => {
   if (newPage && newPage !== currentPage.value) {
+    console.log('[PDFViewer] Parent changed page to:', newPage)
     currentPage.value = newPage
+    nextTick(() => updatePageDimensions())
   }
 })
 
@@ -193,17 +195,25 @@ function getBoxColor(type?: string): string {
 // Navigation
 function goToPage(page: number) {
   if (page >= 1 && page <= totalPages.value) {
-    console.log(`[PDFViewer] Navigating to page ${page}`)
+    console.log(`[PDFViewer] Navigating to page ${page} (total: ${totalPages.value})`)
     currentPage.value = page
     emit('page-change', page)
+    // Force re-render of dimensions after page change
+    nextTick(() => {
+      updatePageDimensions()
+    })
+  } else {
+    console.warn(`[PDFViewer] Cannot navigate to page ${page}, out of bounds (1-${totalPages.value})`)
   }
 }
 
 function nextPage() {
+  console.log('[PDFViewer] Next page clicked')
   goToPage(currentPage.value + 1)
 }
 
 function prevPage() {
+  console.log('[PDFViewer] Previous page clicked')
   goToPage(currentPage.value - 1)
 }
 
@@ -234,22 +244,30 @@ function handleBoxHover(box: BoundingBox | null) {
 // Watch for PDF load and update dimensions
 watch(pdf, (newPdf) => {
   if (newPdf) {
-    setTimeout(updatePageDimensions, 500)
+    console.log('[PDFViewer] PDF loaded')
+    nextTick(() => {
+      setTimeout(updatePageDimensions, 300)
+    })
   }
 })
 
 watch(() => props.documentUrl, () => {
+  console.log('[PDFViewer] Document URL changed')
   error.value = null
   currentPage.value = 1
 })
 
-// Update dimensions on scale or page change
-watch([scale, currentPage], () => {
-  setTimeout(updatePageDimensions, 100)
+// Update dimensions on scale change (page change handled in goToPage)
+watch(scale, () => {
+  console.log('[PDFViewer] Scale changed to:', scale.value)
+  nextTick(() => {
+    setTimeout(updatePageDimensions, 100)
+  })
 })
 
 onMounted(() => {
-  setTimeout(updatePageDimensions, 1000)
+  console.log('[PDFViewer] Component mounted')
+  setTimeout(updatePageDimensions, 500)
 })
 
 // Mouse panning

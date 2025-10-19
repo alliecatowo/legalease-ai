@@ -21,6 +21,7 @@ from app.schemas.transcription import (
     TranscriptionOptions,
     UpdateSpeakerRequest,
     SpeakerResponse,
+    TranscriptionReprocessResponse,
 )
 from app.services.transcription_service import TranscriptionService
 from app.workers.tasks.summarization import (
@@ -57,7 +58,7 @@ class SummarizeRequest(BaseModel):
 
 class BatchSummarizeRequest(BaseModel):
     """Request model for batch summarization."""
-    transcription_ids: List[int]
+    transcription_gids: List[str]
     options: Optional[dict] = None
 
 
@@ -122,7 +123,7 @@ class KeyMomentsResponse(BaseModel):
 def list_all_transcriptions(
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
-    case_id: Optional[int] = Query(None, description="Optional case ID to filter transcriptions"),
+    case_gid: Optional[str] = Query(None, description="Optional case GID to filter transcriptions"),
     db: Session = Depends(get_db),
 ):
     """
@@ -131,22 +132,22 @@ def list_all_transcriptions(
     Args:
         page: Page number (starting from 1)
         page_size: Number of items per page (max 100)
-        case_id: Optional case ID to filter transcriptions
+        case_gid: Optional case GID to filter transcriptions
         db: Database session
 
     Returns:
         PaginatedTranscriptionListResponse: Paginated list of transcriptions with metadata
     """
-    logger.info(f"Listing all transcriptions: page={page}, page_size={page_size}, case_id={case_id}")
+    logger.info(f"Listing all transcriptions: page={page}, page_size={page_size}, case_gid={case_gid}")
 
-    # Build base query with join to Case table to get case name
-    query = db.query(Transcription, Case.name.label('case_name')).join(
+    # Build base query with join to Case table to get case name and gid
+    query = db.query(Transcription, Case.name.label('case_name'), Case.gid.label('case_gid')).join(
         Case, Transcription.case_id == Case.id
     )
 
     # Apply case filter if provided
-    if case_id is not None:
-        query = query.filter(Transcription.case_id == case_id)
+    if case_gid is not None:
+        query = query.filter(Case.gid == case_gid)
 
     # Get total count before pagination
     total = query.count()
@@ -157,12 +158,14 @@ def list_all_transcriptions(
 
     logger.info(f"Found {total} total transcriptions, returning {len(results)} for page {page}")
 
-    # Convert to list items with case_name
+    # Convert to list items with case_name and case_gid
     # Note: Using dict to avoid Pydantic validation issues with extra field case_name
     transcription_items = [
         {
             "id": trans.id,
+            "gid": trans.gid,
             "case_id": trans.case_id,
+            "case_gid": case_gid_val,
             "case_name": case_name,
             "filename": trans.filename,
             "format": trans.format,
@@ -173,7 +176,7 @@ def list_all_transcriptions(
             "created_at": trans.created_at,
             "uploaded_at": trans.uploaded_at,
         }
-        for trans, case_name in results
+        for trans, case_name, case_gid_val in results
     ]
 
     return PaginatedTranscriptionListResponse(
@@ -185,7 +188,7 @@ def list_all_transcriptions(
 
 
 @router.post(
-    "/cases/{case_id}/transcriptions",
+    "/cases/{case_gid}/transcriptions",
     response_model=TranscriptionUploadResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload audio/video for transcription",
@@ -193,7 +196,7 @@ def list_all_transcriptions(
     "Supported formats: MP3, WAV, AAC, M4A, FLAC, OGG, WebM (audio) and MP4, MPEG, MOV, AVI, WebM, MKV (video).",
 )
 async def upload_audio_for_transcription(
-    case_id: int = Path(..., description="ID of the case"),
+    case_gid: str = Path(..., description="GID of the case"),
     file: UploadFile = File(..., description="Audio or video file to transcribe"),
     options: Optional[str] = Form(None, description="JSON string of transcription options"),
     db: Session = Depends(get_db),
@@ -202,7 +205,7 @@ async def upload_audio_for_transcription(
     Upload audio/video file for transcription with configurable options.
 
     Args:
-        case_id: ID of the case to upload to
+        case_gid: GID of the case to upload to
         file: Audio/video file to transcribe
         options: Optional JSON string containing TranscriptionOptions
         db: Database session
@@ -210,7 +213,7 @@ async def upload_audio_for_transcription(
     Returns:
         TranscriptionUploadResponse: Upload confirmation with document ID
     """
-    logger.info(f"Uploading audio/video for transcription to case {case_id}: {file.filename}")
+    logger.info(f"Uploading audio/video for transcription to case {case_gid}: {file.filename}")
 
     # Parse transcription options if provided
     transcription_options = None
@@ -226,45 +229,46 @@ async def upload_audio_for_transcription(
         transcription_options = TranscriptionOptions()
 
     transcription = await TranscriptionService.upload_audio_for_transcription(
-        case_id=case_id,
+        case_gid=case_gid,
         file=file,
         db=db,
         options=transcription_options,
     )
 
-    logger.info(f"Created transcription record {transcription.id} for case {case_id}")
+    logger.info(f"Created transcription record {transcription.id} for case {case_gid}")
 
     return TranscriptionUploadResponse(
         message=f"Audio/video file '{file.filename}' uploaded successfully. Transcription queued.",
-        transcription_id=transcription.id,
+        transcription_gid=transcription.gid,
+        transcription_id=str(transcription.id),
         status="queued",
     )
 
 
 @router.get(
-    "/cases/{case_id}/transcriptions",
+    "/cases/{case_gid}/transcriptions",
     response_model=TranscriptionListResponse,
     summary="List transcriptions in a case",
     description="Get all transcriptions associated with a case.",
 )
 def list_case_transcriptions(
-    case_id: int = Path(..., description="ID of the case"),
+    case_gid: str = Path(..., description="GID of the case"),
     db: Session = Depends(get_db),
 ):
     """
     List all transcriptions for a case.
 
     Args:
-        case_id: ID of the case
+        case_gid: GID of the case
         db: Database session
 
     Returns:
         TranscriptionListResponse: List of transcriptions and total count
     """
-    logger.info(f"Listing transcriptions for case {case_id}")
+    logger.info(f"Listing transcriptions for case {case_gid}")
 
     transcriptions_data = TranscriptionService.list_case_transcriptions(
-        case_id=case_id, db=db
+        case_gid=case_gid, db=db
     )
 
     # Convert to list items
@@ -275,43 +279,45 @@ def list_case_transcriptions(
     return TranscriptionListResponse(
         transcriptions=transcriptions,
         total=len(transcriptions),
-        case_id=case_id,
+        case_gid=case_gid,
     )
 
 
 @router.get(
-    "/transcriptions/{transcription_id}",
+    "/transcriptions/{transcription_gid}",
     response_model=TranscriptionResponse,
     summary="Get transcription details",
     description="Get detailed information about a specific transcription including all segments, speakers, and timestamps.",
 )
 def get_transcription_details(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     db: Session = Depends(get_db),
 ):
     """
-    Get transcription details by ID.
+    Get transcription details by GID.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         db: Database session
 
     Returns:
         TranscriptionResponse: Detailed transcription data
     """
-    logger.info(f"Getting transcription {transcription_id}")
+    logger.info(f"Getting transcription {transcription_gid}")
 
     transcription_data = TranscriptionService.get_transcription_details(
-        transcription_id=transcription_id, db=db
+        transcription_gid=transcription_gid, db=db
     )
 
     return TranscriptionResponse(**transcription_data)
 
 
 @router.get(
-    "/transcriptions/{transcription_id}/audio",
+    "/transcriptions/{transcription_gid}/audio",
     summary="Stream/download original audio file",
-    description="Download the original audio/video file from storage. Supports HTTP Range requests for efficient seeking in media players.",
+    description="Stream the original audio/video file from storage with true HTTP Range request support. "
+    "Enables instant playback start and efficient seeking without loading entire file into memory. "
+    "Memory-efficient even for multi-GB video files.",
     responses={
         200: {
             "description": "Full audio/video file",
@@ -339,33 +345,34 @@ def get_transcription_details(
     },
 )
 def download_audio(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     range_header: Optional[str] = Header(None, alias="Range"),
     db: Session = Depends(get_db),
 ):
     """
-    Download or stream the original audio/video file with HTTP Range support.
+    Stream audio/video file with HTTP Range support (RFC 7233).
 
-    This endpoint supports HTTP Range requests (RFC 7233) for efficient audio/video
-    streaming and seeking. Media players can request specific byte ranges without
-    downloading the entire file.
+    This endpoint implements true streaming by fetching only requested byte ranges
+    from MinIO storage, enabling:
+    - Instant playback start (no buffering entire file)
+    - Efficient seeking in video/audio players
+    - Memory-efficient handling of large files (2GB+)
+    - Support for concurrent streams
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         range_header: Optional Range header (e.g., "bytes=0-1023")
         db: Database session
 
     Returns:
         Response: Full file (200) or partial content (206) with proper headers
     """
-    logger.info(f"Streaming audio for transcription {transcription_id}, range: {range_header}")
+    logger.info(f"Streaming media for transcription {transcription_gid}, range: {range_header}")
 
-    # Get file content and metadata
-    content, filename, content_type = TranscriptionService.download_audio(
-        transcription_id=transcription_id, db=db
+    # Get file metadata WITHOUT downloading the file
+    file_path, file_size, content_type, filename = TranscriptionService.get_media_info(
+        transcription_gid=transcription_gid, db=db
     )
-
-    file_size = len(content)
 
     # Parse Range header if present
     if range_header:
@@ -374,6 +381,7 @@ def download_audio(
 
         if not range_match:
             # Invalid range format
+            logger.warning(f"Invalid Range header format: {range_header}")
             return Response(
                 content="Invalid Range header format",
                 status_code=416,
@@ -388,6 +396,9 @@ def download_audio(
         # Validate range
         if start >= file_size or start > end:
             # Range not satisfiable
+            logger.warning(
+                f"Range not satisfiable: {start}-{end} for file size {file_size}"
+            )
             return Response(
                 content=f"Requested range not satisfiable (file size: {file_size} bytes)",
                 status_code=416,
@@ -399,11 +410,20 @@ def download_audio(
         # Ensure end doesn't exceed file size
         end = min(end, file_size - 1)
 
-        # Extract the requested byte range
-        chunk = content[start:end + 1]
+        # Calculate length of range to fetch
+        length = end - start + 1
+
+        # Fetch ONLY the requested byte range from MinIO (no full file download)
+        chunk = TranscriptionService.stream_media_range(
+            file_path=file_path, offset=start, length=length
+        )
+
         chunk_size = len(chunk)
 
-        logger.info(f"Serving range {start}-{end}/{file_size} ({chunk_size} bytes)")
+        logger.info(
+            f"Served range {start}-{end}/{file_size} ({chunk_size} bytes) "
+            f"for {filename}"
+        )
 
         # Return 206 Partial Content
         return Response(
@@ -415,25 +435,42 @@ def download_audio(
                 "Content-Length": str(chunk_size),
                 "Accept-Ranges": "bytes",
                 "Content-Disposition": f'inline; filename="{filename}"',
+                "Cache-Control": "public, max-age=3600",
             }
         )
 
-    # No range requested - return full file with 200 OK
-    logger.info(f"Serving full file ({file_size} bytes)")
+    # No range requested - stream full file from MinIO
+    # For large files, avoid loading into memory by using iterator
+    logger.info(f"Streaming full file ({file_size} bytes) for {filename}")
+
+    # Create a generator that streams the file in chunks from MinIO
+    def generate_chunks():
+        """Stream file in 1MB chunks from MinIO without loading into memory."""
+        chunk_size = 1024 * 1024  # 1MB chunks
+        offset = 0
+
+        while offset < file_size:
+            length = min(chunk_size, file_size - offset)
+            chunk = TranscriptionService.stream_media_range(
+                file_path=file_path, offset=offset, length=length
+            )
+            yield chunk
+            offset += length
 
     return StreamingResponse(
-        io.BytesIO(content),
+        generate_chunks(),
         media_type=content_type,
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
             "Content-Length": str(file_size),
             "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
         },
     )
 
 
 @router.get(
-    "/transcriptions/{transcription_id}/waveform",
+    "/transcriptions/{transcription_gid}/waveform",
     summary="Get pre-computed waveform data",
     description="Get pre-computed waveform visualization data for instant rendering. "
     "Returns normalized peak values that can be directly used by WaveSurfer or other waveform visualizers. "
@@ -457,14 +494,14 @@ def download_audio(
     },
 )
 def get_waveform_data(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     db: Session = Depends(get_db),
 ):
     """
     Get pre-computed waveform data for instant visualization.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         db: Database session
 
     Returns:
@@ -473,15 +510,15 @@ def get_waveform_data(
     Raises:
         HTTPException: 404 if transcription not found or waveform data not available
     """
-    logger.info(f"Getting waveform data for transcription {transcription_id}")
+    logger.info(f"Getting waveform data for transcription {transcription_gid}")
 
     # Get transcription
-    transcription = db.query(Transcription).filter(Transcription.id == transcription_id).first()
+    transcription = db.query(Transcription).filter(Transcription.gid == transcription_gid).first()
 
     if not transcription:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transcription {transcription_id} not found"
+            detail=f"Transcription {transcription_gid} not found"
         )
 
     # Check if waveform data is available
@@ -496,7 +533,7 @@ def get_waveform_data(
 
 
 @router.get(
-    "/transcriptions/{transcription_id}/download/{format}",
+    "/transcriptions/{transcription_gid}/download/{format}",
     summary="Download transcription in specified format",
     description="Download transcription in JSON, DOCX, SRT, VTT, or TXT format. "
     "JSON includes all metadata, DOCX is formatted for documents, SRT/VTT are subtitle formats, and TXT is plain text.",
@@ -512,7 +549,7 @@ def get_waveform_data(
     },
 )
 def download_transcription(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     format: TranscriptionFormat = Path(..., description="Export format (json, docx, srt, vtt, txt)"),
     db: Session = Depends(get_db),
 ):
@@ -520,16 +557,16 @@ def download_transcription(
     Download transcription in specified format.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         format: Export format (json, docx, srt, vtt, txt)
         db: Database session
 
     Returns:
         StreamingResponse: File content in requested format
     """
-    logger.info(f"Downloading transcription {transcription_id} as {format}")
+    logger.info(f"Downloading transcription {transcription_gid} as {format}")
 
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
     # Use transcription filename directly (no document needed)
     base_filename = transcription.filename.rsplit(".", 1)[0] if transcription.filename else "transcription"
@@ -579,30 +616,59 @@ def download_transcription(
     )
 
 
+@router.post(
+    "/transcriptions/{transcription_gid}/reprocess",
+    response_model=TranscriptionReprocessResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Reprocess a transcription",
+    description="Reset the transcription data and re-queue processing in the background.",
+)
+def reprocess_transcription_endpoint(
+    transcription_gid: str = Path(..., description="GID of the transcription to reprocess"),
+    options: Optional[dict] = Body(None, description="Optional transcription worker options"),
+    db: Session = Depends(get_db),
+):
+    """
+    Reprocess an existing transcription by resetting its state and re-queueing the worker.
+    """
+    logger.info("API request: reprocess transcription %s", transcription_gid)
+    transcription = TranscriptionService.reprocess_transcription(
+        transcription_gid=transcription_gid,
+        db=db,
+        options=options,
+    )
+
+    return TranscriptionReprocessResponse(
+        message="Transcription reprocessing queued",
+        transcription_gid=transcription.gid,
+        status=transcription.status.value.lower() if transcription.status else "pending",
+    )
+
+
 @router.delete(
-    "/transcriptions/{transcription_id}",
+    "/transcriptions/{transcription_gid}",
     response_model=TranscriptionDeleteResponse,
     summary="Delete a transcription",
     description="Delete a transcription from the database. This action cannot be undone. The associated audio/video file will remain.",
 )
 def delete_transcription(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     db: Session = Depends(get_db),
 ):
     """
     Delete a transcription.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         db: Database session
 
     Returns:
         TranscriptionDeleteResponse: Deletion confirmation
     """
-    logger.info(f"Deleting transcription {transcription_id}")
+    logger.info(f"Deleting transcription {transcription_gid}")
 
     transcription = TranscriptionService.delete_transcription(
-        transcription_id=transcription_id, db=db
+        transcription_gid=transcription_gid, db=db
     )
 
     return TranscriptionDeleteResponse(
@@ -616,14 +682,14 @@ def delete_transcription(
 
 
 @router.post(
-    "/transcriptions/{transcription_id}/summarize",
+    "/transcriptions/{transcription_gid}/summarize",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Generate transcript summary",
     description="Generate comprehensive AI-powered summary and analysis for a transcript using local Ollama LLM. "
     "Includes executive summary, key moments, timeline, speaker statistics, action items, and entity extraction.",
 )
 def start_summarization(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     request: SummarizeRequest = Body(default=SummarizeRequest()),
     db: Session = Depends(get_db),
 ):
@@ -631,21 +697,21 @@ def start_summarization(
     Start summarization task for a transcription.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         request: Summarization options
         db: Database session
 
     Returns:
         Task ID and status
     """
-    logger.info(f"Starting summarization for transcription {transcription_id}")
+    logger.info(f"Starting summarization for transcription {transcription_gid}")
 
     # Verify transcription exists
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
     # Queue summarization task
     task = summarize_transcript.delay(
-        transcription_id,
+        transcription_gid,
         options={
             'components': request.components,
             'model': request.model,
@@ -655,36 +721,36 @@ def start_summarization(
 
     return {
         "message": "Summarization task started",
-        "transcription_id": transcription_id,
+        "transcription_gid": transcription_gid,
         "task_id": task.id,
         "status": "processing",
-        "status_url": f"/api/v1/transcriptions/{transcription_id}/summary/status/{task.id}",
+        "status_url": f"/api/v1/transcriptions/{transcription_gid}/summary/status/{task.id}",
     }
 
 
 @router.get(
-    "/transcriptions/{transcription_id}/summary",
+    "/transcriptions/{transcription_gid}/summary",
     response_model=SummaryResponse,
     summary="Get transcript summary",
     description="Retrieve the AI-generated summary and analysis for a transcript. Returns all analysis components if available.",
 )
 def get_summary(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     db: Session = Depends(get_db),
 ):
     """
     Get summary for a transcription.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         db: Database session
 
     Returns:
         SummaryResponse: Summary data
     """
-    logger.info(f"Getting summary for transcription {transcription_id}")
+    logger.info(f"Getting summary for transcription {transcription_gid}")
 
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
     return SummaryResponse(
         transcription_id=transcription.id,
@@ -700,13 +766,13 @@ def get_summary(
 
 
 @router.post(
-    "/transcriptions/{transcription_id}/summary/regenerate",
+    "/transcriptions/{transcription_gid}/summary/regenerate",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Regenerate transcript summary",
     description="Force regeneration of the transcript summary, optionally regenerating only specific components.",
 )
 def regenerate_transcript_summary(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     components: Optional[List[str]] = Body(None, description="Specific components to regenerate"),
     db: Session = Depends(get_db),
 ):
@@ -714,52 +780,52 @@ def regenerate_transcript_summary(
     Regenerate summary for a transcription.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         components: Optional list of components to regenerate
         db: Database session
 
     Returns:
         Task ID and status
     """
-    logger.info(f"Regenerating summary for transcription {transcription_id}")
+    logger.info(f"Regenerating summary for transcription {transcription_gid}")
 
     # Verify transcription exists
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
     # Queue regeneration task
-    task = regenerate_summary.delay(transcription_id, components)
+    task = regenerate_summary.delay(transcription_gid, components)
 
     return {
         "message": "Summary regeneration task started",
-        "transcription_id": transcription_id,
+        "transcription_gid": transcription_gid,
         "task_id": task.id,
         "status": "processing",
         "components": components or "all",
-        "status_url": f"/api/v1/transcriptions/{transcription_id}/summary/status/{task.id}",
+        "status_url": f"/api/v1/transcriptions/{transcription_gid}/summary/status/{task.id}",
     }
 
 
 @router.get(
-    "/transcriptions/{transcription_id}/summary/status/{task_id}",
+    "/transcriptions/{transcription_gid}/summary/status/{task_id}",
     response_model=TaskStatusResponse,
     summary="Get summarization task status",
     description="Check the status of a running summarization task.",
 )
 def get_summarization_status(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     task_id: str = Path(..., description="ID of the Celery task"),
 ):
     """
     Get status of a summarization task.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         task_id: ID of the Celery task
 
     Returns:
         TaskStatusResponse: Task status and progress
     """
-    logger.info(f"Checking status for task {task_id} (transcription {transcription_id})")
+    logger.info(f"Checking status for task {task_id} (transcription {transcription_gid})")
 
     # Get task result from Celery
     task = celery_app.AsyncResult(task_id)
@@ -793,39 +859,39 @@ def get_summarization_status(
 
 
 @router.post(
-    "/transcriptions/{transcription_id}/summary/quick",
+    "/transcriptions/{transcription_gid}/summary/quick",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Generate quick summary",
     description="Generate just the executive summary (fast, no full analysis). Useful for quick overviews.",
 )
 def start_quick_summary(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     db: Session = Depends(get_db),
 ):
     """
     Start quick summary task (executive summary only).
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         db: Database session
 
     Returns:
         Task ID and status
     """
-    logger.info(f"Starting quick summary for transcription {transcription_id}")
+    logger.info(f"Starting quick summary for transcription {transcription_gid}")
 
     # Verify transcription exists
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
     # Queue quick summary task
-    task = quick_summary.delay(transcription_id)
+    task = quick_summary.delay(transcription_gid)
 
     return {
         "message": "Quick summary task started",
-        "transcription_id": transcription_id,
+        "transcription_gid": transcription_gid,
         "task_id": task.id,
         "status": "processing",
-        "status_url": f"/api/v1/transcriptions/{transcription_id}/summary/status/{task.id}",
+        "status_url": f"/api/v1/transcriptions/{transcription_gid}/summary/status/{task.id}",
     }
 
 
@@ -849,18 +915,18 @@ def start_batch_summarization(
     Returns:
         Task ID and status
     """
-    logger.info(f"Starting batch summarization for {len(request.transcription_ids)} transcriptions")
+    logger.info(f"Starting batch summarization for {len(request.transcription_gids)} transcriptions")
 
     # Verify all transcriptions exist
-    for transcription_id in request.transcription_ids:
-        TranscriptionService.get_transcription(transcription_id, db)
+    for transcription_gid in request.transcription_gids:
+        TranscriptionService.get_transcription(transcription_gid, db)
 
     # Queue batch summarization task
-    task = batch_summarize_transcripts.delay(request.transcription_ids, request.options)
+    task = batch_summarize_transcripts.delay(request.transcription_gids, request.options)
 
     return {
-        "message": f"Batch summarization task started for {len(request.transcription_ids)} transcriptions",
-        "transcription_ids": request.transcription_ids,
+        "message": f"Batch summarization task started for {len(request.transcription_gids)} transcriptions",
+        "transcription_gids": request.transcription_gids,
         "task_id": task.id,
         "status": "processing",
     }
@@ -870,14 +936,14 @@ def start_batch_summarization(
 
 
 @router.patch(
-    "/transcriptions/{transcription_id}/segments/{segment_id}/key-moment",
+    "/transcriptions/{transcription_gid}/segments/{segment_id}/key-moment",
     response_model=KeyMomentToggleResponse,
     summary="Toggle key moment status",
     description="Mark or unmark a transcript segment as a key moment. "
     "Key moments are important segments that users want to highlight for quick reference.",
 )
 def toggle_key_moment(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     segment_id: str = Path(..., description="UUID of the segment"),
     request: KeyMomentToggleRequest = Body(...),
     db: Session = Depends(get_db),
@@ -886,7 +952,7 @@ def toggle_key_moment(
     Toggle key moment status for a transcript segment.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         segment_id: UUID of the segment
         request: Toggle request with is_key_moment status
         db: Database session
@@ -895,11 +961,11 @@ def toggle_key_moment(
         KeyMomentToggleResponse: Updated segment metadata
     """
     logger.info(
-        f"Toggling key moment for segment {segment_id} in transcription {transcription_id}: {request.is_key_moment}"
+        f"Toggling key moment for segment {segment_id} in transcription {transcription_gid}: {request.is_key_moment}"
     )
 
     result = TranscriptionService.toggle_key_moment(
-        transcription_id=transcription_id,
+        transcription_gid=transcription_gid,
         segment_id=segment_id,
         is_key_moment=request.is_key_moment,
         db=db,
@@ -909,30 +975,30 @@ def toggle_key_moment(
 
 
 @router.get(
-    "/transcriptions/{transcription_id}/key-moments",
+    "/transcriptions/{transcription_gid}/key-moments",
     response_model=KeyMomentsResponse,
     summary="Get all key moments",
     description="Retrieve all segments marked as key moments for a transcription, "
     "including full segment data (text, speaker, timing, confidence).",
 )
 def get_key_moments(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     db: Session = Depends(get_db),
 ):
     """
     Get all key moments for a transcription.
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         db: Database session
 
     Returns:
         KeyMomentsResponse: List of key moments with full segment data
     """
-    logger.info(f"Getting key moments for transcription {transcription_id}")
+    logger.info(f"Getting key moments for transcription {transcription_gid}")
 
     result = TranscriptionService.get_key_moments(
-        transcription_id=transcription_id, db=db
+        transcription_gid=transcription_gid, db=db
     )
 
     return KeyMomentsResponse(**result)
@@ -942,13 +1008,13 @@ def get_key_moments(
 
 
 @router.patch(
-    "/transcriptions/{transcription_id}/speakers/{speaker_id}",
+    "/transcriptions/{transcription_gid}/speakers/{speaker_id}",
     response_model=SpeakerResponse,
     summary="Update speaker information",
     description="Update speaker name and role. Changes are reflected across all segments using this speaker.",
 )
 def update_speaker(
-    transcription_id: int = Path(..., description="ID of the transcription"),
+    transcription_gid: str = Path(..., description="GID of the transcription"),
     speaker_id: str = Path(..., description="Speaker identifier (e.g., SPEAKER_00)"),
     request: UpdateSpeakerRequest = Body(...),
     db: Session = Depends(get_db),
@@ -957,7 +1023,7 @@ def update_speaker(
     Update speaker information (name and role).
 
     Args:
-        transcription_id: ID of the transcription
+        transcription_gid: GID of the transcription
         speaker_id: Speaker identifier
         request: Update request with name and role
         db: Database session
@@ -965,10 +1031,10 @@ def update_speaker(
     Returns:
         SpeakerResponse: Updated speaker information
     """
-    logger.info(f"Updating speaker {speaker_id} in transcription {transcription_id}")
+    logger.info(f"Updating speaker {speaker_id} in transcription {transcription_gid}")
 
     # Get transcription
-    transcription = TranscriptionService.get_transcription(transcription_id, db)
+    transcription = TranscriptionService.get_transcription(transcription_gid, db)
 
     # Find speaker in speakers list
     speaker_found = False
@@ -983,7 +1049,7 @@ def update_speaker(
     if not speaker_found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Speaker {speaker_id} not found in transcription {transcription_id}"
+            detail=f"Speaker {speaker_id} not found in transcription {transcription_gid}"
         )
 
     # Mark as modified and commit

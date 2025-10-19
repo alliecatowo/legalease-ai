@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { today, getLocalTimeZone, type DateValue } from '@internationalized/date'
 
 const open = defineModel<boolean>('open')
 const emit = defineEmits<{
@@ -19,8 +20,8 @@ const caseData = ref({
   description: '',
   tags: [] as string[],
   parties: [] as Array<{ name: string; role: string; type: 'plaintiff' | 'defendant' | 'witness' | 'other' }>,
-  documents: [] as string[],
-  timeline: [] as Array<{ date: Date; event: string; description: string }>,
+  documents: [] as File[],
+  timeline: [] as Array<{ date: DateValue; event: string; description: string }>,
   analysisTypes: [] as string[]
 })
 
@@ -64,12 +65,12 @@ const steps = [
   { title: 'Basic Info', description: 'Case details', icon: 'i-lucide-info' },
   { title: 'Parties', description: 'Add parties', icon: 'i-lucide-users' },
   { title: 'Documents', description: 'Attach documents', icon: 'i-lucide-files' },
-  { title: 'Timeline', description: 'Key dates', icon: 'i-lucide-calendar' },
+  // { title: 'Timeline', description: 'Key dates', icon: 'i-lucide-calendar' },
   { title: 'Analysis', description: 'AI processing', icon: 'i-lucide-sparkles' }
 ]
 
 const newParty = ref({ name: '', role: 'plaintiff', type: 'plaintiff' as const })
-const newEvent = ref({ date: new Date(), event: '', description: '' })
+const newEvent = ref({ date: today(getLocalTimeZone()), event: '', description: '' })
 
 function addParty() {
   if (newParty.value.name.trim()) {
@@ -85,7 +86,7 @@ function removeParty(index: number) {
 function addEvent() {
   if (newEvent.value.event.trim()) {
     caseData.value.timeline.push({ ...newEvent.value })
-    newEvent.value = { date: new Date(), event: '', description: '' }
+    newEvent.value = { date: today(getLocalTimeZone()), event: '', description: '' }
   }
 }
 
@@ -114,20 +115,51 @@ function canProceed() {
     case 2:
       return true // Documents optional
     case 3:
-      return true // Timeline optional
-    case 4:
       return true // Analysis optional
     default:
       return false
   }
 }
 
+const isCreating = ref(false)
+
 async function createCase() {
-  // TODO: Call API to create case
-  console.log('Creating case:', caseData.value)
-  emit('created', caseData.value)
-  open.value = false
-  resetForm()
+  if (isCreating.value) return
+
+  try {
+    isCreating.value = true
+    const api = useApi()
+    const toast = useToast()
+
+    // Map frontend data to backend schema
+    const payload = {
+      name: caseData.value.name,
+      case_number: caseData.value.caseNumber,
+      client: caseData.value.parties[0]?.name || 'Unknown Client',
+      matter_type: caseData.value.caseType
+    }
+
+    const result = await api.cases.create(payload)
+
+    toast.add({
+      title: 'Success',
+      description: `Case "${result.name}" created successfully`,
+      color: 'success'
+    })
+
+    emit('created', result)
+    open.value = false
+    resetForm()
+  } catch (error: any) {
+    const toast = useToast()
+    toast.add({
+      title: 'Error',
+      description: error.message || 'Failed to create case',
+      color: 'error'
+    })
+  } finally {
+    isCreating.value = false
+  }
 }
 
 function resetForm() {
@@ -242,55 +274,45 @@ function resetForm() {
 
         <!-- Step 3: Documents -->
         <div v-if="currentStep === 2" class="space-y-4">
-          <UFileUpload multiple accept=".pdf,.doc,.docx" class="w-full">
-            <template #default>
-              <div class="text-center py-12">
+          <UFileUpload v-model="caseData.documents" multiple accept=".pdf,.doc,.docx" class="w-full">
+            <template #default="{ attrs, open }">
+              <div class="text-center py-12 cursor-pointer" v-bind="attrs" @click="open">
                 <UIcon name="i-lucide-upload" class="size-12 text-primary mx-auto mb-4" />
                 <h3 class="font-medium mb-2">Upload Documents</h3>
                 <p class="text-sm text-muted mb-4">Drag and drop files or click to browse</p>
-                <UButton label="Browse Files" color="primary" />
+                <UButton label="Browse Files" color="primary" type="button" />
               </div>
             </template>
           </UFileUpload>
+
+          <div v-if="caseData.documents.length" class="space-y-2">
+            <UCard v-for="(file, idx) in caseData.documents" :key="idx" :ui="{ body: 'p-3' }">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <UIcon name="i-lucide-file-text" class="size-5 text-muted" />
+                  <div>
+                    <p class="font-medium text-sm">{{ file.name }}</p>
+                    <p class="text-xs text-muted">{{ (file.size / 1024).toFixed(1) }} KB</p>
+                  </div>
+                </div>
+                <UButton
+                  icon="i-lucide-x"
+                  color="error"
+                  variant="ghost"
+                  size="sm"
+                  @click="caseData.documents.splice(idx, 1)"
+                />
+              </div>
+            </UCard>
+          </div>
 
           <p class="text-sm text-dimmed text-center">
             Supported formats: PDF, Word (.doc, .docx)
           </p>
         </div>
 
-        <!-- Step 4: Timeline -->
+        <!-- Step 4: Analysis -->
         <div v-if="currentStep === 3" class="space-y-4">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-medium">Key Dates & Events</h3>
-            <UBadge :label="`${caseData.timeline.length} events`" variant="soft" />
-          </div>
-
-          <!-- Add Event Form -->
-          <UCard :ui="{ body: 'space-y-3' }">
-            <h4 class="text-sm font-medium mb-3">Add Event</h4>
-            <UCalendar v-model="newEvent.date" />
-            <UInput v-model="newEvent.event" placeholder="Event name" />
-            <UTextarea v-model="newEvent.description" placeholder="Description (optional)" :rows="2" />
-            <UButton label="Add Event" icon="i-lucide-plus" size="sm" @click="addEvent" block />
-          </UCard>
-
-          <!-- Timeline List -->
-          <div v-if="caseData.timeline.length" class="space-y-2">
-            <UCard v-for="(event, idx) in caseData.timeline" :key="idx" :ui="{ body: 'p-3' }">
-              <div class="flex items-start justify-between">
-                <div class="flex-1">
-                  <p class="font-medium">{{ event.event }}</p>
-                  <p class="text-sm text-muted">{{ new Date(event.date).toLocaleDateString() }}</p>
-                  <p v-if="event.description" class="text-sm text-dimmed mt-1">{{ event.description }}</p>
-                </div>
-                <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="sm" @click="removeEvent(idx)" />
-              </div>
-            </UCard>
-          </div>
-        </div>
-
-        <!-- Step 5: Analysis -->
-        <div v-if="currentStep === 4" class="space-y-4">
           <div class="mb-4">
             <h3 class="font-medium mb-2">AI Analysis Options</h3>
             <p class="text-sm text-muted">Select the types of analysis to run on your case documents</p>
@@ -343,8 +365,10 @@ function resetForm() {
           />
           <UButton
             v-else
-            label="Create Case"
-            icon="i-lucide-check"
+            :label="isCreating ? 'Creating...' : 'Create Case'"
+            :icon="isCreating ? 'i-lucide-loader-2' : 'i-lucide-check'"
+            :loading="isCreating"
+            :disabled="isCreating"
             color="primary"
             @click="createCase"
           />
