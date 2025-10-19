@@ -9,7 +9,7 @@ import logging
 from uuid import UUID
 
 from app.workers.celery_app import celery_app
-from app.core.database import SessionLocal
+from app.core.database_utils import database_session
 from app.models.document import Document, DocumentStatus
 
 logger = logging.getLogger(__name__)
@@ -116,181 +116,179 @@ def process_uploaded_document(self, document_gid: str) -> Dict[str, Any]:
     from app.models.chunk import Chunk
     from app.workers.pipelines.document_pipeline import DocumentProcessor
 
-    db = SessionLocal()
-    try:
-        # Get document from database using GID
-        document = db.query(Document).filter(Document.gid == document_gid).first()
-        if not document:
-            logger.error(f"Document with GID {document_gid} not found")
-            return {
-                "status": "failed",
-                "error": "Document not found",
-                "document_gid": document_gid,
-            }
-
-        # Update status to PROCESSING
-        document.status = DocumentStatus.PROCESSING
-        db.commit()
-
-        logger.info(f"Processing document {document_gid} (UUID: {document.id}): {document.filename}")
-
-        # Step 1: Download document from MinIO
-        logger.info(f"Downloading document from MinIO: {document.file_path}")
+    with database_session() as db:
         try:
-            file_content = minio_client.download_file(document.file_path)
-            logger.info(f"Downloaded {len(file_content)} bytes from MinIO")
-        except Exception as e:
-            logger.error(f"Failed to download document from MinIO: {e}")
-            raise Exception(f"MinIO download failed: {str(e)}")
+            # Get document from database using GID
+            document = db.query(Document).filter(Document.gid == document_gid).first()
+            if not document:
+                logger.error(f"Document with GID {document_gid} not found")
+                return {
+                    "status": "failed",
+                    "error": "Document not found",
+                    "document_gid": document_gid,
+                }
 
-        # Step 2-5: Process document through pipeline
-        logger.info("Starting document processing pipeline")
-        processor = DocumentProcessor(
-            use_ocr=True,  # Enable OCR for scanned documents
-            use_bm25=True,  # Enable BM25 sparse vectors
-            embedding_model="BAAI/bge-small-en-v1.5",  # 384 dims (matches Qdrant collection)
-        )
+            # Update status to PROCESSING
+            document.status = DocumentStatus.PROCESSING
+            db.commit()
 
-        result = processor.process(
-            file_content=file_content,
-            filename=document.filename,
-            document_id=document.id,
-            case_id=document.case_id,
-            mime_type=document.mime_type,
-        )
+            logger.info(f"Processing document {document_gid} (UUID: {document.id}): {document.filename}")
 
-        if not result.success:
-            logger.error(f"Document processing failed: {result.message}")
-            raise Exception(f"Processing failed at stage {result.stage}: {result.error}")
-
-        logger.info(f"Document processing successful: {result.message}")
-
-        # Step 6: Generate page images (for PDFs only)
-        pages_count = result.data.get("pages_count", 0)
-        if document.mime_type == "application/pdf" and pages_count > 0:
-            logger.info(f"Generating page images for {pages_count} pages")
+            # Step 1: Download document from MinIO
+            logger.info(f"Downloading document from MinIO: {document.file_path}")
             try:
-                from app.services.page_image_service import PageImageService
-
-                image_paths = PageImageService.generate_page_images(
-                    pdf_content=file_content,
-                    document_id=document.id,
-                    case_id=document.case_id,
-                )
-                logger.info(f"Generated {len(image_paths)} page images")
-
+                file_content = minio_client.download_file(document.file_path)
+                logger.info(f"Downloaded {len(file_content)} bytes from MinIO")
             except Exception as e:
-                logger.warning(f"Failed to generate page images: {e}")
-                # Continue processing even if image generation fails
+                logger.error(f"Failed to download document from MinIO: {e}")
+                raise Exception(f"MinIO download failed: {str(e)}")
 
-        # Step 7: Create chunk records in database
-        logger.info("Creating chunk records in database")
-        logger.info(f"Processing result keys: {list(result.data.keys())}")
-        chunks_data = result.data
-        chunks_count = chunks_data.get("chunks_count", 0)
-
-        # Fetch chunks from Qdrant and save to PostgreSQL for document viewer
-        from app.core.qdrant import get_qdrant_client
-        from app.core.config import settings
-
-        try:
-            qdrant_client = get_qdrant_client()
-            collection_name = settings.QDRANT_COLLECTION
-
-            # Scroll through all points for this document
-            scroll_result = qdrant_client.scroll(
-                collection_name=collection_name,
-                scroll_filter={
-                    "must": [
-                        {"key": "document_id", "match": {"value": str(document.id)}}
-                    ]
-                },
-                limit=1000,
-                with_payload=True,
-                with_vectors=False,
+            # Step 2-5: Process document through pipeline
+            logger.info("Starting document processing pipeline")
+            processor = DocumentProcessor(
+                use_ocr=True,  # Enable OCR for scanned documents
+                use_bm25=True,  # Enable BM25 sparse vectors
+                embedding_model="BAAI/bge-small-en-v1.5",  # 384 dims (matches Qdrant collection)
             )
 
-            points = scroll_result[0]
-            logger.info(f"Qdrant returned {len(points)} points for document {document.id}")
+            result = processor.process(
+                file_content=file_content,
+                filename=document.filename,
+                document_id=document.id,
+                case_id=document.case_id,
+                mime_type=document.mime_type,
+            )
 
-            for point in points:
-                payload = point.payload or {}
-                logger.info(f"Point payload keys: {list(payload.keys())}")
-                # Merge metadata from both styles: flattened (pipelines/indexer) and nested (services/indexing_service)
-                meta: Dict[str, Any] = {}
-                add_meta = payload.get("additional_metadata") or {}
-                if isinstance(add_meta, dict):
-                    meta.update(add_meta)
-                # Bring through bboxes and other useful fields
-                if "bboxes" in payload:
-                    meta["bboxes"] = payload.get("bboxes") or []
-                # Optional: include char/word counts
-                for k in ("char_count", "word_count"):
-                    if k in payload:
-                        meta[k] = payload[k]
-                logger.info(f"Saving chunk meta fields: {list(meta.keys())}, bboxes={len(meta.get('bboxes', []))}")
-                chunk = Chunk(
-                    document_id=document.id,
-                    text=payload.get("text", ""),
-                    chunk_type=payload.get("chunk_type", "section"),
-                    position=payload.get("position", 0),
-                    page_number=payload.get("page_number"),
-                    meta_data=meta or None
+            if not result.success:
+                logger.error(f"Document processing failed: {result.message}")
+                raise Exception(f"Processing failed at stage {result.stage}: {result.error}")
+
+            logger.info(f"Document processing successful: {result.message}")
+
+            # Step 6: Generate page images (for PDFs only)
+            pages_count = result.data.get("pages_count", 0)
+            if document.mime_type == "application/pdf" and pages_count > 0:
+                logger.info(f"Generating page images for {pages_count} pages")
+                try:
+                    from app.services.page_image_service import PageImageService
+
+                    image_paths = PageImageService.generate_page_images(
+                        pdf_content=file_content,
+                        document_id=document.id,
+                        case_id=document.case_id,
+                    )
+                    logger.info(f"Generated {len(image_paths)} page images")
+
+                except Exception as e:
+                    logger.warning(f"Failed to generate page images: {e}")
+                    # Continue processing even if image generation fails
+
+            # Step 7: Create chunk records in database
+            logger.info("Creating chunk records in database")
+            logger.info(f"Processing result keys: {list(result.data.keys())}")
+            chunks_data = result.data
+            chunks_count = chunks_data.get("chunks_count", 0)
+
+            # Fetch chunks from Qdrant and save to PostgreSQL for document viewer
+            from app.core.qdrant import get_qdrant_client
+            from app.core.config import settings
+
+            try:
+                qdrant_client = get_qdrant_client()
+                collection_name = settings.QDRANT_COLLECTION
+
+                # Scroll through all points for this document
+                scroll_result = qdrant_client.scroll(
+                    collection_name=collection_name,
+                    scroll_filter={
+                        "must": [
+                            {"key": "document_id", "match": {"value": str(document.id)}}
+                        ]
+                    },
+                    limit=1000,
+                    with_payload=True,
+                    with_vectors=False,
                 )
-                db.add(chunk)
 
-            db.flush()
-            logger.info(f"Saved {len(points)} chunks to database")
+                points = scroll_result[0]
+                logger.info(f"Qdrant returned {len(points)} points for document {document.id}")
+
+                for point in points:
+                    payload = point.payload or {}
+                    logger.info(f"Point payload keys: {list(payload.keys())}")
+                    # Merge metadata from both styles: flattened (pipelines/indexer) and nested (services/indexing_service)
+                    meta: Dict[str, Any] = {}
+                    add_meta = payload.get("additional_metadata") or {}
+                    if isinstance(add_meta, dict):
+                        meta.update(add_meta)
+                    # Bring through bboxes and other useful fields
+                    if "bboxes" in payload:
+                        meta["bboxes"] = payload.get("bboxes") or []
+                    # Optional: include char/word counts
+                    for k in ("char_count", "word_count"):
+                        if k in payload:
+                            meta[k] = payload[k]
+                    logger.info(f"Saving chunk meta fields: {list(meta.keys())}, bboxes={len(meta.get('bboxes', []))}")
+                    chunk = Chunk(
+                        document_id=document.id,
+                        text=payload.get("text", ""),
+                        chunk_type=payload.get("chunk_type", "section"),
+                        position=payload.get("position", 0),
+                        page_number=payload.get("page_number"),
+                        meta_data=meta or None
+                    )
+                    db.add(chunk)
+
+                db.flush()
+                logger.info(f"Saved {len(points)} chunks to database")
+
+            except Exception as e:
+                logger.warning(f"Failed to save chunks to database: {e}")
+                # Continue processing even if chunk saving fails
+
+            # Step 8: Update document status to COMPLETED (successful completion)
+            document.status = DocumentStatus.COMPLETED
+            document.meta_data = {
+                "chunks_count": chunks_count,
+                "text_length": chunks_data.get("text_length", 0),
+                "pages_count": pages_count,
+                "page_count": pages_count,  # Also use 'page_count' for compatibility
+                "processing_stage": result.stage,
+                "processed_at": str(document.uploaded_at),
+            }
+            db.commit()
+
+            logger.info(f"Document {document_gid} processed successfully: {chunks_count} chunks created")
+
+            return {
+                "status": "completed",
+                "document_gid": document_gid,
+                "filename": document.filename,
+                "chunks_count": chunks_count,
+                "text_length": chunks_data.get("text_length", 0),
+                "pages_count": chunks_data.get("pages_count", 0),
+                "task_id": self.request.id,
+            }
 
         except Exception as e:
-            logger.warning(f"Failed to save chunks to database: {e}")
-            # Continue processing even if chunk saving fails
+            logger.error(f"Error processing document {document_gid}: {str(e)}", exc_info=True)
 
-        # Step 8: Update document status to COMPLETED (successful completion)
-        document.status = DocumentStatus.COMPLETED
-        document.meta_data = {
-            "chunks_count": chunks_count,
-            "text_length": chunks_data.get("text_length", 0),
-            "pages_count": pages_count,
-            "page_count": pages_count,  # Also use 'page_count' for compatibility
-            "processing_stage": result.stage,
-            "processed_at": str(document.uploaded_at),
-        }
-        db.commit()
+            # Update document status to FAILED
+            try:
+                document = db.query(Document).filter(Document.gid == document_gid).first()
+                if document:
+                    document.status = DocumentStatus.FAILED
+                    document.meta_data = {
+                        "error": str(e),
+                        "error_stage": "processing",
+                    }
+                    db.commit()
+            except Exception as db_error:
+                logger.error(f"Failed to update document status: {str(db_error)}")
 
-        logger.info(f"Document {document_gid} processed successfully: {chunks_count} chunks created")
-
-        return {
-            "status": "completed",
-            "document_gid": document_gid,
-            "filename": document.filename,
-            "chunks_count": chunks_count,
-            "text_length": chunks_data.get("text_length", 0),
-            "pages_count": chunks_data.get("pages_count", 0),
-            "task_id": self.request.id,
-        }
-
-    except Exception as e:
-        logger.error(f"Error processing document {document_gid}: {str(e)}", exc_info=True)
-
-        # Update document status to FAILED
-        try:
-            document = db.query(Document).filter(Document.gid == document_gid).first()
-            if document:
-                document.status = DocumentStatus.FAILED
-                document.meta_data = {
-                    "error": str(e),
-                    "error_stage": "processing",
-                }
-                db.commit()
-        except Exception as db_error:
-            logger.error(f"Failed to update document status: {str(db_error)}")
-
-        return {
-            "status": "failed",
-            "error": str(e),
-            "document_gid": document_gid,
-            "task_id": self.request.id,
-        }
-    finally:
-        db.close()
+            return {
+                "status": "failed",
+                "error": str(e),
+                "document_gid": document_gid,
+                "task_id": self.request.id,
+            }

@@ -30,19 +30,17 @@ def get_gid_from_uuid(model_class, uuid_id: uuid.UUID) -> Optional[str]:
     Returns:
         GID string or None if not found
     """
-    from app.core.database import SessionLocal
+    from app.core.database_utils import database_session
 
     try:
-        db = SessionLocal()
-        record = db.query(model_class).filter(model_class.id == uuid_id).first()
-        if record and hasattr(record, 'gid'):
-            return record.gid
-        return None
+        with database_session() as db:
+            record = db.query(model_class).filter(model_class.id == uuid_id).first()
+            if record and hasattr(record, 'gid'):
+                return record.gid
+            return None
     except Exception as e:
         logger.error(f"Error getting GID for UUID {uuid_id}: {e}")
         return None
-    finally:
-        db.close()
 
 
 class QdrantIndexer:
