@@ -27,6 +27,7 @@ from app.workers.parsers.base import (
     ParserType,
     ParsingError,
 )
+from app.workers.parsers.bbox_utils import normalize_bbox
 from app.core.retry import retry_gemini
 
 logger = logging.getLogger(__name__)
@@ -458,7 +459,7 @@ class MarkerParser(DocumentParser):
             page_num: Page number for this block
 
         Returns:
-            List of bbox dictionaries
+            List of normalized bbox dictionaries with {left, top, right, bottom, page, text, type}
         """
         bboxes = []
 
@@ -467,14 +468,17 @@ class MarkerParser(DocumentParser):
 
         for child in page_block.children:
             if hasattr(child, 'polygon') and child.polygon:
-                bbox = {
-                    "block_id": getattr(child, 'id', None),
-                    "type": str(child.block_type) if hasattr(child, 'block_type') else "Unknown",
+                # Create raw bbox with Marker polygon format
+                raw_bbox = {
                     "polygon": child.polygon,
                     "text": getattr(child, 'text', ''),
+                    "type": str(child.block_type) if hasattr(child, 'block_type') else "Unknown",
                     "page": page_num,
                 }
-                bboxes.append(bbox)
+
+                # Normalize to standard {left, top, right, bottom, page, text, type} format
+                normalized = normalize_bbox(raw_bbox, page_num=page_num, source="marker")
+                bboxes.append(normalized)
 
         return bboxes
 
