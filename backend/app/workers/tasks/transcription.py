@@ -32,6 +32,7 @@ from app.core.database import SessionLocal
 from app.core.minio_client import minio_client
 from app.models.transcription import Transcription
 from app.models.document import Document, DocumentStatus
+from app.workers.pipelines.speaker_identification import SpeakerIdentificationPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -868,44 +869,54 @@ Return JSON with speaker names and confidence scores:"""
         segments: List[Dict[str, Any]],
         speakers: Dict[str, Dict[str, Any]],
         filename: Optional[str] = None,
-        ollama_url: str = "http://localhost:11434"
+        ollama_url: str = "http://localhost:11434",
+        duration: float = 0.0
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         """
-        Main method to infer speaker names using pattern matching and LLM.
+        Infer speaker names using modular pipeline with spaCy NER and context analysis.
+
+        Uses the new SpeakerIdentificationPipeline which:
+        - Analyzes the FULL conversation (not just first N segments)
+        - Uses spaCy NER for linguistic understanding (PERSON entities, POS tags)
+        - Distinguishes context types (self-ID vs vocative vs mention)
+        - Provides evidence-based confidence scores
+        - Optionally validates with LLM for extra confidence
 
         Args:
             segments: List of transcription segments
             speakers: Dictionary of speaker information
             filename: Optional filename to extract names from
-            ollama_url: Ollama API URL
+            ollama_url: Ollama API URL (for optional LLM validation)
+            duration: Total audio duration
 
         Returns:
             Tuple of (updated_speakers, metadata with inference info)
         """
         logger.info(
-            "Starting speaker name inference (segments=%d, speaker_slots=%d)",
+            "Starting speaker name inference with new pipeline (segments=%d, speakers=%d)",
             len(segments),
             len(speakers),
         )
 
-        # Step 1: Extract potential names using pattern matching
-        potential_names = SpeakerNameInferencer.extract_name_patterns(segments, filename)
-
-        # Step 2: Use LLM to infer names with confidence scores
+        # Use the new modular pipeline
+        pipeline = SpeakerIdentificationPipeline(use_spacy=True)
         speaker_ids = list(speakers.keys())
-        inferred_names = await SpeakerNameInferencer.infer_names_with_llm(
-            segments,
-            speaker_ids,
-            potential_names,
-            ollama_url
+
+        # Run pipeline to get evidence-based name inferences
+        inferred_names = await pipeline.identify_speakers(
+            segments=segments,
+            speakers=speaker_ids,
+            filename=filename,
+            duration=duration
         )
 
-        # Step 3: Apply inferred names if confidence > 0.8
+        # Apply inferred names if confidence > 0.7 (lower than old 0.8 since we have better evidence)
         updated_speakers = speakers.copy()
         metadata = {
             'inference_performed': True,
-            'potential_names': potential_names,
-            'llm_inferences': inferred_names,
+            'pipeline': 'SpeakerIdentificationPipeline',
+            'extractors_used': ['spacy_ner', 'patterns', 'filename'],
+            'inferred_names': inferred_names,
             'applied_names': {}
         }
 
@@ -913,9 +924,10 @@ Return JSON with speaker names and confidence scores:"""
             confidence = inference.get('confidence', 0.0)
             inferred_name = inference.get('name', '')
             reasoning = inference.get('reasoning', '')
+            evidence_count = inference.get('evidence_count', 0)
 
             if speaker_id in updated_speakers:
-                if confidence > 0.8 and inferred_name:
+                if confidence > 0.7 and inferred_name:
                     # Apply inferred name
                     old_name = updated_speakers[speaker_id].get('name', speaker_id)
                     updated_speakers[speaker_id]['name'] = inferred_name
@@ -923,16 +935,23 @@ Return JSON with speaker names and confidence scores:"""
                         'old_name': old_name,
                         'new_name': inferred_name,
                         'confidence': confidence,
+                        'evidence_count': evidence_count,
                         'reasoning': reasoning
                     }
-                    logger.info(f"Applied inferred name for {speaker_id}: '{inferred_name}' (confidence: {confidence:.2f})")
+                    logger.info(
+                        f"Applied inferred name for {speaker_id}: '{inferred_name}' "
+                        f"(confidence: {confidence:.2f}, evidence: {evidence_count}, reason: {reasoning})"
+                    )
                 else:
-                    logger.info(f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.8")
+                    logger.info(
+                        f"Skipped {speaker_id}: confidence {confidence:.2f} below threshold 0.7 "
+                        f"(evidence: {evidence_count})"
+                    )
 
         if metadata['applied_names']:
             logger.info(f"Successfully inferred {len(metadata['applied_names'])} speaker names")
         else:
-            logger.info("No speaker names met confidence threshold (0.8), using default names")
+            logger.info("No speaker names met confidence threshold (0.7), using default names")
 
         return updated_speakers, metadata
 
@@ -1618,7 +1637,7 @@ def transcribe_audio(
                     asyncio.set_event_loop(loop)
 
                 # Perform inference
-                logger.info("Starting AI-powered speaker name inference...")
+                logger.info("Starting AI-powered speaker name inference with new pipeline...")
                 inference_start = time.time()
                 inferencer = SpeakerNameInferencer()
                 speakers, inference_metadata = loop.run_until_complete(
@@ -1626,7 +1645,8 @@ def transcribe_audio(
                         segments=diarized_segments,
                         speakers=speakers,
                         filename=transcription.filename,
-                        ollama_url=ollama_url
+                        ollama_url=ollama_url,
+                        duration=duration
                     )
                 )
                 inference_time = time.time() - inference_start
