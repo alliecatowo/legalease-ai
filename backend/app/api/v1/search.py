@@ -1,15 +1,17 @@
 """
 Search API endpoints for hybrid vector and keyword search.
 """
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import List, Optional
+from sqlalchemy.orm import Session
 
 from app.schemas.search import (
     HybridSearchRequest,
     HybridSearchResponse,
     SearchQuery,
 )
-from app.services.search_service import get_search_engine
+from app.services.search.engine import get_search_engine
+from app.db.session import get_db
 
 router = APIRouter()
 
@@ -330,3 +332,43 @@ async def semantic_search(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
+
+
+@router.post("/graph-enhanced", response_model=HybridSearchResponse)
+async def graph_enhanced_search(
+    request: HybridSearchRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    GraphRAG-enhanced search combining vector similarity with graph traversal.
+
+    - Extracts entities from query
+    - Finds related entities via knowledge graph
+    - Performs hybrid vector search on entity-related documents
+    - Adds citation context and graph-based ranking
+    """
+    from app.services.search.graph_rag import GraphRAGEngine
+    from app.core.neo4j import get_neo4j_client
+    from app.services.entity_service import EntityService
+
+    # Create GraphRAG engine
+    neo4j = get_neo4j_client()
+    entity_service = EntityService()
+    graph_rag = GraphRAGEngine(neo4j, entity_service)
+
+    # Get entity-boosted document IDs
+    case_id = request.case_ids[0] if request.case_ids else None
+    boosted_docs = await graph_rag.entity_enhanced_search(
+        request.query,
+        case_id,
+        db
+    )
+
+    # Perform hybrid search with boost
+    request.document_ids = boosted_docs
+    results = await hybrid_search(request, db)
+
+    # Add citation context
+    results = graph_rag.add_citation_context(results, case_id)
+
+    return results

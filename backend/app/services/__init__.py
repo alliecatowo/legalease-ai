@@ -10,7 +10,7 @@ except ImportError as e:
     print(f"Warning: Could not import CaseService: {e}")
 
 try:
-    from app.services.search_service import HybridSearchEngine, get_search_engine
+    from app.services.search.engine import HybridSearchEngine, get_search_engine
     __all__.extend(["HybridSearchEngine", "get_search_engine"])
 except ImportError as e:
-    print(f"Warning: Could not import search_service: {e}")
+    print(f"Warning: Could not import search.engine: {e}")

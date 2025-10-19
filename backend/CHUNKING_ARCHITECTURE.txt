@@ -9,7 +9,7 @@ RAGFlow-Style Legal Document Chunking - System Architecture
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    TEXT EXTRACTION                                   │
-│              (DoclingParser, PyPDF, etc.)                           │
+│              (Marker Parser)                                         │
 └─────────────────────────────┬───────────────────────────────────────┘
                               │
                               ▼

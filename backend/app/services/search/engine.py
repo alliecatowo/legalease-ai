@@ -1,19 +1,18 @@
 """
-Hybrid Search Service - Using Qdrant Query API
+Hybrid Search Engine - Main Implementation
 
-Production hybrid search implementation using:
-- Qdrant Query API (v1.10+) for proper hybrid search
-- FastEmbed for embeddings
+Modern hybrid search engine using Qdrant Query API with:
+- Multi-stage retrieval (BM25 → Dense → Rerank)
+- Proper named vector support
+- RRF and DBSF fusion
 - Cross-encoder reranking
-- RRF and DBSF fusion methods
-- Proper named sparse vector handling
+- FastEmbed for fast inference
 """
 
 from typing import List, Dict, Any, Optional
 import logging
-from collections import defaultdict
 import re
-from uuid import UUID
+import time
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -34,9 +33,8 @@ from app.schemas.search import (
 from app.workers.pipelines.embeddings import FastEmbedPipeline
 from app.workers.pipelines.reranker import CrossEncoderReranker
 from app.workers.pipelines.bm25_encoder import BM25Encoder
-from app.core.database import SessionLocal
-from app.models.document import Document
-from app.models.case import Case
+from app.services.search.scoring import normalize_and_boost_scores
+from app.services.search.resolvers import GidResolver
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +85,8 @@ class HybridSearchEngine:
         else:
             self.reranker = None
 
-        # Simple in-memory caches for ID↔GID lookups within a single process
-        self._document_gid_cache: Dict[str, Optional[str]] = {}
-        self._case_gid_cache: Dict[str, Optional[str]] = {}
-        self._document_uuid_cache: Dict[str, Optional[str]] = {}
-        self._case_uuid_cache: Dict[str, Optional[str]] = {}
+        # Initialize GID resolver
+        self.resolver = GidResolver()
 
     def _create_sparse_vector(self, text: str) -> SparseVector:
         """
@@ -119,198 +114,6 @@ class HybridSearchEngine:
         embedding = self.embed_pipeline.generate_single_embedding(text)
         return embedding.tolist()
 
-    def _normalize_and_boost_scores(
-        self,
-        results: List[Dict[str, Any]],
-        raw_scores: List[float],
-        fusion_method: str,
-        bm25_scores: Dict[str, float],
-    ) -> List[Dict[str, Any]]:
-        """
-        Normalize RRF/DBSF scores to 0-1 range and boost keyword matches.
-
-        RRF scores are rank-based (1/(rank+k)) and typically range 0-0.02 for k=60.
-        We need to:
-        1. Normalize to 0-1 range using min-max scaling
-        2. Boost results with strong BM25 scores (keyword matches)
-        3. Apply non-linear scaling to spread out the top results
-
-        Args:
-            results: Search results with raw scores
-            raw_scores: List of raw fusion scores
-            fusion_method: Fusion method used (rrf or dbsf)
-            bm25_scores: Dictionary of BM25 scores by point ID
-
-        Returns:
-            Results with normalized and boosted scores
-        """
-        if not results or not raw_scores:
-            return results
-
-        # Calculate score statistics
-        min_score = min(raw_scores)
-        max_score = max(raw_scores)
-        score_range = max_score - min_score
-
-        # Avoid division by zero
-        if score_range < 1e-9:
-            # All scores are the same, assign uniform scores
-            for result in results:
-                result["score"] = 0.7
-            return results
-
-        # Step 1: Min-max normalization to 0-1
-        for i, result in enumerate(results):
-            normalized_score = (raw_scores[i] - min_score) / score_range
-
-            # Step 2: Boost keyword matches
-            point_id = result["id"]
-            bm25_score = bm25_scores.get(point_id, 0.0)
-
-            # Keyword boost: High BM25 scores indicate strong keyword matches
-            # BM25 scores typically range 0-20+ for good matches
-            keyword_boost = 0.0
-            if bm25_score > 0:
-                # Normalize BM25 score and apply as boost
-                # Strong keyword matches (BM25 > 5) get significant boost
-                bm25_normalized = min(bm25_score / 10.0, 1.0)  # Cap at 1.0
-                keyword_boost = bm25_normalized * 0.3  # Up to +0.3 boost
-
-            # Step 3: Apply non-linear scaling for better score distribution
-            # Use power scaling to spread out top results
-            if fusion_method == "rrf":
-                # RRF benefits from square root scaling to spread scores
-                boosted_score = (normalized_score ** 0.7) + keyword_boost
-            else:
-                # DBSF is already normalized, apply lighter scaling
-                boosted_score = (normalized_score ** 0.85) + keyword_boost
-
-            # Step 4: Ensure keyword-only matches get high scores
-            # If BM25 score is very high and it's a top result, boost to 0.85+
-            if bm25_score > 5.0 and i < 5:
-                boosted_score = max(boosted_score, 0.85 + (bm25_normalized * 0.1))
-
-            # Clamp to 0-1 range
-            boosted_score = max(0.0, min(1.0, boosted_score))
-
-            result["score"] = boosted_score
-
-            # Add debug info
-            result["_score_debug"] = {
-                "raw_fusion_score": raw_scores[i],
-                "normalized_fusion": normalized_score,
-                "actual_bm25_score": bm25_score,
-                "actual_dense_score": result.get("dense_score", 0.0),
-                "keyword_boost": keyword_boost,
-                "final_score": boosted_score,
-            }
-
-        logger.info(
-            f"Score normalization complete: "
-            f"raw range [{min_score:.4f}, {max_score:.4f}] -> "
-            f"normalized range [0.0, 1.0]"
-        )
-
-        return results
-
-    def _resolve_document_gid(self, document_id: Any) -> Optional[str]:
-        """Resolve document UUID to GID with simple caching."""
-        if document_id is None:
-            return None
-
-        doc_key = str(document_id)
-        if doc_key in self._document_gid_cache:
-            return self._document_gid_cache[doc_key]
-
-        try:
-            uuid_val = UUID(doc_key)
-        except (ValueError, TypeError):
-            self._document_gid_cache[doc_key] = None
-            return None
-
-        db = SessionLocal()
-        try:
-            document = db.query(Document).filter(Document.id == uuid_val).first()
-            gid = document.gid if document else None
-        except Exception as exc:
-            logger.error(f"Failed to resolve document GID for {doc_key}: {exc}", exc_info=True)
-            gid = None
-        finally:
-            db.close()
-
-        self._document_gid_cache[doc_key] = gid
-        return gid
-
-    def _resolve_case_gid(self, case_id: Any) -> Optional[str]:
-        """Resolve case UUID to GID with simple caching."""
-        if case_id is None:
-            return None
-
-        case_key = str(case_id)
-        if case_key in self._case_gid_cache:
-            return self._case_gid_cache[case_key]
-
-        try:
-            uuid_val = UUID(case_key)
-        except (ValueError, TypeError):
-            self._case_gid_cache[case_key] = None
-            return None
-
-        db = SessionLocal()
-        try:
-            case = db.query(Case).filter(Case.id == uuid_val).first()
-            gid = case.gid if case else None
-        except Exception as exc:
-            logger.error(f"Failed to resolve case GID for {case_key}: {exc}", exc_info=True)
-            gid = None
-        finally:
-            db.close()
-
-        self._case_gid_cache[case_key] = gid
-        return gid
-
-    def _resolve_document_uuid_from_gid(self, document_gid: str) -> Optional[str]:
-        """Resolve document GID back to UUID string with caching."""
-        if not document_gid:
-            return None
-
-        if document_gid in self._document_uuid_cache:
-            return self._document_uuid_cache[document_gid]
-
-        db = SessionLocal()
-        try:
-            document = db.query(Document).filter(Document.gid == document_gid).first()
-            uuid_value = str(document.id) if document else None
-        except Exception as exc:
-            logger.error(f"Failed to resolve document UUID for GID {document_gid}: {exc}", exc_info=True)
-            uuid_value = None
-        finally:
-            db.close()
-
-        self._document_uuid_cache[document_gid] = uuid_value
-        return uuid_value
-
-    def _resolve_case_uuid_from_gid(self, case_gid: str) -> Optional[str]:
-        """Resolve case GID back to UUID string with caching."""
-        if not case_gid:
-            return None
-
-        if case_gid in self._case_uuid_cache:
-            return self._case_uuid_cache[case_gid]
-
-        db = SessionLocal()
-        try:
-            case = db.query(Case).filter(Case.gid == case_gid).first()
-            uuid_value = str(case.id) if case else None
-        except Exception as exc:
-            logger.error(f"Failed to resolve case UUID for GID {case_gid}: {exc}", exc_info=True)
-            uuid_value = None
-        finally:
-            db.close()
-
-        self._case_uuid_cache[case_gid] = uuid_value
-        return uuid_value
-
     def search_keyword_only(
         self,
         request: HybridSearchRequest,
@@ -330,14 +133,14 @@ class HybridSearchEngine:
             case_ids_filter_set = {str(cid) for cid in (request.case_ids or []) if cid is not None}
             if request.case_gids:
                 for gid in request.case_gids:
-                    resolved = self._resolve_case_uuid_from_gid(gid)
+                    resolved = self.resolver.resolve_case_uuid_from_gid(gid)
                     if resolved:
                         case_ids_filter_set.add(resolved)
 
             document_ids_filter_set = {str(did) for did in (request.document_ids or []) if did is not None}
             if request.document_gids:
                 for gid in request.document_gids:
-                    resolved = self._resolve_document_uuid_from_gid(gid)
+                    resolved = self.resolver.resolve_document_uuid_from_gid(gid)
                     if resolved:
                         document_ids_filter_set.add(resolved)
 
@@ -430,14 +233,14 @@ class HybridSearchEngine:
             case_ids_filter_set = {str(cid) for cid in (request.case_ids or []) if cid is not None}
             if request.case_gids:
                 for gid in request.case_gids:
-                    resolved = self._resolve_case_uuid_from_gid(gid)
+                    resolved = self.resolver.resolve_case_uuid_from_gid(gid)
                     if resolved:
                         case_ids_filter_set.add(resolved)
 
             document_ids_filter_set = {str(did) for did in (request.document_ids or []) if did is not None}
             if request.document_gids:
                 for gid in request.document_gids:
-                    resolved = self._resolve_document_uuid_from_gid(gid)
+                    resolved = self.resolver.resolve_document_uuid_from_gid(gid)
                     if resolved:
                         document_ids_filter_set.add(resolved)
 
@@ -616,7 +419,7 @@ class HybridSearchEngine:
             )
 
             # Normalize and boost scores
-            formatted_results = self._normalize_and_boost_scores(
+            formatted_results = normalize_and_boost_scores(
                 formatted_results,
                 raw_scores,
                 request.fusion_method,
@@ -655,7 +458,6 @@ class HybridSearchEngine:
         Returns:
             Search response with normalized scores
         """
-        import time
         start_time = time.time()
 
         try:
@@ -776,7 +578,7 @@ class HybridSearchEngine:
 
                 document_gid = payload.get("document_gid")
                 if not document_gid and document_id:
-                    document_gid = self._resolve_document_gid(document_id)
+                    document_gid = self.resolver.resolve_document_gid(document_id)
                     if document_gid:
                         payload["document_gid"] = document_gid
 
@@ -787,7 +589,7 @@ class HybridSearchEngine:
 
                 case_gid = payload.get("case_gid")
                 if not case_gid and case_id:
-                    case_gid = self._resolve_case_gid(case_id)
+                    case_gid = self.resolver.resolve_case_gid(case_id)
                     if case_gid:
                         payload["case_gid"] = case_gid
 

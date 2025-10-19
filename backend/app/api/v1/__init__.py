@@ -32,14 +32,14 @@ except ImportError as e:
     print(f"Warning: Could not import search router: {e}")
 
 try:
-    from app.api.v1 import transcriptions
-    api_router.include_router(transcriptions.router, tags=["transcriptions"])
+    from app.api.v1.transcriptions import router as transcriptions_router
+    api_router.include_router(transcriptions_router, tags=["transcriptions"])
 except ImportError as e:
     print(f"Warning: Could not import transcriptions router: {e}")
 
 try:
-    from app.api.v1 import indexing
-    api_router.include_router(indexing.router, prefix="/indexing", tags=["indexing"])
+    from app.api.v1.indexing import router as indexing_router
+    api_router.include_router(indexing_router, prefix="/indexing", tags=["indexing"])
 except ImportError as e:
     print(f"Warning: Could not import indexing router: {e}")
 

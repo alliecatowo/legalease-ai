@@ -4,7 +4,6 @@ Pipeline modules for document processing, embeddings, and encoding.
 
 from app.workers.pipelines.embeddings import FastEmbedPipeline as EmbeddingPipeline
 from app.workers.pipelines.bm25_encoder import BM25Encoder
-from app.workers.pipelines.docling_parser import DoclingParser
 from app.workers.pipelines.ocr_pipeline import OCRPipeline
 from app.workers.pipelines.chunker import DocumentChunker, TextChunk
 from app.workers.pipelines.indexer import QdrantIndexer
@@ -38,7 +37,6 @@ from app.workers.pipelines.transcript_exporter import (
 __all__ = [
     "EmbeddingPipeline",
     "BM25Encoder",
-    "DoclingParser",
     "OCRPipeline",
     "DocumentChunker",
     "TextChunk",

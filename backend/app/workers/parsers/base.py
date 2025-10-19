@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 class ParserType(str, Enum):
     """Supported parser backends."""
     MARKER = "marker"
-    DOCLING = "docling"
 
 
 class ParsingError(Exception):

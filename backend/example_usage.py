@@ -9,7 +9,7 @@ This file demonstrates how to:
 
 import asyncio
 from app.core.qdrant import create_collection, upsert_points, get_collection_info
-from app.services.search_service import get_search_engine
+from app.services.search.engine import get_search_engine
 from app.schemas.search import HybridSearchRequest, DocumentChunk
 from qdrant_client.models import PointStruct, NamedVector, SparseVector
 

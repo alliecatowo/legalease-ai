@@ -19,7 +19,7 @@ class ParserFactory:
     Factory for creating document parsers.
 
     Provides a centralized way to create parsers with proper configuration.
-    Supports multiple parser backends (Marker, Docling) with fallback strategies.
+    Currently supports Marker parser for legal document processing.
     """
 
     @staticmethod
@@ -54,8 +54,6 @@ class ParserFactory:
 
         if parser_type == ParserType.MARKER:
             return ParserFactory._create_marker_parser(config)
-        elif parser_type == ParserType.DOCLING:
-            return ParserFactory._create_docling_parser(config)
         else:
             raise ValueError(f"Unknown parser type: {parser_type}")
 
@@ -91,29 +89,6 @@ class ParserFactory:
 
         return MarkerParser(**final_config)
 
-    @staticmethod
-    def _create_docling_parser(config: Dict[str, Any]) -> DocumentParser:
-        """
-        Create Docling parser with configuration.
-
-        Note: Docling parser is kept as fallback but Marker is preferred
-        for legal documents due to superior table/form handling.
-
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            Configured DoclingParser instance
-
-        Raises:
-            NotImplementedError: Docling parser not yet refactored
-        """
-        # TODO: Refactor DoclingParser to use new base class
-        raise NotImplementedError(
-            "DoclingParser refactoring pending. "
-            "Use ParserType.MARKER for now. "
-            "Legacy DoclingParser available at app.workers.pipelines.docling_parser"
-        )
 
     @staticmethod
     def create_auto_parser(
@@ -162,7 +137,6 @@ class ParserFactory:
         """
         available = {
             "marker": True,  # Always available (required dependency)
-            "docling": False,  # Not yet refactored
         }
 
         return available

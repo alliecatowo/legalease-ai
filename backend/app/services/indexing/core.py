@@ -1,31 +1,29 @@
 """
-Document indexing service for Qdrant vector database.
+Core indexing service for managing document indexing operations.
 
-This module provides the IndexingService class for managing document indexing,
-including batch operations, updates, and deletions from the Qdrant collection.
-It handles multi-vector embeddings (summary, section, microblock) and maintains
-proper metadata for legal document retrieval.
+This module provides the main IndexingService class that orchestrates
+document indexing, batch operations, updates, and deletions from the
+Qdrant vector database.
 """
 
 from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
-from collections import defaultdict
 
 from sqlalchemy.orm import Session
 from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
-from sentence_transformers import SentenceTransformer
 
 from app.core.qdrant import (
     get_qdrant_client,
     upsert_points,
     delete_by_filter,
-    build_filter,
 )
 from app.core.config import settings
 from app.models.document import Document
 from app.models.chunk import Chunk
 from app.models.case import Case
+from app.services.indexing.embeddings import EmbeddingGenerator
+from app.services.indexing.sparse import SparseVectorGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +32,17 @@ class IndexingService:
     """
     Service for indexing legal documents into Qdrant vector database.
 
-    This service handles:
-    - Single document indexing
-    - Batch document indexing
-    - Index updates for existing documents
-    - Deletion from index
-    - Multi-vector embedding generation (summary, section, microblock)
-    - Metadata enrichment with case and document information
+    This service orchestrates the indexing process by:
+    - Coordinating embedding and sparse vector generation
+    - Managing single and batch document indexing
+    - Handling index updates and deletions
+    - Enriching metadata with case and document information
 
     Attributes:
-        embedding_model: SentenceTransformer model for generating embeddings
+        embedding_generator: Generator for dense embeddings
+        sparse_generator: Generator for BM25 sparse vectors
         collection_name: Qdrant collection name for storing vectors
+        client: Qdrant client instance
     """
 
     def __init__(
@@ -59,89 +57,14 @@ class IndexingService:
             embedding_model_name: Name of the SentenceTransformer model to use
             collection_name: Qdrant collection name (default: from settings)
         """
-        self.embedding_model = SentenceTransformer(embedding_model_name)
+        self.embedding_generator = EmbeddingGenerator(embedding_model_name)
+        self.sparse_generator = SparseVectorGenerator()
         self.collection_name = collection_name or settings.QDRANT_COLLECTION
         self.client = get_qdrant_client()
         logger.info(
             f"IndexingService initialized with model: {embedding_model_name}, "
             f"collection: {self.collection_name}"
         )
-
-    def _generate_embeddings(self, text: str) -> Dict[str, List[float]]:
-        """
-        Generate embeddings for all vector types.
-
-        Creates dense embeddings for summary, section, and microblock vectors.
-        In this implementation, we use the same base embedding for all types,
-        but in production you might use different models or text preprocessing
-        for each vector type.
-
-        Args:
-            text: Input text to embed
-
-        Returns:
-            Dictionary mapping vector names to embedding lists
-        """
-        try:
-            # Generate base embedding
-            embedding = self.embedding_model.encode(text, convert_to_tensor=False)
-            embedding_list = embedding.tolist()
-
-            # For now, use the same embedding for all vector types
-            # In production, you might want different processing per type:
-            # - summary: embed the full document summary
-            # - section: embed section-level text
-            # - microblock: embed paragraph/sentence-level text
-            return {
-                "summary": embedding_list,
-                "section": embedding_list,
-                "microblock": embedding_list,
-            }
-        except Exception as e:
-            logger.error(f"Error generating embeddings: {e}")
-            raise
-
-    def _create_bm25_vector(self, text: str, metadata_text: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Create BM25 sparse vector from text and optional metadata.
-
-        This is a simplified implementation for keyword matching.
-
-        Args:
-            text: Input text
-            metadata_text: Optional metadata text to include in search
-
-        Returns:
-            Dictionary with indices and values for sparse vector
-        """
-        import re
-
-        # Combine text and metadata for BM25 indexing
-        combined_text = text
-        if metadata_text:
-            combined_text = f"{metadata_text}\n{text}"
-
-        # Simple tokenization
-        combined_text = combined_text.lower()
-        combined_text = re.sub(r'[^\w\s]', ' ', combined_text)
-        tokens = combined_text.split()
-
-        # Count token frequencies
-        token_counts = defaultdict(int)
-        for token in tokens:
-            token_counts[token] += 1
-
-        # Create sparse vector representation
-        indices = []
-        values = []
-
-        for token, count in token_counts.items():
-            # Use hash for token->index mapping
-            token_idx = hash(token) % (2**31)  # Keep positive
-            indices.append(token_idx)
-            values.append(float(count))
-
-        return {"indices": indices, "values": values}
 
     def _create_point(
         self,
@@ -164,43 +87,15 @@ class IndexingService:
         """
         # Generate embeddings if not provided
         if embeddings is None:
-            embeddings = self._generate_embeddings(chunk.text)
+            embeddings = self.embedding_generator.generate_embeddings(chunk.text)
 
         # Build searchable metadata text from document metadata
-        metadata_parts = []
-        if document_metadata:
-            # Include filename (most important for search)
-            if document_metadata.get('filename'):
-                filename = document_metadata['filename']
-                # Add filename with and without extension for better matching
-                metadata_parts.append(filename)
-                # Also add filename without extension
-                import os
-                filename_without_ext = os.path.splitext(filename)[0]
-                if filename_without_ext != filename:
-                    metadata_parts.append(filename_without_ext)
-
-            # Include document type if available
-            if document_metadata.get('document_type'):
-                metadata_parts.append(document_metadata['document_type'])
-
-            # Include title if available
-            if document_metadata.get('title'):
-                metadata_parts.append(document_metadata['title'])
-
-            # Include tags if available
-            if document_metadata.get('tags'):
-                tags = document_metadata['tags']
-                if isinstance(tags, list):
-                    metadata_parts.extend(tags)
-                elif isinstance(tags, str):
-                    metadata_parts.append(tags)
-
-        # Combine metadata into searchable text
-        metadata_text = " ".join(metadata_parts) if metadata_parts else None
+        metadata_text = self.sparse_generator.build_metadata_text(document_metadata)
 
         # Create BM25 sparse vector with metadata included
-        bm25_vector = self._create_bm25_vector(chunk.text, metadata_text=metadata_text)
+        bm25_vector = self.sparse_generator.create_bm25_vector(
+            chunk.text, metadata_text=metadata_text
+        )
 
         # Build payload with metadata
         payload = {

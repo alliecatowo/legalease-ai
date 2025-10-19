@@ -64,6 +64,9 @@ test = "docker compose exec backend pytest"
 "test:v" = "docker compose exec backend pytest -v"
 "test:cov" = "docker compose exec backend pytest --cov=app --cov-report=html"
 "test:frontend" = "docker compose exec frontend pnpm test"
+"test:marker" = "cd backend && uv run python scripts/test_marker_parser.py"
+"test:marker-llm" = "cd backend && uv run python scripts/test_marker_parser.py --with-llm"
+"test:marker-verbose" = "cd backend && uv run python scripts/test_marker_parser.py --verbose"
 
 # === Ollama Management ===
 "ollama:pull" = "docker compose exec ollama ollama pull llama3.1 && docker compose exec ollama ollama pull nomic-embed-text"
