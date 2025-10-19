@@ -315,6 +315,124 @@ class WhisperTranscriber:
             raise TranscriptionError(f"Transcription failed: {str(e)}")
 
 
+class LocalWhisperTranscriber:
+    """
+    Handles transcription using the open-source Faster-Whisper implementation.
+
+    Provides an on-premise fallback when WhisperX or the OpenAI API are unavailable.
+    """
+
+    _model_cache: Dict[Tuple[str, str, str], Any] = {}
+
+    def __init__(
+        self,
+        model_size: str = "base",
+        device: str = "cuda",
+        compute_type: str = "float16",
+    ):
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+        except ImportError as exc:
+            raise TranscriptionError(
+                "Faster-Whisper is not installed. Install it with `pip install faster-whisper`."
+            ) from exc
+
+        # Ensure compute type is compatible with CPU usage
+        if device == "cpu" and compute_type.lower() in {"float16", "bfloat16"}:
+            logger.info("Adjusting compute_type to 'int8' for CPU inference")
+            compute_type = "int8"
+
+        cache_key = (model_size, device, compute_type)
+        if cache_key not in self._model_cache:
+            logger.info(
+                f"Loading Faster-Whisper model: size={model_size}, device={device}, compute_type={compute_type}"
+            )
+            self._model_cache[cache_key] = WhisperModel(
+                model_size,
+                device=device,
+                compute_type=compute_type,
+            )
+
+        self.model = self._model_cache[cache_key]
+        self.model_size = model_size
+        self.device = device
+        self.compute_type = compute_type
+
+    def transcribe(
+        self,
+        audio_path: str,
+        language: Optional[str] = None,
+        beam_size: int = 5,
+        temperature: float = 0.0,
+    ) -> Dict[str, Any]:
+        """
+        Transcribe audio using Faster-Whisper.
+
+        Args:
+            audio_path: Path to WAV audio file
+            language: Optional ISO language code, or None/'auto' to let the model decide
+            beam_size: Beam search size for decoding
+            temperature: Sampling temperature (not heavily used in deterministic decoding)
+
+        Returns:
+            Dict containing transcription text, segments, and metadata
+        """
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+            start_time = time.time()
+
+            language_option = None if language in (None, "auto") else language
+
+            segments_iter, info = self.model.transcribe(
+                audio_path,
+                language=language_option,
+                beam_size=beam_size,
+                temperature=temperature,
+                vad_filter=True,
+            )
+
+            segments_list = []
+            text_parts: List[str] = []
+
+            for segment in segments_iter:
+                segment_text = segment.text.strip()
+                text_parts.append(segment_text)
+                word_items = []
+                if getattr(segment, "words", None):
+                    for word in segment.words:
+                        word_items.append({
+                            "word": word.word,
+                            "start": word.start if word.start is not None else segment.start,
+                            "end": word.end if word.end is not None else segment.end,
+                        })
+
+                segments_list.append({
+                    "id": str(uuid.uuid4()),
+                    "start": segment.start if segment.start is not None else 0.0,
+                    "end": segment.end if segment.end is not None else 0.0,
+                    "text": segment_text,
+                    "words": word_items,
+                })
+
+            elapsed = time.time() - start_time
+            full_text = " ".join(text_parts).strip()
+
+            logger.info(
+                f"Faster-Whisper transcription completed in {elapsed:.1f}s "
+                f"(model={self.model_size}, device={self.device}) with {len(segments_list)} segments"
+            )
+
+            return {
+                "text": full_text,
+                "language": info.language if hasattr(info, "language") else language_option,
+                "duration": info.duration if hasattr(info, "duration") else None,
+                "segments": segments_list,
+            }
+        except Exception as exc:
+            logger.error(f"Faster-Whisper transcription failed: {exc}")
+            raise TranscriptionError(f"Faster-Whisper transcription failed: {exc}") from exc
+
+
 class SpeakerDiarizer:
     """Handles speaker diarization using simple heuristics."""
 
@@ -1248,26 +1366,57 @@ def transcribe_audio(
 
                 # Cleanup WhisperX models from memory
                 pipeline.cleanup()
-
             except ImportError:
-                logger.info("WhisperX not available, using OpenAI Whisper API")
+                logger.info("WhisperX not available, attempting Faster-Whisper fallback")
 
-                # Fallback to OpenAI Whisper API
-                transcriber = WhisperTranscriber()
-                transcription_result = transcriber.transcribe(
-                    processed_wav,
-                    language=language,
-                    task=task,
-                    temperature=temperature,
-                    initial_prompt=initial_prompt,
-                    task_id=self.request.id
-                )
+                try:
+                    local_transcriber = LocalWhisperTranscriber(
+                        model_size=whisper_model,
+                        device=device,
+                        compute_type=compute_type,
+                    )
+                    local_start = time.time()
+                    transcription_result = local_transcriber.transcribe(
+                        processed_wav,
+                        language=language,
+                        beam_size=options.get("beam_size", 5),
+                        temperature=temperature,
+                    )
+                    local_time = time.time() - local_start
 
-                segments = transcription_result['segments']
-                full_text = transcription_result['text']
-                detected_language = transcription_result.get('language', language)
+                    segments = transcription_result['segments']
+                    full_text = transcription_result['text']
+                    detected_language = transcription_result.get('language', language)
 
-                logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+                    logger.info(
+                        f"Faster-Whisper transcription completed in {local_time:.1f}s "
+                        f"({len(segments)} segments, language={detected_language})"
+                    )
+                except TranscriptionError as local_error:
+                    logger.warning(f"Faster-Whisper unavailable: {local_error}")
+
+                    if os.getenv("OPENAI_API_KEY"):
+                        logger.info("Falling back to OpenAI Whisper API")
+                        transcriber = WhisperTranscriber()
+                        transcription_result = transcriber.transcribe(
+                            processed_wav,
+                            language=language,
+                            task=task,
+                            temperature=temperature,
+                            initial_prompt=initial_prompt,
+                            task_id=self.request.id
+                        )
+
+                        segments = transcription_result['segments']
+                        full_text = transcription_result['text']
+                        detected_language = transcription_result.get('language', language)
+
+                        logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+                    else:
+                        raise TranscriptionError(
+                            "No transcription backend available. Install WhisperX or Faster-Whisper, "
+                            "or configure OPENAI_API_KEY for the OpenAI Whisper API."
+                        ) from local_error
 
             # Step 5: Speaker diarization (if enabled)
             if enable_diarization:

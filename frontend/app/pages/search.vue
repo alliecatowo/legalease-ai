@@ -16,7 +16,7 @@ const searchSettings = ref({
   use_bm25: true,
   use_dense: true,
   fusion_method: 'rrf' as 'rrf' | 'weighted' | 'max',
-  top_k: 50, // Increased from 20 to fetch more results
+  top_k: 20, // Default batch size for interactive queries
   score_threshold: 0.0, // Minimum confidence score (0.0 = no filter)
   chunk_types: [] as string[], // Filter by chunk types
   document_gids: [] as string[], // Filter by document GIDs
@@ -62,26 +62,6 @@ const chunkTypeOptions = [
   { value: 'transcript_segment', label: 'Transcript Segments', description: 'Audio/video transcript snippets' }
 ]
 
-// Watch search mode and update settings + trigger re-search
-watch(searchMode, (mode) => {
-  if (mode === 'hybrid') {
-    searchSettings.value.use_bm25 = true
-    searchSettings.value.use_dense = true
-  } else if (mode === 'semantic') {
-    searchSettings.value.use_bm25 = false
-    searchSettings.value.use_dense = true
-  } else if (mode === 'keyword') {
-    searchSettings.value.use_bm25 = true
-    searchSettings.value.use_dense = false
-  }
-
-  // Trigger re-search if there's an active query
-  if (searchQuery.value.trim()) {
-    debouncedSearch()
-  }
-})
-
-// Perform search with proper debouncing
 const performSearch = async () => {
   if (!searchQuery.value.trim()) {
     searchResults.value = []
@@ -95,20 +75,30 @@ const performSearch = async () => {
     // Filter out null/undefined values
     const validCaseGids = selectedCases.value.filter(id => id != null)
 
-    // Build chunk_types from both selectedChunkTypes and selectedDocumentTypes
-    const chunkTypes = [...selectedChunkTypes.value]
+    // Build chunk_types from both selectedChunkTypes, selectedDocumentTypes, and transcript toggle
+    const chunkTypeSet = new Set<string>(selectedChunkTypes.value)
 
     // Map document types to chunk types
     if (selectedDocumentTypes.value.includes('transcript')) {
-      if (!chunkTypes.includes('transcript_segment')) {
-        chunkTypes.push('transcript_segment')
+      chunkTypeSet.add('transcript_segment')
+    }
+
+    // Default chunk coverage when nothing selected: include document chunks and optionally transcripts
+    if (chunkTypeSet.size === 0) {
+      chunkTypeSet.add('summary')
+      chunkTypeSet.add('section')
+      chunkTypeSet.add('microblock')
+      if (includeTranscripts.value) {
+        chunkTypeSet.add('transcript_segment')
       }
     }
-    // Add other document type mappings if needed in the future
-    // e.g., if (selectedDocumentTypes.value.includes('contract')) { ... }
 
-    // NOTE: When no chunk types are selected (chunkTypes.length === 0), we send undefined
-    // to the backend, which triggers separate document + transcript searches that are merged
+    // Respect transcript toggle even if added through document type mapping
+    if (!includeTranscripts.value) {
+      chunkTypeSet.delete('transcript_segment')
+    }
+
+    const chunkTypes = Array.from(chunkTypeSet)
 
     // Build search request with filters
     const request = {
@@ -203,6 +193,63 @@ const performSearch = async () => {
     isLoading.value = false
     isSearching.value = false
   }
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  searchResults.value = []
+  isSearching.value = false
+}
+
+// Schedule background searches for filter/setting adjustments (no live typing)
+const scheduleSearch = useDebounceFn(() => {
+  if (!searchQuery.value.trim()) {
+    return
+  }
+  if (isLoading.value) {
+    return
+  }
+  isSearching.value = true
+  performSearch()
+}, 250)
+
+// Watch search mode and update settings + trigger re-search
+watch(searchMode, (mode) => {
+  if (mode === 'hybrid') {
+    searchSettings.value.use_bm25 = true
+    searchSettings.value.use_dense = true
+  } else if (mode === 'semantic') {
+    searchSettings.value.use_bm25 = false
+    searchSettings.value.use_dense = true
+  } else if (mode === 'keyword') {
+    searchSettings.value.use_bm25 = true
+    searchSettings.value.use_dense = false
+  }
+
+  // Trigger re-search if there's an active query
+  scheduleSearch()
+})
+
+// Watch for filter changes and re-run search when needed
+watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscripts], () => {
+  scheduleSearch()
+}, { deep: true })
+
+// Watch for search settings changes (confidence, fusion method, results limit) and re-run search
+watch(
+  () => [
+    searchSettings.value.score_threshold,
+    searchSettings.value.fusion_method,
+    searchSettings.value.top_k
+  ],
+  () => {
+    scheduleSearch()
+  }
+)
+
+const runExample = (example: string) => {
+  searchQuery.value = example
+  performSearch()
 }
 
 // Determine document type from metadata
@@ -454,38 +501,6 @@ function highlightText(text: string, query: string, isKeywordMatch: boolean, isS
   return highlighted
 }
 
-// Debounced search - 300ms for responsive feel
-const debouncedSearch = useDebounceFn(performSearch, 300)
-
-// Watch search query
-watch(searchQuery, () => {
-  // Set isSearching immediately when user types
-  if (searchQuery.value.trim()) {
-    isSearching.value = true
-  }
-  debouncedSearch()
-})
-
-// Watch for filter changes and re-run search
-watch([selectedCases, selectedChunkTypes, selectedDocumentTypes, includeTranscripts], () => {
-  if (searchQuery.value.trim()) {
-    debouncedSearch()
-  }
-}, { deep: true })
-
-// Watch for search settings changes (confidence, fusion method, results limit) and re-run search
-watch(
-  () => [
-    searchSettings.value.score_threshold,
-    searchSettings.value.fusion_method,
-    searchSettings.value.top_k
-  ],
-  () => {
-    if (searchQuery.value.trim()) {
-      debouncedSearch()
-    }
-  }
-)
 
 // Keyboard shortcuts - manage two refs for hero and compact inputs
 const heroSearchInput = useTemplateRef('heroSearchInput')
@@ -579,6 +594,7 @@ defineShortcuts({
                   size="xl"
                   :loading="isLoading"
                   autofocus
+                  @keydown.enter.prevent="performSearch"
                   class="!text-lg shadow-xl hover:shadow-2xl transition-shadow"
                   :ui="{
                     base: 'px-6 py-5 text-lg rounded-2xl',
@@ -586,7 +602,17 @@ defineShortcuts({
                   }"
                 >
                   <template #trailing>
-                    <UKbd value="/" />
+                    <div class="flex items-center gap-2">
+                      <UKbd value="/" />
+                      <UButton
+                        label="Search"
+                        color="primary"
+                        size="xs"
+                        :loading="isLoading"
+                        :disabled="!searchQuery.trim()"
+                        @click="performSearch"
+                      />
+                    </div>
                   </template>
                 </UInput>
 
@@ -612,7 +638,7 @@ defineShortcuts({
                   color="neutral"
                   variant="outline"
                   size="xs"
-                  @click="searchQuery = example"
+                  @click="runExample(example)"
                 />
               </div>
 
@@ -655,16 +681,28 @@ defineShortcuts({
                 placeholder="Search for legal terms, clauses, concepts..."
                 size="lg"
                 :loading="isLoading"
+                @keydown.enter.prevent="performSearch"
               >
                 <template #trailing>
-                  <UButton
-                    v-if="searchQuery"
-                    icon="i-lucide-x"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    @click="searchQuery = ''"
-                  />
+                  <div class="flex items-center gap-1">
+                    <UButton
+                      v-if="searchQuery"
+                      icon="i-lucide-x"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="clearSearch"
+                    />
+                    <UButton
+                      icon="i-lucide-search"
+                      color="primary"
+                      variant="solid"
+                      size="xs"
+                      :loading="isLoading"
+                      :disabled="!searchQuery.trim()"
+                      @click="performSearch"
+                    />
+                  </div>
                 </template>
               </UInput>
 

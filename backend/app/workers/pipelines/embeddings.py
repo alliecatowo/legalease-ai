@@ -129,7 +129,7 @@ class FastEmbedPipeline:
             return np.array([])
 
         total_texts = len(texts)
-        logger.info(f"Generating embeddings for {total_texts} texts (batch_size={batch_size})")
+        logger.debug(f"Generating embeddings for {total_texts} texts (batch_size={batch_size})")
 
         try:
             # Memory-efficient batch processing
@@ -145,7 +145,7 @@ class FastEmbedPipeline:
                 batch_num = (batch_start // batch_size) + 1
                 total_batches = (total_texts + batch_size - 1) // batch_size
 
-                logger.info(
+                logger.debug(
                     f"  Processing batch {batch_num}/{total_batches}: "
                     f"texts {batch_start+1}-{batch_end} "
                     f"({processed*100//total_texts}% complete)"
@@ -168,12 +168,12 @@ class FastEmbedPipeline:
                 all_embeddings.append(batch_array)
 
                 processed = batch_end
-                logger.info(f"  Batch {batch_num}/{total_batches} complete ({processed}/{total_texts})")
+                logger.debug(f"  Batch {batch_num}/{total_batches} complete ({processed}/{total_texts})")
 
             # Final stack of all batches
             embeddings = np.vstack(all_embeddings)
 
-            logger.info(f"Generated embeddings with shape: {embeddings.shape}")
+            logger.debug(f"Generated embeddings with shape: {embeddings.shape}")
             return embeddings
 
         except Exception as e:
