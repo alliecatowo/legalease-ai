@@ -46,7 +46,7 @@ class ParserFactory:
             ...     ParserType.MARKER,
             ...     config={
             ...         "use_llm": True,
-            ...         "batch_multiplier": 2,
+            ...         "batch_multiplier": 1,
             ...     }
             ... )
         """
@@ -64,7 +64,7 @@ class ParserFactory:
 
         Default configuration for legal documents:
         - use_llm: True (for complex tables/forms)
-        - batch_multiplier: 2 (safe for 8GB GPU)
+        - batch_multiplier: 1 (safe for 8GB GPU)
         - output_format: json (for structured data)
         - debug: False
 
@@ -77,7 +77,7 @@ class ParserFactory:
         # Default configuration for legal documents
         default_config = {
             "use_llm": True,  # Critical for legal doc accuracy
-            "batch_multiplier": 2,  # Safe for RTX 3070 Ti (8GB)
+            "batch_multiplier": 1,  # Conservative default for RTX 3070 Ti (8GB)
             "output_format": "json",  # Best for structured extraction
             "debug": False,
         }

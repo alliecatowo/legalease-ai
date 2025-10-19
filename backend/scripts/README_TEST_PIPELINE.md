@@ -88,10 +88,10 @@ See sections below for complete end-to-end testing.
 
 ## Usage
 
-### Basic Test (Auto-generated PDF)
+### Basic Test
 ```bash
 cd /home/Allie/develop/legalease/backend
-mise run python scripts/test_full_pipeline.py
+mise run python scripts/test_full_pipeline.py --pdf-path /path/to/your/document.pdf
 ```
 
 ### Test with Your Own PDF
@@ -101,12 +101,12 @@ mise run python scripts/test_full_pipeline.py --pdf-path /path/to/your/document.
 
 ### Skip Indexing (Test Parsing Only)
 ```bash
-mise run python scripts/test_full_pipeline.py --skip-indexing
+mise run python scripts/test_full_pipeline.py --pdf-path /path/to/your/document.pdf --skip-indexing
 ```
 
 ### Search Only (Assumes Data Already Indexed)
 ```bash
-mise run python scripts/test_full_pipeline.py --search-only
+mise run python scripts/test_full_pipeline.py --pdf-path /path/to/your/document.pdf --search-only
 ```
 
 ## Expected Output
@@ -118,7 +118,7 @@ The script provides detailed output for each stage:
 END-TO-END DOCUMENT PIPELINE TEST
 ================================================================================
 Start Time: 2025-01-15 10:30:00
-PDF Path: Generated sample
+PDF Path: /absolute/path/to/case_file.pdf
 Test Document ID: 12345678-1234-5678-1234-567812345678
 Test Case ID: 87654321-4321-8765-4321-876543218765
 
@@ -126,7 +126,7 @@ Test Case ID: 87654321-4321-8765-4321-876543218765
 STAGE 1: Document Parsing with Marker
 ================================================================================
 Initializing Marker parser (VLM enabled)...
-Parsing document: test_document.pdf (15.2KB)
+Parsing document: case_file.pdf (15.2KB)
 
 Parsing Results:
   ✓ Parser Type: ParserType.MARKER

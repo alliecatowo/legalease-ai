@@ -193,15 +193,13 @@ Created a comprehensive end-to-end test script that validates the entire documen
 
 ## Test Features
 
-### Automatic PDF Generation
-If no PDF is provided, the script creates a realistic 2-page legal document with:
-- Title page with case information
-- Article I: Definitions section
-- Whereas clauses
-- Terms and conditions
-- Multiple sections for testing chunking
+### PDF Input
+The pipeline test is intentionally run against the real PDF you pass via `--pdf-path`.
+Bring a representative document from your matter so every downstream stage mirrors
+production behavior (page counts, chunking density, TOC detection, etc.).
 
-Uses `reportlab` if available, falls back to minimal PDF otherwise.
+Need a synthetic document for debugging? Reuse the `create_sample_pdf` helper in the
+script, but call it explicitly—there is no longer an auto-generated fallback.
 
 ### Detailed Logging
 Every stage outputs:
@@ -229,10 +227,10 @@ Each stage validates:
 
 ## Usage Examples
 
-### Basic Test (Auto-generated PDF)
+### Basic Test
 ```bash
 cd /home/Allie/develop/legalease/backend
-mise run python scripts/test_full_pipeline.py
+mise run python scripts/test_full_pipeline.py --pdf-path /path/to/contract.pdf
 ```
 
 Expected: All 6 stages pass in ~45-60 seconds
@@ -246,14 +244,14 @@ Expected: Tests real-world document processing
 
 ### Development Testing (Skip Indexing)
 ```bash
-mise run python scripts/test_full_pipeline.py --skip-indexing
+mise run python scripts/test_full_pipeline.py --pdf-path /path/to/contract.pdf --skip-indexing
 ```
 
 Expected: Tests parsing → chunking → embeddings only
 
 ### Search Testing (Assumes Data Indexed)
 ```bash
-mise run python scripts/test_full_pipeline.py --search-only
+mise run python scripts/test_full_pipeline.py --pdf-path /path/to/contract.pdf --search-only
 ```
 
 Expected: Tests search functionality with existing data
@@ -428,7 +426,7 @@ All dependencies from project's `pyproject.toml`:
 1. **Test Script** (947 lines):
    `/home/Allie/develop/legalease/backend/scripts/test_full_pipeline.py`
    - Comprehensive 6-stage pipeline test
-   - Automatic PDF generation
+   - Requires explicit `--pdf-path`
    - Detailed logging and validation
    - Multiple test modes (full, skip-indexing, search-only)
 
@@ -464,8 +462,7 @@ The script is production-ready with:
 - Detailed logging at every stage
 - Comprehensive error handling
 - Multiple test modes
-- Automatic PDF generation
 - Performance metrics
 - Result validation
 
-Ready to use with `mise run python scripts/test_full_pipeline.py`
+Ready to use with `mise run python scripts/test_full_pipeline.py --pdf-path /path/to/contract.pdf`

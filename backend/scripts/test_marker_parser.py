@@ -316,7 +316,7 @@ def run_tests(use_llm: bool = False):
         logger.info("\nStep 2: Creating Marker parser...")
         config = {
             "use_llm": use_llm,
-            "batch_multiplier": 2,
+            "batch_multiplier": 1,
             "output_format": "json",
             "debug": False,
         }

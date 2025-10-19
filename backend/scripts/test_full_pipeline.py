@@ -12,11 +12,11 @@ Comprehensive test script that validates the entire document processing pipeline
 7. Result validation
 
 Usage:
-    python scripts/test_full_pipeline.py [--pdf-path PATH] [--skip-indexing] [--search-only]
+    python scripts/test_full_pipeline.py --pdf-path PATH [--skip-indexing] [--search-only]
 
 Environment:
     Requires: Qdrant, PostgreSQL, Redis running (via docker-compose)
-    PDF: Uses test PDF or creates sample if none provided
+    PDF: Provide a real document via --pdf-path (no auto-generated sample)
 """
 
 import sys
@@ -820,22 +820,33 @@ async def test_stage_6_search(
         return None
 
 
-async def main(pdf_path: Optional[str] = None, skip_indexing: bool = False, search_only: bool = False):
+async def main(pdf_path: str, skip_indexing: bool = False, search_only: bool = False):
     """
     Run the complete end-to-end pipeline test.
 
     Args:
-        pdf_path: Optional path to PDF file to test
+        pdf_path: Path to the PDF file to test
         skip_indexing: Skip indexing stage (use for testing search only)
         search_only: Only run search tests (assumes data already indexed)
     """
+    if not pdf_path:
+        raise ValueError(
+            "A PDF file path is required. Pass --pdf-path pointing to the document you want to test."
+        )
+
+    pdf_path = os.path.expanduser(pdf_path)
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF path does not exist: {pdf_path}")
+
+    pdf_path = os.path.abspath(pdf_path)
+
     test_result = PipelineTestResult()
 
     logger.info("="*80)
     logger.info("END-TO-END DOCUMENT PIPELINE TEST")
     logger.info("="*80)
     logger.info(f"Start Time: {test_result.start_time}")
-    logger.info(f"PDF Path: {pdf_path or 'Generated sample'}")
+    logger.info(f"PDF Path: {pdf_path}")
     logger.info(f"Skip Indexing: {skip_indexing}")
     logger.info(f"Search Only: {search_only}")
 
@@ -847,16 +858,11 @@ async def main(pdf_path: Optional[str] = None, skip_indexing: bool = False, sear
     logger.info(f"Test Case ID: {test_case_id}")
 
     try:
-        # Load or create PDF
-        if pdf_path and os.path.exists(pdf_path):
-            logger.info(f"\nLoading PDF from: {pdf_path}")
-            with open(pdf_path, 'rb') as f:
-                pdf_bytes = f.read()
-            filename = os.path.basename(pdf_path)
-        else:
-            logger.info("\nCreating sample PDF...")
-            pdf_bytes = create_sample_pdf()
-            filename = "test_document.pdf"
+        # Load PDF
+        logger.info(f"\nLoading PDF from: {pdf_path}")
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        filename = os.path.basename(pdf_path)
 
         if not search_only:
             # Stage 1: Parsing
@@ -931,7 +937,12 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="End-to-end document pipeline test")
-    parser.add_argument("--pdf-path", type=str, help="Path to PDF file to test")
+    parser.add_argument(
+        "--pdf-path",
+        type=str,
+        required=True,
+        help="Path to the PDF file to run through the pipeline",
+    )
     parser.add_argument("--skip-indexing", action="store_true", help="Skip indexing stage")
     parser.add_argument("--search-only", action="store_true", help="Only run search tests")
 
