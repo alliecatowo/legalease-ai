@@ -70,8 +70,8 @@ RUN for lib_dir in cudnn cublas cuda_runtime cusparse cufft curand cusolver; do 
         fi; \
     done 2>/dev/null || true
 
-# Start Celery worker
-CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+# Start Celery worker with concurrency=1 to prevent OOM on 14GB systems
+CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=1", "--max-memory-per-child=4000000"]
 
 # Production dependencies stage
 FROM base AS dependencies
