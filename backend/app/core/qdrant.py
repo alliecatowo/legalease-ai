@@ -147,14 +147,20 @@ def upsert_points(
 
     try:
         # Upload in batches
+        # Use wait=False for all but the last batch to improve performance
+        total_batches = (len(points) + batch_size - 1) // batch_size
+
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            is_last_batch = (batch_num == total_batches)
+
             client.upsert(
                 collection_name=collection_name,
                 points=batch,
-                wait=True,
+                wait=is_last_batch,  # Only wait on the last batch for confirmation
             )
-            logger.info(f"Upserted batch {i // batch_size + 1}: {len(batch)} points")
+            logger.info(f"Upserted batch {batch_num}/{total_batches}: {len(batch)} points")
 
         logger.info(f"Successfully upserted {len(points)} points to {collection_name}")
         return True
