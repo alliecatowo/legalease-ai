@@ -32,13 +32,16 @@ COPY backend/pyproject.toml backend/uv.lock* ./
 FROM base AS development
 
 # Install dependencies FIRST (cached layer - only rebuilds when pyproject.toml or uv.lock changes)
-RUN uv sync --frozen --no-install-project --group worker
+# Use BuildKit cache mount to persist downloaded packages across builds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --group worker
 
 # Copy application code SECOND (changes frequently)
 COPY backend/ ./
 
 # Install project itself LAST (fast - just links the project into the venv)
-RUN uv sync --frozen --group worker
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --group worker
 
 # Create cache directory for models
 RUN mkdir -p /root/.cache
@@ -74,7 +77,8 @@ CMD ["uv", "run", "celery", "-A", "app.workers.celery_app", "worker", "--logleve
 FROM base AS dependencies
 
 # Install production dependencies with worker group (dependencies only, not the project)
-RUN uv sync --frozen --no-dev --no-install-project --group worker
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project --group worker
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -108,7 +112,8 @@ COPY --from=dependencies /app/.venv /app/.venv
 COPY backend/ ./
 
 # Install project itself (fast - just links)
-RUN uv sync --frozen --no-dev --group worker
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --group worker
 
 # Create non-root user
 RUN useradd -m -u 1000 legalease && \
