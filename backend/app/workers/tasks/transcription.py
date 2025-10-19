@@ -659,8 +659,30 @@ class SpeakerNameInferencer:
             for pattern_type, pattern in patterns.items():
                 matches = re.findall(pattern, text)
                 for name in matches:
-                    # Filter out common words that might match
-                    if name.lower() not in ['i', 'you', 'we', 'they', 'okay', 'yeah', 'sure', 'right', 'well']:
+                    # Filter out common words, pronouns, and non-names with comprehensive stopword list
+                    stopwords = {
+                        # Pronouns
+                        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+                        'my', 'your', 'his', 'hers', 'its', 'our', 'their', 'mine', 'yours', 'ours', 'theirs',
+                        # Demonstratives
+                        'this', 'that', 'these', 'those',
+                        # Question words
+                        'what', 'when', 'where', 'which', 'who', 'whom', 'whose', 'why', 'how',
+                        # Common interjections & fillers
+                        'okay', 'yeah', 'sure', 'right', 'well', 'oh', 'um', 'uh', 'like', 'just',
+                        'very', 'really', 'actually', 'basically', 'literally', 'definitely', 'probably',
+                        # Modals & auxiliaries
+                        'can', 'could', 'will', 'would', 'should', 'shall', 'may', 'might', 'must',
+                        'do', 'does', 'did', 'have', 'has', 'had', 'is', 'are', 'was', 'were', 'been', 'being',
+                        # Conjunctions & prepositions
+                        'so', 'but', 'and', 'or', 'if', 'then', 'because', 'since', 'unless', 'until', 'while',
+                        'for', 'to', 'from', 'with', 'about', 'as', 'at', 'by', 'in', 'of', 'on', 'off', 'out',
+                        # Location/time & other common words
+                        'there', 'here', 'now', 'then', 'yes', 'no', 'not', 'dont', 'doesn', 'didnt',
+                        'know', 'think', 'mean', 'see', 'get', 'go', 'come', 'want', 'need', 'try', 'make', 'take'
+                    }
+
+                    if name.lower() not in stopwords and len(name) > 1:
                         if name not in potential_names:
                             potential_names[name] = []
                         potential_names[name].append(f"{pattern_type}: '{text[:50]}...'")
