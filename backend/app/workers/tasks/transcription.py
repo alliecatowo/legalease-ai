@@ -16,6 +16,7 @@ import warnings
 import time
 import math
 from collections import OrderedDict, defaultdict
+from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Set
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -163,6 +164,50 @@ class AudioProcessor:
             'silence_ratio': silence_ratio,
             'noise_floor': noise_floor_db
         }
+
+    @staticmethod
+    def preprocess_audio(input_path: str, output_path: str) -> Tuple[bool, str]:
+        """
+        Preprocess audio file to 16kHz mono WAV format for optimal transcription.
+
+        Args:
+            input_path: Path to input audio/video file
+            output_path: Path to output WAV file
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        try:
+            file_size_gb = os.path.getsize(input_path) / (1024 ** 3)
+            timeout_seconds = max(300, min(3600, int(file_size_gb * 300)))
+            logger.info(f"FFmpeg timeout set to {timeout_seconds}s for {file_size_gb:.2f}GB file")
+
+            cmd = [
+                'ffmpeg',
+                '-i', input_path,
+                '-ar', '16000',
+                '-ac', '1',
+                '-c:a', 'pcm_s16le',
+                '-y',
+                output_path
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout_seconds
+            )
+
+            if result.returncode == 0:
+                return True, "Audio preprocessing successful"
+            error_msg = result.stderr.decode('utf-8', errors='ignore')
+            return False, f"FFmpeg error: {error_msg}"
+
+        except subprocess.TimeoutExpired:
+            return False, f"Audio preprocessing timed out after {timeout_seconds}s"
+        except Exception as exc:
+            return False, f"Audio preprocessing failed: {exc}"
 
     @staticmethod
     def enhance_audio(input_path: str) -> Tuple[bool, str]:
@@ -407,6 +452,20 @@ def _split_segments_by_speaker(
             split_segments.append(_segment_from_words(segment, buffer, current_speaker))
 
     return split_segments
+
+
+def _debug_dump(name: str, payload: Any) -> None:
+    debug_dir = os.getenv("DIARIZATION_DEBUG_DIR", "/tmp/diar_debug")
+
+    try:
+        target_dir = Path(debug_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        path = target_dir / f"{name}.json"
+        with path.open("w", encoding="utf-8") as fp:
+            json.dump(payload, fp, indent=2)
+        logger.info("Wrote diarization debug dump to %s", path)
+    except Exception as exc:
+        logger.warning("Failed to write diarization debug dump: %s", exc)
 
 
 def _segments_to_dicts(segments: List["TranscriptionSegment"]) -> List[Dict[str, Any]]:
@@ -1654,6 +1713,7 @@ def transcribe_audio(
 
                 whisper_result.segments = _split_segments_by_speaker(whisper_result.segments)
                 segment_dicts = _segments_to_dicts(whisper_result.segments)
+                _debug_dump(f"{transcription_gid}_whisper_segments", segment_dicts)
 
                 logger.info(f"WhisperX transcription completed in {whisperx_time:.1f}s: {len(segment_dicts)} segments, language={detected_language}")
                 logger.info(f"Performance: {duration/whisperx_time:.2f}x realtime (processed {duration:.0f}s audio in {whisperx_time:.1f}s)")
@@ -1762,6 +1822,15 @@ def transcribe_audio(
 
                         diarization_time = time.time() - diarization_start
 
+                        diarization_dump = []
+                        for turn, _, speaker in diarization.itertracks(yield_label=True):
+                            diarization_dump.append({
+                                "start": turn.start,
+                                "end": turn.end,
+                                "speaker": str(speaker),
+                            })
+                        _debug_dump(f"{transcription_gid}_pyannote_tracks", diarization_dump)
+
                         try:
                             import whisperx  # type: ignore
                             diarize_df = _annotation_to_dataframe(diarization)
@@ -1848,6 +1917,7 @@ def transcribe_audio(
                 segment_dicts = segment_dicts
 
             diarized_segments = segment_dicts
+            _debug_dump(f"{transcription_gid}_final_segments", diarized_segments)
 
             if duration is None:
                 if whisper_result is not None and whisper_result.duration:
