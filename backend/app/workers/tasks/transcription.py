@@ -1795,18 +1795,8 @@ def transcribe_audio(
                             )
                             segment_dicts = _assign_speakers_from_annotation(segment_dicts, diarization)
 
-                        if not word_level_alignment:
-                            diarizer = SpeakerDiarizer()
-                            diarized_segments = diarizer.smooth_speaker_changes(
-                                segment_dicts,
-                                min_segment_duration=min_segment_duration,
-                                min_speaker_gap=min_speaker_gap
-                            )
-                            segment_dicts = diarized_segments
-                        else:
-                            diarized_segments = segment_dicts
-
-                        num_detected_speakers = len({s.get('speaker') for s in segment_dicts})
+                        diarized_segments = segment_dicts
+                        num_detected_speakers = len({s.get('speaker') for s in diarized_segments})
                         logger.info(f"Diarization completed in {diarization_time:.1f}s: {num_detected_speakers} speakers detected")
                         logger.info(f"Diarization performance: {duration/diarization_time:.2f}x realtime")
 
