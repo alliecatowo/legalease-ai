@@ -279,9 +279,11 @@ def _assign_speakers_from_annotation(
 def _merge_minor_speakers(
     segments: List[Dict[str, Any]],
     max_speakers: int = 4,
-    min_share: float = 0.015
+    min_share: float = 0.02,
+    coverage: float = 0.92,
+    min_keep: int = 2
 ) -> List[Dict[str, Any]]:
-    """Merge extremely short-lived speakers into adjacent dominant speakers."""
+    """Merge short-lived speakers into dominant speakers to reduce fragmentation."""
     if not segments:
         return segments
 
@@ -292,30 +294,48 @@ def _merge_minor_speakers(
         durations[speaker] += max(0.0, seg.get('end', 0.0) - seg.get('start', 0.0))
 
     total_duration = sum(durations.values())
-    if total_duration <= 0 or len(durations) <= max_speakers:
+    if total_duration <= 0:
         return segments
 
-    def reassign_speaker(old_speaker: str) -> None:
-        for idx, seg in enumerate(segments):
-            if seg.get('speaker') != old_speaker:
-                continue
-            prev_speaker = segments[idx - 1].get('speaker') if idx > 0 else None
-            next_speaker = segments[idx + 1].get('speaker') if idx + 1 < len(segments) else None
-            replacement = prev_speaker or next_speaker
-            if not replacement or replacement == old_speaker:
-                replacement = max(durations, key=durations.get)
-            seg['speaker'] = replacement
-            durations[replacement] += max(0.0, seg.get('end', 0.0) - seg.get('start', 0.0))
+    sorted_speakers = sorted(durations.items(), key=lambda item: item[1], reverse=True)
 
-    sorted_speakers = sorted(durations.items(), key=lambda item: item[1])
-    for speaker, duration in sorted_speakers:
-        if len(durations) <= max_speakers:
+    keep: List[str] = []
+    cumulative = 0.0
+    target_coverage = max(min(coverage, 0.99), 0.5)
+    max_speakers = max(min_keep, max_speakers)
+
+    for speaker, dur in sorted_speakers:
+        keep.append(speaker)
+        cumulative += dur
+        if len(keep) >= max_speakers:
             break
-        share = duration / total_duration if total_duration else 0.0
-        if share > min_share:
-            continue
-        reassign_speaker(speaker)
-        durations.pop(speaker, None)
+        if cumulative / total_duration >= target_coverage and len(keep) >= min_keep:
+            break
+
+    if len(keep) < min_keep and sorted_speakers:
+        keep = [speaker for speaker, _ in sorted_speakers[:min_keep]]
+
+    keep_set = set(keep)
+    if len(keep_set) == len(durations):
+        return segments
+
+    def reassign_segment(idx: int, old: str) -> None:
+        prev_speaker = segments[idx - 1].get('speaker') if idx > 0 else None
+        next_speaker = segments[idx + 1].get('speaker') if idx + 1 < len(segments) else None
+        candidate = None
+        if prev_speaker in keep_set:
+            candidate = prev_speaker
+        elif next_speaker in keep_set:
+            candidate = next_speaker
+        else:
+            candidate = keep[0]
+        seg = segments[idx]
+        seg['speaker'] = candidate
+
+    for idx, segment in enumerate(segments):
+        speaker = segment.get('speaker')
+        if speaker not in keep_set:
+            reassign_segment(idx, speaker)
 
     return segments
 
@@ -1281,7 +1301,7 @@ def transcribe_audio(
     language = options.get("language")
     task = options.get("task", "transcribe")
     enable_diarization = options.get("enable_diarization", True)
-    temperature = float(options.get("temperature", 0.2))
+    temperature = float(options.get("temperature", 0.5))
     initial_prompt = options.get("initial_prompt")
     adaptive_enhancement = options.get("adaptive_enhancement", True)
     quality_boost = options.get("quality_boost", True)
