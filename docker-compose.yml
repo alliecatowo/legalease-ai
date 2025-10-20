@@ -91,14 +91,15 @@ services:
       - "7687:7687"
     environment:
       NEO4J_AUTH: neo4j/legalease_dev
-      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
-      NEO4J_dbms_security_procedures_unrestricted: apoc.*,gds.*
-      NEO4J_dbms_security_procedures_allowlist: apoc.*,gds.*
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
       NEO4J_apoc_export_file_enabled: "true"
       NEO4J_apoc_import_file_enabled: "true"
-      NEO4J_dbms_memory_heap_initial__size: 512m
-      NEO4J_dbms_memory_heap_max__size: 1G
-      NEO4J_dbms_memory_pagecache_size: 512m
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 1G
+      NEO4J_db_logs_query_enabled: "INFO"
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -109,6 +110,62 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - legalease-network
+    restart: unless-stopped
+
+  # OpenSearch for BM25/Lexical Search
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: legalease-opensearch
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx1g
+      DISABLE_SECURITY_PLUGIN: "true"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - legalease-network
+    restart: unless-stopped
+
+  # Temporal Workflow Orchestration
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: legalease-temporal
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: legalease
+      POSTGRES_PWD: legalease_dev
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "tctl --address $(hostname -i):7233 cluster health 2>&1 | grep -q SERVING"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     networks:
       - legalease-network
     restart: unless-stopped
@@ -162,6 +219,8 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: legalease_dev
+      OPENSEARCH_URL: http://opensearch:9200
+      TEMPORAL_HOST: temporal:7233
       OLLAMA_BASE_URL: http://ollama:11434
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -181,6 +240,10 @@ services:
       minio:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      temporal:
         condition: service_healthy
       ollama:
         condition: service_healthy
@@ -204,7 +267,7 @@ services:
       target: development
     container_name: legalease-worker
     command: >
-      uv run celery -A app.workers.celery_app worker
+      uv run --group worker celery -A app.workers.celery_app worker
       --loglevel=info
       --autoscale=${CELERY_WORKER_AUTOSCALE:-2,1}
       --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD:-6000000}
@@ -221,6 +284,8 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: legalease_dev
+      OPENSEARCH_URL: http://opensearch:9200
+      TEMPORAL_HOST: temporal:7233
       OLLAMA_BASE_URL: http://ollama:11434
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -246,9 +311,16 @@ services:
       - ollama_models:/root/.ollama
       - ${FORENSIC_EXPORTS_PATH:-/data/forensic-exports}:/data/forensic-exports:ro
     depends_on:
-      - redis
-      - postgres
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      backend:
+        condition: service_started
     networks:
       - legalease-network
     restart: unless-stopped
@@ -273,7 +345,7 @@ services:
       dockerfile: docker/worker/Dockerfile
       target: development
     container_name: legalease-beat
-    command: uv run celery -A app.workers.celery_app beat --loglevel=info
+    command: uv run --group worker celery -A app.workers.celery_app beat --loglevel=info
     environment:
       DATABASE_URL: postgresql://legalease:legalease_dev@postgres:5432/legalease
       REDIS_URL: redis://redis:6379/0
@@ -335,6 +407,8 @@ volumes:
     name: legalease-neo4j-import
   neo4j_plugins:
     name: legalease-neo4j-plugins
+  opensearch_data:
+    name: legalease-opensearch-data
   ollama_data:
     name: legalease-ollama-data
   ollama_models:

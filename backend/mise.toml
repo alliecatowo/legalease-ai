@@ -1,0 +1,170 @@
+# LegalEase Backend - mise task runner configuration
+# Run tasks with: mise run <task-name>
+
+[tasks.install]
+description = "Install all dependencies"
+run = "uv sync"
+
+[tasks.install-dev]
+description = "Install dependencies including dev tools"
+run = "uv sync --group dev"
+
+[tasks.install-worker]
+description = "Install dependencies including worker tools"
+run = "uv sync --group worker"
+
+[tasks.migrate]
+description = "Run database migrations"
+run = "./scripts/run_migrations.sh"
+
+[tasks.migrate-create]
+description = "Create a new migration (usage: mise run migrate-create -- 'message')"
+run = "alembic revision --autogenerate -m"
+
+[tasks.init]
+description = "Initialize infrastructure (OpenSearch, Qdrant, Neo4j)"
+run = "./scripts/init_infrastructure.py"
+
+[tasks.setup]
+description = "Full setup: install deps, run migrations, init infrastructure"
+depends = ["install", "migrate", "init"]
+
+[tasks.dev]
+description = "Start development server with hot reload"
+run = "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+
+[tasks.start]
+description = "Start production server"
+run = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+
+[tasks.worker]
+description = "Start Celery worker"
+run = "celery -A app.worker worker --loglevel=info --autoscale=4,1"
+
+[tasks.beat]
+description = "Start Celery beat scheduler"
+run = "celery -A app.worker beat --loglevel=info"
+
+[tasks.flower]
+description = "Start Flower (Celery monitoring)"
+run = "celery -A app.worker flower --port=5555"
+
+[tasks.test]
+description = "Run all tests"
+run = "pytest -v"
+
+[tasks."test:unit"]
+description = "Run unit tests only"
+run = "pytest tests/unit/ -v"
+
+[tasks."test:integration"]
+description = "Run integration tests"
+run = "pytest tests/integration/ -v -s -m integration"
+
+[tasks."test:coverage"]
+description = "Run tests with coverage report"
+run = "pytest --cov=app --cov-report=html --cov-report=term"
+
+[tasks.lint]
+description = "Run linter (ruff)"
+run = "ruff check app/"
+
+[tasks.format]
+description = "Format code with black"
+run = "black app/"
+
+[tasks."format:check"]
+description = "Check code formatting"
+run = "black --check app/"
+
+[tasks.typecheck]
+description = "Run type checker (mypy)"
+run = "mypy app/"
+
+[tasks.clean]
+description = "Clean up cache and temporary files"
+run = "find . -type d -name __pycache__ -exec rm -rf {} + && find . -type f -name '*.pyc' -delete"
+
+[tasks."db:reset"]
+description = "Reset database (WARNING: destructive)"
+run = "alembic downgrade base && alembic upgrade head"
+
+[tasks."docker:up"]
+description = "Start all Docker services"
+run = "docker-compose up -d"
+
+[tasks."docker:down"]
+description = "Stop all Docker services"
+run = "docker-compose down"
+
+[tasks."docker:logs"]
+description = "View Docker service logs"
+run = "docker-compose logs -f"
+
+[tasks."docker:ps"]
+description = "List running Docker services"
+run = "docker-compose ps"
+
+[tasks.temporal]
+description = "Start Temporal server (dev mode)"
+run = "temporal server start-dev"
+
+[tasks."temporal:worker"]
+description = "Start Temporal workflow worker"
+run = "python -m app.infrastructure.workflows.worker"
+
+[tasks.shell]
+description = "Start Python shell with app context"
+run = "python -i -c 'from app.core.config import settings; from app.db.session import SessionLocal'"
+
+[tasks.routes]
+description = "List all API routes"
+run = "python -c 'from app.main import app; from fastapi.routing import APIRoute; print(\"\\n\".join([f\"{route.methods} {route.path}\" for route in app.routes if isinstance(route, APIRoute)]))'"
+
+[tasks."health:check"]
+description = "Check health of all services"
+run = "curl -s http://localhost:8000/api/v2/health/detailed | python -m json.tool"
+
+# Seeding and demo tasks
+[tasks."seed:data"]
+description = "Seed database with demo data"
+run = "python scripts/seed_data.py"
+
+[tasks."seed:pdfs"]
+description = "Seed database with real PDF documents"
+run = "python scripts/seed_with_real_pdfs.py"
+
+# Development utilities
+[tasks."qdrant:init"]
+description = "Initialize Qdrant collections"
+run = "python scripts/init_qdrant_collections.py"
+
+[tasks."opensearch:demo"]
+description = "Run OpenSearch demo"
+run = "python scripts/opensearch_demo.py"
+
+# Production tasks
+[tasks.build]
+description = "Build production artifacts"
+run = "echo 'No build step required for Python backend'"
+
+[tasks.validate]
+description = "Run all validation checks"
+depends = ["format:check", "lint", "typecheck", "test:unit"]
+
+[tasks.ci]
+description = "Run CI pipeline locally"
+depends = ["install", "validate", "test:integration"]
+
+# Monitoring and debugging
+[tasks."logs:api"]
+description = "Tail API logs"
+run = "tail -f logs/api.log"
+
+[tasks."logs:worker"]
+description = "Tail worker logs"
+run = "tail -f logs/worker.log"
+
+[tasks.profile]
+description = "Profile the application"
+run = "python -m cProfile -o profile.stats app/main.py"

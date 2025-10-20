@@ -11,7 +11,7 @@ from alembic import context
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import models and database configuration
-from app.core.database import Base, settings
+from app.core.database import Base, settings, get_sync_database_url
 from app.models import (
     Case,
     Document,
@@ -26,7 +26,10 @@ from app.models import (
 config = context.config
 
 # Override sqlalchemy.url with our database settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option(
+    "sqlalchemy.url",
+    get_sync_database_url(settings.DATABASE_URL),
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

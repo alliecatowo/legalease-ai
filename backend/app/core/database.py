@@ -1,57 +1,119 @@
 """Database configuration and session management."""
 
-from typing import Generator
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import AsyncGenerator, Generator
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    AsyncEngine,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy import create_engine, Engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
+
+# Import settings from main config
+from app.core.config import settings
+
+def ensure_async_database_url(url: str) -> str:
+    """Ensure database URL has async driver."""
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+def get_sync_database_url(url: str) -> str:
+    """Convert database URL to sync URL."""
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    elif url.startswith("postgresql://"):
+        return url
+    return url
 
 
-class Settings(BaseSettings):
-    """Application settings."""
-
-    database_url: str = "postgresql://legalease:legalease@localhost:5432/legalease"
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
+class Base(DeclarativeBase):
+    """Declarative base for SQLAlchemy 2.0 models."""
+    pass
 
 
-settings = Settings()
+# Get async and sync database URLs
+async_database_url = ensure_async_database_url(settings.DATABASE_URL)
+sync_database_url = get_sync_database_url(settings.DATABASE_URL)
 
-# Create SQLAlchemy engine
-engine = create_engine(
-    settings.database_url,
+# Create async SQLAlchemy engine
+async_engine: AsyncEngine = create_async_engine(
+    async_database_url,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
-    echo=False  # Set to True for SQL query logging
+    echo=False,  # Set to True for SQL query logging
 )
 
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Create async session factory
+AsyncSessionLocal = async_sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 
-# Create declarative base
-Base = declarative_base()
+# Create synchronous SQLAlchemy engine (for workers and scripts)
+sync_engine: Engine = create_engine(
+    sync_database_url,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    echo=False,  # Set to True for SQL query logging
+)
+
+# Create synchronous session factory
+SyncSessionLocal = sessionmaker(
+    sync_engine,
+    class_=Session,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 
 
-def get_db() -> Generator[Session, None, None]:
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency that provides a database session.
+    Dependency that provides an async database session.
 
     Yields:
-        Session: SQLAlchemy database session
+        AsyncSession: SQLAlchemy async database session
 
     Example:
         @app.get("/items")
-        def get_items(db: Session = Depends(get_db)):
+        async def get_items(db: AsyncSession = Depends(get_async_db)):
+            result = await db.execute(select(Item))
+            return result.scalars().all()
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
+def get_sync_db() -> Generator[Session, None, None]:
+    """
+    Dependency that provides a synchronous database session.
+
+    Yields:
+        Session: SQLAlchemy synchronous database session
+
+    Example:
+        @app.get("/items")
+        def get_items(db: Session = Depends(get_sync_db)):
             return db.query(Item).all()
     """
-    db = SessionLocal()
+    session = SyncSessionLocal()
     try:
-        yield db
+        yield session
     finally:
-        db.close()
+        session.close()
+
+
+# Backward compatibility aliases for code that hasn't been migrated to async yet
+engine = sync_engine
+SessionLocal = SyncSessionLocal
+get_db = get_sync_db

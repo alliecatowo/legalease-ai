@@ -19,10 +19,32 @@ async def lifespan(app: FastAPI):
     print(f"Qdrant URL: {settings.QDRANT_URL}")
     print(f"MinIO Endpoint: {settings.MINIO_ENDPOINT}")
 
+    # Initialize infrastructure clients
+    print("Initializing infrastructure clients...")
+    try:
+        # Initialize Temporal client (optional)
+        try:
+            from app.infrastructure.workflows.temporal import init_temporal_client
+            await init_temporal_client()
+            print("  - Temporal client initialized")
+        except Exception as e:
+            print(f"  - Temporal client initialization failed (optional): {e}")
+
+        # Initialize other clients as needed
+        print("Infrastructure clients ready")
+    except Exception as e:
+        print(f"Warning: Some infrastructure initialization failed: {e}")
+
     yield
 
     # Shutdown
     print(f"Shutting down {settings.APP_NAME}")
+    # Cleanup connections
+    try:
+        from app.infrastructure.workflows.temporal import cleanup_temporal_client
+        await cleanup_temporal_client()
+    except:
+        pass
 
 
 # Create FastAPI app instance
@@ -76,6 +98,14 @@ async def health_check():
 
 # Include API v1 router
 app.include_router(api_router, prefix="/api/v1", tags=["v1"])
+
+# Include API v2 router (includes both REST and WebSocket endpoints)
+try:
+    from app.api.v2 import api_router as api_router_v2
+    app.include_router(api_router_v2, prefix="/api/v2")
+    print("API v2 routes loaded (REST + WebSocket)")
+except ImportError as e:
+    print(f"API v2 routes not available: {e}")
 
 
 if __name__ == "__main__":
