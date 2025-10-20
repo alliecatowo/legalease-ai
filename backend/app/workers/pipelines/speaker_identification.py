@@ -176,6 +176,8 @@ class SpacyNERExtractor(NameExtractionStrategy):
                     normalized_name = self._normalize_entity_text(ent)
                     if not normalized_name:
                         continue
+                    if normalized_name.lower() not in text.lower():
+                        continue
 
                     # Determine context type using linguistic analysis
                     context_type = self._classify_context(ent, doc, text)
@@ -551,7 +553,23 @@ class EvidenceAggregator:
         total_score = name_scores[best_name]
         evidence_count = name_evidence_counts[best_name]
 
+        matching_evidence = [ev for ev in evidence_list if ev.name == best_name]
+        context_counts = Counter(ev.context_type for ev in matching_evidence)
+
         confidence = total_score
+        if context_counts.get(NameContextType.SELF_IDENTIFICATION, 0) == 0:
+            # Without a self-ID we require multiple reinforcing signals
+            if context_counts.get(NameContextType.VOCATIVE, 0) == 0:
+                if evidence_count <= 1 or confidence < 0.6:
+                    return None
+                confidence = min(confidence, 0.45)
+            else:
+                confidence = min(confidence, 0.55)
+
+        confidence = max(0.0, min(1.0, confidence))
+
+        if confidence < 0.3:
+            return None
 
         return {
             'name': best_name,
@@ -571,7 +589,7 @@ class EvidenceAggregator:
 
         # Moderate boost for filename
         elif evidence.context_type == NameContextType.FILENAME:
-            return base_weight * 1.5
+            return 0.0  # filenames are hints but should not drive identity
 
         # Small boost for possessive (indirect indicator)
         elif evidence.context_type == NameContextType.POSSESSIVE:
@@ -614,7 +632,7 @@ class SpeakerIdentificationPipeline:
     4. Return speaker -> name mappings
     """
 
-    def __init__(self, use_spacy: bool = True):
+    def __init__(self, use_spacy: bool = True, use_patterns: bool = False, use_filename: bool = False):
         """
         Initialize pipeline with extractors.
 
@@ -625,9 +643,10 @@ class SpeakerIdentificationPipeline:
 
         if use_spacy:
             self.extractors.append(SpacyNERExtractor())
-
-        self.extractors.append(PatternBasedExtractor())
-        self.extractors.append(FilenameExtractor())
+        if use_patterns:
+            self.extractors.append(PatternBasedExtractor())
+        if use_filename:
+            self.extractors.append(FilenameExtractor())
 
         self.aggregator = EvidenceAggregator()
 

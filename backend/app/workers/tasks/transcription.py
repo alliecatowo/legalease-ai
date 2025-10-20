@@ -15,7 +15,7 @@ import httpx
 import warnings
 import time
 import math
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from typing import Dict, Any, Optional, List, Tuple, Set
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -276,6 +276,50 @@ def _assign_speakers_from_annotation(
     return assigned
 
 
+def _merge_minor_speakers(
+    segments: List[Dict[str, Any]],
+    max_speakers: int = 4,
+    min_share: float = 0.015
+) -> List[Dict[str, Any]]:
+    """Merge extremely short-lived speakers into adjacent dominant speakers."""
+    if not segments:
+        return segments
+
+    durations: Dict[str, float] = defaultdict(float)
+    for seg in segments:
+        speaker = seg.get('speaker') or "SPEAKER_00"
+        seg['speaker'] = speaker
+        durations[speaker] += max(0.0, seg.get('end', 0.0) - seg.get('start', 0.0))
+
+    total_duration = sum(durations.values())
+    if total_duration <= 0 or len(durations) <= max_speakers:
+        return segments
+
+    def reassign_speaker(old_speaker: str) -> None:
+        for idx, seg in enumerate(segments):
+            if seg.get('speaker') != old_speaker:
+                continue
+            prev_speaker = segments[idx - 1].get('speaker') if idx > 0 else None
+            next_speaker = segments[idx + 1].get('speaker') if idx + 1 < len(segments) else None
+            replacement = prev_speaker or next_speaker
+            if not replacement or replacement == old_speaker:
+                replacement = max(durations, key=durations.get)
+            seg['speaker'] = replacement
+            durations[replacement] += max(0.0, seg.get('end', 0.0) - seg.get('start', 0.0))
+
+    sorted_speakers = sorted(durations.items(), key=lambda item: item[1])
+    for speaker, duration in sorted_speakers:
+        if len(durations) <= max_speakers:
+            break
+        share = duration / total_duration if total_duration else 0.0
+        if share > min_share:
+            continue
+        reassign_speaker(speaker)
+        durations.pop(speaker, None)
+
+    return segments
+
+
 def _segments_to_dicts(segments: List["TranscriptionSegment"]) -> List[Dict[str, Any]]:
     """Convert WhisperX transcription segments into serializable dictionaries with IDs."""
     segment_dicts: List[Dict[str, Any]] = []
@@ -292,6 +336,7 @@ def _refine_low_confidence_segments(
     audio_path: str,
     language: Optional[str],
     batch_size: int,
+    temperature: float,
     max_segments: int = 6
 ) -> None:
     """Re-transcribe low-confidence segments with more aggressive decoding settings."""
@@ -343,7 +388,7 @@ def _refine_low_confidence_segments(
                 chunk_audio,
                 batch_size=max(1, batch_size // 2) if batch_size else 1,
                 language=language if language and language != "auto" else None,
-                temperature=0.0,
+                temperature=max(0.0, min(1.0, temperature)),
                 beam_size=8,
                 best_of=8,
                 condition_on_previous_text=False,
@@ -914,7 +959,7 @@ class SpeakerNameInferencer:
         metadata = {
             'inference_performed': True,
             'pipeline': 'SpeakerIdentificationPipeline',
-            'extractors_used': ['spacy_ner', 'patterns', 'filename'],
+            'extractors_used': [extractor.__class__.__name__ for extractor in pipeline.extractors],
             'inferred_names': inferred_names,
             'applied_names': {}
         }
@@ -1236,7 +1281,7 @@ def transcribe_audio(
     language = options.get("language")
     task = options.get("task", "transcribe")
     enable_diarization = options.get("enable_diarization", True)
-    temperature = options.get("temperature", 0.0)
+    temperature = float(options.get("temperature", 0.2))
     initial_prompt = options.get("initial_prompt")
     adaptive_enhancement = options.get("adaptive_enhancement", True)
     quality_boost = options.get("quality_boost", True)
@@ -1418,7 +1463,6 @@ def transcribe_audio(
                 # Adaptive ASR/VAD configuration based on measured audio metrics
                 asr_options = {
                     "condition_on_previous_text": True,
-                    "temperatures": [0.0, 0.2, 0.4, 0.6],
                     "beam_size": 5,
                     "best_of": 5,
                     "compression_ratio_threshold": 2.3,
@@ -1430,6 +1474,9 @@ def transcribe_audio(
                 min_segment_duration = 0.5
                 min_speaker_gap = 0.3
 
+                user_temperature = max(0.0, min(1.0, float(temperature)))
+                temp_set = {0.0, 0.2, 0.4, 0.6, round(user_temperature, 2)}
+
                 if audio_metrics:
                     rms = audio_metrics.get('rms', 0.0)
                     silence_ratio = audio_metrics.get('silence_ratio', 0.0)
@@ -1438,21 +1485,17 @@ def transcribe_audio(
 
                     if rms < 0.02:
                         vad_options.update({"vad_onset": 0.35, "vad_offset": 0.25})
-                        asr_options.update({
-                            "no_speech_threshold": 0.45,
-                            "temperatures": [0.0, 0.2, 0.4],
-                            "beam_size": 6,
-                            "best_of": 6,
-                        })
+                        asr_options["no_speech_threshold"] = 0.45
+                        temp_set.update({0.0, 0.2, 0.4})
+                        asr_options["beam_size"] = max(asr_options["beam_size"], 6)
+                        asr_options["best_of"] = max(asr_options["best_of"], 6)
                         pause_threshold = 1.5
                         min_segment_duration = 0.45
                         min_speaker_gap = 0.25
                     elif rms > 0.12:
                         vad_options.update({"vad_onset": 0.6, "vad_offset": 0.5})
-                        asr_options.update({
-                            "no_speech_threshold": 0.7,
-                            "temperatures": [0.0, 0.2, 0.4, 0.6, 0.8],
-                        })
+                        asr_options["no_speech_threshold"] = 0.7
+                        temp_set.update({0.0, 0.2, 0.4, 0.6, 0.8})
                         pause_threshold = 2.4
                         min_segment_duration = 0.6
                         min_speaker_gap = 0.4
@@ -1476,9 +1519,10 @@ def transcribe_audio(
                     if noise_floor > -25:
                         asr_options["log_prob_threshold"] = -1.5
                         asr_options["compression_ratio_threshold"] = 2.1
-                        asr_options["temperatures"] = [0.0, 0.2, 0.4]
+                        temp_set.update({0.0, 0.2, 0.4})
 
                 asr_options.setdefault("no_speech_threshold", 0.6)
+                asr_options["temperatures"] = sorted({round(t, 2) for t in temp_set})
 
                 logger.info("Adaptive ASR options: %s", asr_options)
                 if vad_options:
@@ -1516,6 +1560,7 @@ def transcribe_audio(
                         processed_wav,
                         detected_language,
                         batch_size,
+                        user_temperature,
                     )
 
                 segment_dicts = _segments_to_dicts(whisper_result.segments)
@@ -1657,7 +1702,10 @@ def transcribe_audio(
                             min_segment_duration=min_segment_duration,
                             min_speaker_gap=min_speaker_gap
                         )
-                        segment_dicts = diarized_segments
+                        segment_dicts = _merge_minor_speakers(
+                            diarized_segments,
+                            max_speakers=min(max_speakers or 4, 6)
+                        )
                         num_detected_speakers = len({s.get('speaker') for s in diarized_segments})
                         logger.info(f"Diarization completed in {diarization_time:.1f}s: {num_detected_speakers} speakers detected")
                         logger.info(f"Diarization performance: {duration/diarization_time:.2f}x realtime")
@@ -1684,7 +1732,10 @@ def transcribe_audio(
                             min_segment_duration=min_segment_duration,
                             min_speaker_gap=min_speaker_gap
                         )
-                        segment_dicts = diarized_segments
+                        segment_dicts = _merge_minor_speakers(
+                            diarized_segments,
+                            max_speakers=min(max_speakers or 4, 6)
+                        )
                 else:
                     # Pyannote not available, use simple heuristic diarization
                     logger.info("Using simple heuristic diarization (no HF token or diarization disabled)")
@@ -1698,7 +1749,10 @@ def transcribe_audio(
                         min_segment_duration=min_segment_duration,
                         min_speaker_gap=min_speaker_gap
                     )
-                    segment_dicts = diarized_segments
+                    segment_dicts = _merge_minor_speakers(
+                        diarized_segments,
+                        max_speakers=min(max_speakers or 4, 6)
+                    )
             else:
                 logger.info("Speaker diarization disabled")
                 segment_dicts = segment_dicts

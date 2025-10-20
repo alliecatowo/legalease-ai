@@ -88,7 +88,7 @@ const transcriptionOptions = ref({
   enable_diarization: true,
   min_speakers: 2,
   max_speakers: 10,
-  temperature: 0.0,
+  temperature: 0.2,
   initial_prompt: null as string | null,
   adaptive_enhancement: true,
   quality_boost: true

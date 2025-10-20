@@ -66,8 +66,19 @@ async def test_pipeline_applies_self_identification_name():
     assert result["SPEAKER_01"]["confidence"] >= 0.9
 
     # Ensure vocative evidence does not cause misattribution
-    assert "SPEAKER_02" in result
-    assert result["SPEAKER_02"]["confidence"] < 0.5
+    assert "SPEAKER_02" not in result
+
+
+@pytest.mark.asyncio
+async def test_pipeline_skips_mention_only_name():
+    segments = [
+        {"speaker": "SPEAKER_01", "text": "I was talking to Bruce in the hallway.", "start": 0.0},
+    ]
+
+    pipeline = SpeakerIdentificationPipeline(use_spacy=True)
+    result = await pipeline.identify_speakers(segments, ["SPEAKER_01"])
+
+    assert "SPEAKER_01" not in result
 
 
 @pytest.mark.asyncio
