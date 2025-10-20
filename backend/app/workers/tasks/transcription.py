@@ -257,6 +257,34 @@ class AudioProcessor:
                 os.unlink(enhanced_path)
             return False, f"Audio enhancement error: {exc}"
 
+    @staticmethod
+    def get_audio_duration(file_path: str) -> Optional[float]:
+        """Get audio duration in seconds using FFprobe."""
+        try:
+            cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                file_path
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30
+            )
+
+            if result.returncode == 0:
+                duration_str = result.stdout.decode('utf-8').strip()
+                return float(duration_str)
+            return None
+
+        except Exception as exc:
+            logger.warning(f"Failed to get audio duration: {exc}")
+            return None
+
 
 def _annotation_to_dataframe(annotation) -> Optional["pd.DataFrame"]:
     """Convert a pyannote Annotation object to a pandas DataFrame compatible with whisperx."""
