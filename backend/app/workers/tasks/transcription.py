@@ -14,6 +14,7 @@ import re
 import httpx
 import warnings
 import time
+import math
 from collections import OrderedDict
 from typing import Dict, Any, Optional, List, Tuple, Set
 from datetime import datetime, timedelta
@@ -114,15 +115,102 @@ class AudioProcessor:
 
                 logger.info(f"Extracted {len(peaks)} waveform peaks from {duration:.1f}s audio")
 
+                metrics = AudioProcessor._compute_audio_metrics(samples)
+
                 return {
                     'peaks': peaks,
                     'duration': round(duration, 2),
-                    'sample_rate': framerate
+                    'sample_rate': framerate,
+                    'metrics': metrics
                 }
 
         except Exception as e:
             logger.error(f"Failed to extract waveform data: {e}")
             return None
+
+    @staticmethod
+    def _compute_audio_metrics(samples: List[float]) -> Dict[str, float]:
+        """Compute signal metrics used for adaptive transcription."""
+        if not samples:
+            return {
+                'rms': 0.0,
+                'peak': 0.0,
+                'crest_factor': 0.0,
+                'silence_ratio': 1.0,
+                'noise_floor': -120.0
+            }
+
+        abs_samples = [abs(s) for s in samples]
+        peak = max(abs_samples)
+        rms = math.sqrt(sum(s * s for s in samples) / len(samples))
+        crest_factor = peak / rms if rms > 0 else 0.0
+
+        # Estimate silence ratio using adaptive threshold (1% of peak or 0.01 min)
+        silence_threshold = max(0.01, peak * 0.05)
+        silence_frames = sum(1 for s in abs_samples if s < silence_threshold)
+        silence_ratio = silence_frames / len(abs_samples)
+
+        # Estimate noise floor as 10th percentile amplitude
+        percentile_index = max(1, int(0.1 * len(abs_samples)))
+        sorted_samples = sorted(abs_samples)
+        noise_floor_linear = sorted_samples[percentile_index - 1]
+        noise_floor_db = 20 * math.log10(noise_floor_linear + 1e-9)
+
+        return {
+            'rms': rms,
+            'peak': peak,
+            'crest_factor': crest_factor,
+            'silence_ratio': silence_ratio,
+            'noise_floor': noise_floor_db
+        }
+
+    @staticmethod
+    def enhance_audio(input_path: str) -> Tuple[bool, str]:
+        """
+        Apply adaptive audio enhancement (normalization + gentle denoise).
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        temp_fd, enhanced_path = tempfile.mkstemp(suffix=".wav")
+        os.close(temp_fd)
+
+        # Loudness normalization and broadband denoise
+        # afftdn keeps speech clarity while reducing stationary noise
+        filter_chain = (
+            "loudnorm=I=-18:TP=-1.5:LRA=11,"
+            "highpass=f=60,"
+            "lowpass=f=9000,"
+            "afftdn=nf=-28"
+        )
+
+        cmd = [
+            'ffmpeg',
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-i', input_path,
+            '-af', filter_chain,
+            '-ar', '16000',
+            '-ac', '1',
+            '-c:a', 'pcm_s16le',
+            '-y',
+            enhanced_path
+        ]
+
+        try:
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
+            if result.returncode != 0:
+                os.unlink(enhanced_path)
+                error_msg = result.stderr.decode('utf-8', errors='ignore')
+                return False, f"Audio enhancement failed: {error_msg}"
+
+            # Replace original file atomically
+            os.replace(enhanced_path, input_path)
+            return True, "Audio enhancement applied"
+        except Exception as exc:
+            if os.path.exists(enhanced_path):
+                os.unlink(enhanced_path)
+            return False, f"Audio enhancement error: {exc}"
 
     @staticmethod
     def preprocess_audio(input_path: str, output_path: str) -> Tuple[bool, str]:
@@ -438,7 +526,10 @@ class SpeakerDiarizer:
     """Handles speaker diarization using simple heuristics."""
 
     @staticmethod
-    def diarize_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def diarize_segments(
+        segments: List[Dict[str, Any]],
+        pause_threshold: float = 2.0
+    ) -> List[Dict[str, Any]]:
         """
         Add speaker labels to segments using simple pause-based heuristics.
 
@@ -456,8 +547,6 @@ class SpeakerDiarizer:
             return segments
 
         # Simple heuristic: detect speaker changes based on pauses
-        PAUSE_THRESHOLD = 2.0  # seconds
-
         current_speaker = 1
         diarized_segments = []
 
@@ -469,7 +558,7 @@ class SpeakerDiarizer:
                 pause_duration = current_start - prev_end
 
                 # If pause is significant, assume speaker change
-                if pause_duration > PAUSE_THRESHOLD:
+                if pause_duration > pause_threshold:
                     current_speaker += 1
 
             # Add speaker label
@@ -1022,10 +1111,43 @@ def transcribe_audio(
         # Step 3.5: Extract waveform data for visualization
         logger.info("Extracting waveform data for instant visualization")
         waveform_data = processor.extract_waveform_data(processed_wav)
+        audio_metrics = None
+
         if waveform_data:
             logger.info(f"Successfully extracted waveform with {len(waveform_data['peaks'])} peaks")
+            audio_metrics = waveform_data.get('metrics')
+            if audio_metrics:
+                logger.info(
+                    "Audio metrics: rms=%.4f peak=%.4f crest=%.2f silence=%.1f%% noise_floor=%.1f dBFS",
+                    audio_metrics['rms'],
+                    audio_metrics['peak'],
+                    audio_metrics['crest_factor'],
+                    audio_metrics['silence_ratio'] * 100,
+                    audio_metrics['noise_floor'],
+                )
         else:
             logger.warning("Failed to extract waveform data, will fallback to client-side generation")
+
+        # Step 3.6: Enhance audio (normalization + denoise) before transcription
+        logger.info("Enhancing audio prior to transcription")
+        enhancement_success, enhancement_message = processor.enhance_audio(processed_wav)
+        if enhancement_success:
+            logger.info(enhancement_message)
+            # Recompute waveform + metrics after enhancement for accurate adaptation
+            waveform_data = processor.extract_waveform_data(processed_wav) or waveform_data
+            if waveform_data:
+                audio_metrics = waveform_data.get('metrics')
+                if audio_metrics:
+                    logger.info(
+                        "Post-enhancement metrics: rms=%.4f peak=%.4f crest=%.2f silence=%.1f%% noise_floor=%.1f dBFS",
+                        audio_metrics['rms'],
+                        audio_metrics['peak'],
+                        audio_metrics['crest_factor'],
+                        audio_metrics['silence_ratio'] * 100,
+                        audio_metrics['noise_floor'],
+                    )
+        else:
+            logger.warning(enhancement_message)
 
         # Step 4: Transcribe with Whisper
         self.update_state(
@@ -1094,12 +1216,85 @@ def transcribe_audio(
                 max_speakers = options.get("max_speakers", settings.DIARIZATION_MAX_SPEAKERS)
 
                 # Initialize WhisperX with adaptively selected model
+                # Adaptive ASR/VAD configuration based on measured audio metrics
+                asr_options = {
+                    "condition_on_previous_text": True,
+                    "temperatures": [0.0, 0.2, 0.4, 0.6],
+                    "beam_size": 5,
+                    "best_of": 5,
+                    "compression_ratio_threshold": 2.3,
+                    "log_prob_threshold": -1.2,
+                    "hallucination_silence_threshold": 0.5,
+                }
+                vad_options: Dict[str, Any] = {}
+                pause_threshold = 2.0
+                min_segment_duration = 0.5
+                min_speaker_gap = 0.3
+
+                if audio_metrics:
+                    rms = audio_metrics.get('rms', 0.0)
+                    silence_ratio = audio_metrics.get('silence_ratio', 0.0)
+                    crest_factor = audio_metrics.get('crest_factor', 0.0)
+                    noise_floor = audio_metrics.get('noise_floor', -120.0)
+
+                    if rms < 0.02:
+                        vad_options.update({"vad_onset": 0.35, "vad_offset": 0.25})
+                        asr_options.update({
+                            "no_speech_threshold": 0.45,
+                            "temperatures": [0.0, 0.2, 0.4],
+                            "beam_size": 6,
+                            "best_of": 6,
+                        })
+                        pause_threshold = 1.5
+                        min_segment_duration = 0.45
+                        min_speaker_gap = 0.25
+                    elif rms > 0.12:
+                        vad_options.update({"vad_onset": 0.6, "vad_offset": 0.5})
+                        asr_options.update({
+                            "no_speech_threshold": 0.7,
+                            "temperatures": [0.0, 0.2, 0.4, 0.6, 0.8],
+                        })
+                        pause_threshold = 2.4
+                        min_segment_duration = 0.6
+                        min_speaker_gap = 0.4
+                    else:
+                        vad_options.update({"vad_onset": 0.5, "vad_offset": 0.36})
+                        asr_options["no_speech_threshold"] = 0.6
+
+                    if silence_ratio > 0.65:
+                        vad_options["vad_offset"] = min(vad_options.get("vad_offset", 0.36), 0.3)
+                        pause_threshold = max(pause_threshold, 2.5)
+                        min_segment_duration = max(0.45, min_segment_duration)
+                    elif silence_ratio < 0.2:
+                        vad_options["vad_onset"] = max(vad_options.get("vad_onset", 0.5), 0.55)
+                        pause_threshold = min(pause_threshold, 1.4)
+                        min_speaker_gap = max(0.2, min_speaker_gap * 0.8)
+
+                    if crest_factor > 12:
+                        asr_options["beam_size"] = max(asr_options["beam_size"], 6)
+                        asr_options["best_of"] = max(asr_options["best_of"], 6)
+
+                    if noise_floor > -25:
+                        asr_options["log_prob_threshold"] = -1.5
+                        asr_options["compression_ratio_threshold"] = 2.1
+                        asr_options["temperatures"] = [0.0, 0.2, 0.4]
+
+                asr_options.setdefault("no_speech_threshold", 0.6)
+
+                logger.info("Adaptive ASR options: %s", asr_options)
+                if vad_options:
+                    logger.info("Adaptive VAD options: %s", vad_options)
+                else:
+                    logger.info("Using default VAD options")
+
                 pipeline = WhisperXPipeline(
                     model_name=whisper_model,  # Adaptive model selection
                     device=device,
                     compute_type=compute_type,
                     language=language if language and language != "auto" else None,
-                    hf_token=None  # No HF token needed for transcription
+                    hf_token=None,  # No HF token needed for transcription
+                    asr_options=asr_options,
+                    vad_options=vad_options or None
                 )
 
                 # Transcribe with alignment only (no diarization yet)
@@ -1229,32 +1424,37 @@ def transcribe_audio(
 
                         diarization_time = time.time() - diarization_start
 
-                        # Assign speakers to segments
+                        from pyannote.core import Segment
+
+                        # Assign speakers to segments with overlap-aware scoring
                         diarized_segments = []
                         for segment in segments:
                             # Find overlapping speaker from diarization
                             segment_start = segment['start']
                             segment_end = segment['end']
+                            speech_span = Segment(segment_start, segment_end)
 
-                            # Find most common speaker in this segment
-                            speaker_times = {}
-                            for turn, _, speaker in diarization.itertracks(yield_label=True):
-                                # Calculate overlap with this segment
-                                overlap_start = max(segment_start, turn.start)
-                                overlap_end = min(segment_end, turn.end)
-                                overlap_duration = max(0, overlap_end - overlap_start)
+                            cropped = diarization.crop(speech_span)
+                            assigned_speaker = None
+                            coverage_ratio = 0.0
 
-                                if overlap_duration > 0:
-                                    speaker_times[speaker] = speaker_times.get(speaker, 0) + overlap_duration
+                            if cropped and cropped.labels():
+                                label_durations = {
+                                    label: cropped.label_duration(label)
+                                    for label in cropped.labels()
+                                }
+                                assigned_speaker = max(label_durations, key=label_durations.get)
+                                coverage_ratio = label_durations[assigned_speaker] / max(1e-6, speech_span.duration)
+                                if not assigned_speaker.startswith("SPEAKER_"):
+                                    assigned_speaker = f"SPEAKER_{assigned_speaker}"
 
-                            # Assign speaker with most overlap
-                            if speaker_times:
-                                assigned_speaker = max(speaker_times, key=speaker_times.get)
-                                # Pyannote returns speaker labels like "SPEAKER_00", use directly
-                                segment['speaker'] = assigned_speaker if assigned_speaker.startswith("SPEAKER_") else f"SPEAKER_{assigned_speaker}"
-                            else:
-                                segment['speaker'] = "SPEAKER_00"
+                            if not assigned_speaker:
+                                assigned_speaker = diarized_segments[-1].get('speaker', "SPEAKER_00") if diarized_segments else "SPEAKER_00"
+                            elif coverage_ratio < 0.25 and diarized_segments:
+                                # Guard against weak matches by deferring to previous speaker
+                                assigned_speaker = diarized_segments[-1].get('speaker', assigned_speaker)
 
+                            segment['speaker'] = assigned_speaker
                             diarized_segments.append(segment)
 
                         num_detected_speakers = len(set(s['speaker'] for s in diarized_segments))
@@ -1263,7 +1463,11 @@ def transcribe_audio(
 
                         # Apply post-processing smoothing to reduce rapid speaker changes
                         diarizer = SpeakerDiarizer()
-                        diarized_segments = diarizer.smooth_speaker_changes(diarized_segments)
+                        diarized_segments = diarizer.smooth_speaker_changes(
+                            diarized_segments,
+                            min_segment_duration=min_segment_duration,
+                            min_speaker_gap=min_speaker_gap
+                        )
 
                         # Cleanup Pyannote pipeline to free GPU memory for speaker name inference
                         del diarization_pipeline
@@ -1278,12 +1482,28 @@ def transcribe_audio(
                         logger.warning("Falling back to simple heuristic diarization")
 
                         diarizer = SpeakerDiarizer()
-                        diarized_segments = diarizer.diarize_segments(segments)
+                        diarized_segments = diarizer.diarize_segments(
+                            segments,
+                            pause_threshold=pause_threshold
+                        )
+                        diarized_segments = diarizer.smooth_speaker_changes(
+                            diarized_segments,
+                            min_segment_duration=min_segment_duration,
+                            min_speaker_gap=min_speaker_gap
+                        )
                 else:
                     # Pyannote not available, use simple heuristic diarization
                     logger.info("Using simple heuristic diarization (no HF token or diarization disabled)")
                     diarizer = SpeakerDiarizer()
-                    diarized_segments = diarizer.diarize_segments(segments)
+                    diarized_segments = diarizer.diarize_segments(
+                        segments,
+                        pause_threshold=pause_threshold
+                    )
+                    diarized_segments = diarizer.smooth_speaker_changes(
+                        diarized_segments,
+                        min_segment_duration=min_segment_duration,
+                        min_speaker_gap=min_speaker_gap
+                    )
             else:
                 logger.info("Speaker diarization disabled")
                 diarized_segments = segments

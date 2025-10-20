@@ -110,6 +110,8 @@ class WhisperXPipeline:
         compute_type: str = "float16",
         language: Optional[str] = None,
         hf_token: Optional[str] = None,
+        asr_options: Optional[Dict[str, Any]] = None,
+        vad_options: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize WhisperX pipeline.
@@ -126,6 +128,8 @@ class WhisperXPipeline:
         self.compute_type = compute_type
         self.language = language
         self.hf_token = hf_token or os.getenv("HF_TOKEN")
+        self.asr_options = asr_options
+        self.vad_options = vad_options
 
         # Lazy-loaded models
         self._whisper_model = None
@@ -169,6 +173,8 @@ class WhisperXPipeline:
                 device=self.device,
                 compute_type=self.compute_type,
                 language=self.language,
+                asr_options=self.asr_options,
+                vad_options=self.vad_options
             )
             logger.info(f"Successfully loaded Whisper model: {self.model_name}")
         except Exception as e:
