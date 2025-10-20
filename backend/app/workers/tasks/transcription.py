@@ -340,6 +340,75 @@ def _merge_minor_speakers(
     return segments
 
 
+def _segment_from_words(
+    original_segment: "TranscriptionSegment",
+    words: List[Dict[str, Any]],
+    speaker: Optional[str]
+) -> "TranscriptionSegment":
+    text = ''.join(word.get('word', '') for word in words).strip()
+    start = words[0].get('start', original_segment.start)
+    end = words[-1].get('end', original_segment.end)
+    confidence_values = [word.get('confidence') for word in words if word.get('confidence') is not None]
+    confidence = (
+        sum(confidence_values) / len(confidence_values)
+        if confidence_values
+        else original_segment.confidence
+    )
+
+    new_words = []
+    for word in words:
+        new_word = dict(word)
+        new_word.setdefault('speaker', speaker)
+        new_words.append(new_word)
+
+    return TranscriptionSegment(
+        start=start,
+        end=end,
+        text=text or original_segment.text,
+        speaker=speaker or original_segment.speaker,
+        words=new_words,
+        avg_logprob=original_segment.avg_logprob,
+        no_speech_prob=original_segment.no_speech_prob,
+        compression_ratio=original_segment.compression_ratio,
+        temperature=original_segment.temperature,
+        confidence=confidence,
+        refined=original_segment.refined,
+    )
+
+
+def _split_segments_by_speaker(
+    segments: List["TranscriptionSegment"]
+) -> List["TranscriptionSegment"]:
+    """Split segments when word-level speaker labels indicate turn changes."""
+    split_segments: List[TranscriptionSegment] = []
+    for segment in segments:
+        words = segment.words or []
+        speakers_in_words = [word.get('speaker') for word in words if word.get('speaker')]
+        if not words or len(set(speakers_in_words)) <= 1:
+            split_segments.append(segment)
+            continue
+
+        current_speaker = None
+        buffer: List[Dict[str, Any]] = []
+
+        for word in words:
+            speaker = word.get('speaker', current_speaker)
+            if current_speaker is None:
+                current_speaker = speaker
+
+            if speaker != current_speaker and buffer:
+                split_segments.append(_segment_from_words(segment, buffer, current_speaker))
+                buffer = []
+                current_speaker = speaker
+
+            buffer.append(word)
+
+        if buffer:
+            split_segments.append(_segment_from_words(segment, buffer, current_speaker))
+
+    return split_segments
+
+
 def _segments_to_dicts(segments: List["TranscriptionSegment"]) -> List[Dict[str, Any]]:
     """Convert WhisperX transcription segments into serializable dictionaries with IDs."""
     segment_dicts: List[Dict[str, Any]] = []
@@ -1583,6 +1652,7 @@ def transcribe_audio(
                         user_temperature,
                     )
 
+                whisper_result.segments = _split_segments_by_speaker(whisper_result.segments)
                 segment_dicts = _segments_to_dicts(whisper_result.segments)
 
                 logger.info(f"WhisperX transcription completed in {whisperx_time:.1f}s: {len(segment_dicts)} segments, language={detected_language}")
