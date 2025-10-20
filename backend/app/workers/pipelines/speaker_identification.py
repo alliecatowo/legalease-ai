@@ -128,6 +128,11 @@ class SpacyNERExtractor(NameExtractionStrategy):
         self.nlp = None
         self._initialized = False
 
+        # Dependency labels used for grammatical role detection
+        self._subject_deps = {"nsubj", "nsubjpass"}
+        self._object_deps = {"dobj", "obj", "iobj", "dative", "pobj", "obl"}
+        self._complement_deps = {"attr", "oprd", "acomp", "appos"}
+
     async def _initialize(self):
         """Lazy-load spaCy model"""
         if self._initialized:
@@ -205,33 +210,22 @@ class SpacyNERExtractor(NameExtractionStrategy):
         - Surrounding tokens (pronouns, verbs)
         - Punctuation patterns
         """
-        # Get entity tokens
-        ent_tokens = [token for token in doc if token.ent_iob_ != 'O' and token.text in entity.text]
-
+        ent_tokens = list(entity)
         if not ent_tokens:
             return NameContextType.UNKNOWN
 
-        first_token = ent_tokens[0]
+        # Use entity root for dependency checks (e.g., last token in "Detective Molly")
+        root_token = entity.root
 
         # Check for self-identification patterns
-        # "I'm John", "My name is John", "This is John speaking"
-        for token in doc:
-            if token.lemma_ in ['be', 'call'] and token.head == first_token:
-                # Check for first-person subject
-                subj = [child for child in token.children if child.dep_ in ['nsubj', 'nsubjpass']]
-                if subj and subj[0].lemma_ in ['i', 'me', 'my', 'mine']:
-                    return NameContextType.SELF_IDENTIFICATION
+        # "I'm John", "My name is John", "Call me John"
+        if self._is_self_identification(root_token, doc):
+            return NameContextType.SELF_IDENTIFICATION
 
         # Check for vocative (direct address)
-        # Linguistic markers: exclamation/question, comma separation, vocative dep tag
-        if first_token.dep_ == 'vocative':
+        # Linguistic markers: greeting word, punctuation, vocative dep tag
+        if self._is_vocative_usage(root_token, doc, text):
             return NameContextType.VOCATIVE
-
-        # Punctuation-based vocative detection
-        if any(p in text[max(0, entity.end_char-2):entity.end_char+2] for p in ['?', '!', ',']):
-            # Additional check: is it at clause boundary?
-            if first_token.is_sent_start or any(t.text == ',' for t in doc[:first_token.i]):
-                return NameContextType.VOCATIVE
 
         # Check for possessive
         if any(token.dep_ == 'poss' for token in ent_tokens):
@@ -239,6 +233,96 @@ class SpacyNERExtractor(NameExtractionStrategy):
 
         # Default to mention
         return NameContextType.MENTION
+
+    def _is_self_identification(self, entity_root, doc) -> bool:
+        """Heuristics to detect when a speaker is identifying themselves."""
+        if entity_root.dep_ not in self._complement_deps and entity_root.head.dep_ != "ROOT":
+            # Require the entity to function as a predicate/complement in the clause
+            return False
+
+        verb_candidates = []
+        head = entity_root.head
+
+        if head is not None:
+            verb_candidates.append(head)
+            # Sometimes the root's head is another verb (e.g., compound predicates)
+            if head.head is not head and head.head is not None:
+                verb_candidates.append(head.head)
+
+        for verb in verb_candidates:
+            if verb is None:
+                continue
+
+            if self._has_first_person_subject(verb):
+                return True
+
+            if self._has_first_person_object(verb):
+                return True
+
+        # Fallback: look for pattern like "I am <entity>"
+        # Fallback: check for auxiliary copula linking entity and first-person pronoun
+        for token in doc[entity_root.i : entity_root.i + 3]:
+            if token.dep_ == "cop" and self._has_first_person_subject(token.head):
+                return True
+
+        return False
+
+    def _has_first_person_subject(self, verb_token) -> bool:
+        """Check if a verb has a first-person subject or possessed subject."""
+        for child in verb_token.children:
+            if child.dep_ not in self._subject_deps:
+                continue
+
+            if self._is_first_person(child):
+                return True
+
+            # Handle "My name is John" -> subject "name" with poss "my"
+            if any(grandchild.dep_ == "poss" and self._is_first_person(grandchild) for grandchild in child.children):
+                return True
+
+        return False
+
+    def _has_first_person_object(self, verb_token) -> bool:
+        """Check if a verb like 'call' has a first-person object (e.g., 'Call me John')."""
+        for child in verb_token.children:
+            if child.dep_ not in self._object_deps:
+                continue
+
+            if self._is_first_person(child):
+                return True
+
+            # Handle pronouns inside prepositional objects
+            if any(self._is_first_person(grandchild) for grandchild in child.children):
+                return True
+
+        return False
+
+    def _is_first_person(self, token) -> bool:
+        """Determine whether a token refers to the first person using morphological features."""
+        persons = token.morph.get("Person")
+        return bool(persons and "1" in persons)
+
+    def _is_vocative_usage(self, entity_root, doc, text: str) -> bool:
+        """Detect if the name is being used to address someone (vocative)."""
+        if entity_root.dep_ == "vocative":
+            return True
+
+        # Check for interjection or discourse markers immediately before the entity
+        if entity_root.i > 0:
+            prev_token = doc[entity_root.i - 1]
+            if prev_token.pos_ == "INTJ" or prev_token.dep_ == "discourse":
+                return True
+
+        # Entity governed by an interjection/root can signal direct address
+        if entity_root.head.pos_ == "INTJ" or entity_root.head.dep_ == "discourse":
+            return True
+
+        # Check for punctuation like commas or exclamations immediately after the entity
+        next_tokens = doc[entity_root.i + 1:entity_root.i + 3]
+        if any(token.text in {",", "!", "?"} for token in next_tokens):
+            return True
+
+        return False
 
     def _compute_confidence(self, entity, context_type: NameContextType) -> float:
         """Compute confidence score based on entity and context"""
@@ -429,7 +513,9 @@ class EvidenceAggregator:
 
         for evidence in evidence_list:
             weight = self._compute_evidence_weight(evidence)
-            name_scores[evidence.name] += weight
+            weight = min(1.0, max(0.0, weight))
+            current = name_scores[evidence.name]
+            name_scores[evidence.name] = current + weight * (1.0 - current)
             name_evidence_counts[evidence.name] += 1
 
         if not name_scores:
@@ -440,8 +526,7 @@ class EvidenceAggregator:
         total_score = name_scores[best_name]
         evidence_count = name_evidence_counts[best_name]
 
-        # Normalize confidence
-        confidence = min(1.0, total_score / 2.0)  # Normalize scores to 0-1 range
+        confidence = total_score
 
         return {
             'name': best_name,

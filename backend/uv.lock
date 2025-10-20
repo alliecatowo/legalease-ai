@@ -954,6 +954,14 @@ wheels = [
 ]
 
 [[package]]
+name = "en-core-web-sm"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+wheels = [
+    { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl", hash = "sha256:1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" },
+]
+
+[[package]]
 name = "et-xmlfile"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1861,6 +1869,7 @@ dependencies = [
     { name = "docling-haystack" },
     { name = "docxtpl" },
     { name = "easyocr" },
+    { name = "en-core-web-sm" },
     { name = "fastapi" },
     { name = "fastembed" },
     { name = "gliner" },
@@ -1923,6 +1932,7 @@ requires-dist = [
     { name = "docling-haystack", specifier = ">=0.1.0" },
     { name = "docxtpl" },
     { name = "easyocr" },
+    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "fastapi" },
     { name = "fastembed", specifier = ">=0.6.1" },
     { name = "gliner" },
