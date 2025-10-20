@@ -349,70 +349,6 @@ def _assign_speakers_from_annotation(
     return assigned
 
 
-def _merge_minor_speakers(
-    segments: List[Dict[str, Any]],
-    max_speakers: int = 4,
-    min_share: float = 0.02,
-    coverage: float = 0.92,
-    min_keep: int = 2
-) -> List[Dict[str, Any]]:
-    """Merge short-lived speakers into dominant speakers to reduce fragmentation."""
-    if not segments:
-        return segments
-
-    durations: Dict[str, float] = defaultdict(float)
-    for seg in segments:
-        speaker = seg.get('speaker') or "SPEAKER_00"
-        seg['speaker'] = speaker
-        durations[speaker] += max(0.0, seg.get('end', 0.0) - seg.get('start', 0.0))
-
-    total_duration = sum(durations.values())
-    if total_duration <= 0:
-        return segments
-
-    sorted_speakers = sorted(durations.items(), key=lambda item: item[1], reverse=True)
-
-    keep: List[str] = []
-    cumulative = 0.0
-    target_coverage = max(min(coverage, 0.99), 0.5)
-    max_speakers = max(min_keep, max_speakers)
-
-    for speaker, dur in sorted_speakers:
-        keep.append(speaker)
-        cumulative += dur
-        if len(keep) >= max_speakers:
-            break
-        if cumulative / total_duration >= target_coverage and len(keep) >= min_keep:
-            break
-
-    if len(keep) < min_keep and sorted_speakers:
-        keep = [speaker for speaker, _ in sorted_speakers[:min_keep]]
-
-    keep_set = set(keep)
-    if len(keep_set) == len(durations):
-        return segments
-
-    def reassign_segment(idx: int, old: str) -> None:
-        prev_speaker = segments[idx - 1].get('speaker') if idx > 0 else None
-        next_speaker = segments[idx + 1].get('speaker') if idx + 1 < len(segments) else None
-        candidate = None
-        if prev_speaker in keep_set and next_speaker in keep_set:
-            candidate = prev_speaker if durations[prev_speaker] >= durations[next_speaker] else next_speaker
-        elif prev_speaker in keep_set:
-            candidate = prev_speaker
-        elif next_speaker in keep_set:
-            candidate = next_speaker
-        else:
-            candidate = keep[0]
-        segments[idx]['speaker'] = candidate
-
-    for idx, segment in enumerate(segments):
-        if segment.get('speaker') not in keep_set:
-            reassign_segment(idx, segment.get('speaker'))
-
-    return segments
-
-
 def _segment_from_words(
     original_segment: "TranscriptionSegment",
     words: List[Dict[str, Any]],
@@ -447,39 +383,6 @@ def _segment_from_words(
         confidence=confidence,
         refined=original_segment.refined,
     )
-
-
-def _split_segments_by_speaker(
-    segments: List["TranscriptionSegment"]
-) -> List["TranscriptionSegment"]:
-    """Split segments when word-level speaker labels indicate turn changes."""
-    split_segments: List[TranscriptionSegment] = []
-    for segment in segments:
-        words = segment.words or []
-        speakers_in_words = [word.get('speaker') for word in words if word.get('speaker')]
-        if not words or len(set(speakers_in_words)) <= 1:
-            split_segments.append(segment)
-            continue
-
-        current_speaker = None
-        buffer: List[Dict[str, Any]] = []
-
-        for word in words:
-            speaker = word.get('speaker', current_speaker)
-            if current_speaker is None:
-                current_speaker = speaker
-
-            if speaker != current_speaker and buffer:
-                split_segments.append(_segment_from_words(segment, buffer, current_speaker))
-                buffer = []
-                current_speaker = speaker
-
-            buffer.append(word)
-
-        if buffer:
-            split_segments.append(_segment_from_words(segment, buffer, current_speaker))
-
-    return split_segments
 
 
 def _debug_dump(name: str, payload: Any) -> None:
@@ -1739,7 +1642,6 @@ def transcribe_audio(
                         user_temperature,
                     )
 
-                whisper_result.segments = _split_segments_by_speaker(whisper_result.segments)
                 segment_dicts = _segments_to_dicts(whisper_result.segments)
                 _debug_dump(f"{transcription_gid}_whisper_segments", segment_dicts)
 
@@ -1859,15 +1761,25 @@ def transcribe_audio(
                             })
                         _debug_dump(f"{transcription_gid}_pyannote_tracks", diarization_dump)
 
+                        word_level_alignment = False
+
                         try:
                             import whisperx  # type: ignore
                             diarize_df = _annotation_to_dataframe(diarization)
                             if diarize_df is not None and whisper_result is not None:
                                 try:
-                                    aligned_result = whisperx.assign_word_speakers(diarize_df, whisper_result)
-                                    if aligned_result:
-                                        whisper_result = aligned_result
-                                        segment_dicts = _segments_to_dicts(whisper_result.segments)
+                                    aligned_result = whisperx.assign_word_speakers(
+                                        diarize_df,
+                                        whisper_result.to_dict()
+                                    )
+                                    if isinstance(aligned_result, dict) and "segments" in aligned_result:
+                                        segment_dicts = aligned_result["segments"]
+                                        word_level_alignment = True
+                                    else:
+                                        logger.warning(
+                                            "assign_word_speakers returned unexpected result type %s",
+                                            type(aligned_result)
+                                        )
                                 except Exception as assign_error:
                                     logger.warning(
                                         "Word-level speaker assignment failed (%s). Falling back to overlap heuristic.",
@@ -1883,17 +1795,18 @@ def transcribe_audio(
                             )
                             segment_dicts = _assign_speakers_from_annotation(segment_dicts, diarization)
 
-                        diarizer = SpeakerDiarizer()
-                        diarized_segments = diarizer.smooth_speaker_changes(
-                            segment_dicts,
-                            min_segment_duration=min_segment_duration,
-                            min_speaker_gap=min_speaker_gap
-                        )
-                        segment_dicts = _merge_minor_speakers(
-                            diarized_segments,
-                            max_speakers=min(max_speakers or 4, 6)
-                        )
-                        num_detected_speakers = len({s.get('speaker') for s in diarized_segments})
+                        if not word_level_alignment:
+                            diarizer = SpeakerDiarizer()
+                            diarized_segments = diarizer.smooth_speaker_changes(
+                                segment_dicts,
+                                min_segment_duration=min_segment_duration,
+                                min_speaker_gap=min_speaker_gap
+                            )
+                            segment_dicts = diarized_segments
+                        else:
+                            diarized_segments = segment_dicts
+
+                        num_detected_speakers = len({s.get('speaker') for s in segment_dicts})
                         logger.info(f"Diarization completed in {diarization_time:.1f}s: {num_detected_speakers} speakers detected")
                         logger.info(f"Diarization performance: {duration/diarization_time:.2f}x realtime")
 
@@ -1919,10 +1832,7 @@ def transcribe_audio(
                             min_segment_duration=min_segment_duration,
                             min_speaker_gap=min_speaker_gap
                         )
-                        segment_dicts = _merge_minor_speakers(
-                            diarized_segments,
-                            max_speakers=min(max_speakers or 4, 6)
-                        )
+                        segment_dicts = diarized_segments
                 else:
                     # Pyannote not available, use simple heuristic diarization
                     logger.info("Using simple heuristic diarization (no HF token or diarization disabled)")
@@ -1936,10 +1846,7 @@ def transcribe_audio(
                         min_segment_duration=min_segment_duration,
                         min_speaker_gap=min_speaker_gap
                     )
-                    segment_dicts = _merge_minor_speakers(
-                        diarized_segments,
-                        max_speakers=min(max_speakers or 4, 6)
-                    )
+                    segment_dicts = diarized_segments
             else:
                 logger.info("Speaker diarization disabled")
                 segment_dicts = segment_dicts
