@@ -556,6 +556,12 @@ class EvidenceAggregator:
         matching_evidence = [ev for ev in evidence_list if ev.name == best_name]
         context_counts = Counter(ev.context_type for ev in matching_evidence)
 
+        matching_evidence = [ev for ev in evidence_list if ev.name == best_name]
+        context_counts = Counter(ev.context_type for ev in matching_evidence)
+
+        if context_counts.get(NameContextType.SELF_IDENTIFICATION, 0) == 0:
+            return None
+
         confidence = total_score
         if context_counts.get(NameContextType.SELF_IDENTIFICATION, 0) == 0:
             # Without a self-ID we require multiple reinforcing signals

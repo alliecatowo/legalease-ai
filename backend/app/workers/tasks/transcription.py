@@ -323,19 +323,19 @@ def _merge_minor_speakers(
         prev_speaker = segments[idx - 1].get('speaker') if idx > 0 else None
         next_speaker = segments[idx + 1].get('speaker') if idx + 1 < len(segments) else None
         candidate = None
-        if prev_speaker in keep_set:
+        if prev_speaker in keep_set and next_speaker in keep_set:
+            candidate = prev_speaker if durations[prev_speaker] >= durations[next_speaker] else next_speaker
+        elif prev_speaker in keep_set:
             candidate = prev_speaker
         elif next_speaker in keep_set:
             candidate = next_speaker
         else:
             candidate = keep[0]
-        seg = segments[idx]
-        seg['speaker'] = candidate
+        segments[idx]['speaker'] = candidate
 
     for idx, segment in enumerate(segments):
-        speaker = segment.get('speaker')
-        if speaker not in keep_set:
-            reassign_segment(idx, speaker)
+        if segment.get('speaker') not in keep_set:
+            reassign_segment(idx, segment.get('speaker'))
 
     return segments
 
@@ -1786,6 +1786,20 @@ def transcribe_audio(
                     duration = max(segment.get('end', 0.0) for segment in diarized_segments)
                 else:
                     duration = 0.0
+
+            # Renumber speakers by descending total duration for consistency
+            speaker_duration: Dict[str, float] = defaultdict(float)
+            for seg in diarized_segments:
+                speaker = seg.get('speaker') or "SPEAKER_00"
+                span = max(0.0, seg.get('end', 0.0) - seg.get('start', 0.0))
+                speaker_duration[speaker] += span
+
+            ordered_speakers = [speaker for speaker, _ in sorted(speaker_duration.items(), key=lambda item: item[1], reverse=True)]
+            speaker_map = {speaker: f"SPEAKER_{idx:02d}" for idx, speaker in enumerate(ordered_speakers)}
+
+            for seg in diarized_segments:
+                original = seg.get('speaker') or "SPEAKER_00"
+                seg['speaker'] = speaker_map.get(original, original)
 
         except Exception as e:
             logger.error(f"Self-hosted transcription failed: {e}", exc_info=True)
