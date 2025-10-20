@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 import type { TranscriptSegment } from '~/composables/useTranscription'
 import { useThrottleFn } from '@vueuse/core'
+
+interface WaveformMetrics {
+  rms: number
+  peak: number
+  crest_factor: number
+  silence_ratio: number
+  noise_floor: number
+}
 
 const props = defineProps<{
   audioUrl: string
@@ -33,22 +41,36 @@ const volume = ref(1)
 const playbackRate = ref(1)
 const timelineCanvasRef = ref<HTMLCanvasElement | null>(null)
 const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
+const waveformDiagnostics = ref<WaveformMetrics | null>(null)
+const formattedDiagnostics = computed(() => {
+  if (!waveformDiagnostics.value) return null
+  return {
+    rms: waveformDiagnostics.value.rms.toFixed(3),
+    peak: waveformDiagnostics.value.peak.toFixed(3),
+    crest: waveformDiagnostics.value.crest_factor.toFixed(2),
+    silence: Math.round(waveformDiagnostics.value.silence_ratio * 100),
+    noiseFloor: waveformDiagnostics.value.noise_floor.toFixed(1)
+  }
+})
 
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 // Fetch pre-computed waveform data from API
-async function fetchWaveformData(): Promise<{ peaks: number[], duration: number } | null> {
+async function fetchWaveformData(): Promise<{ peaks: number[], duration: number, metrics?: WaveformMetrics } | null> {
   if (!props.transcriptionId) {
     return null
   }
+
+  waveformDiagnostics.value = null
 
   try {
     const response = await fetch(`/api/v1/transcriptions/${encodeURIComponent(props.transcriptionId)}/waveform`)
     if (response.ok) {
       const data = await response.json()
       console.log('Fetched pre-computed waveform data:', data.peaks.length, 'peaks')
-      return { peaks: data.peaks, duration: data.duration }
+      waveformDiagnostics.value = data.metrics || null
+      return { peaks: data.peaks, duration: data.duration, metrics: data.metrics }
     } else {
       console.warn('Pre-computed waveform not available, will load audio file')
       return null
@@ -419,6 +441,29 @@ onBeforeUnmount(() => {
         class="absolute top-0 left-0 w-full h-full pointer-events-none"
         :class="{ 'hidden': !isReady }"
       />
+    </div>
+
+    <div v-if="formattedDiagnostics" class="flex flex-wrap items-center gap-3 text-xs text-muted border border-default rounded-lg px-3 py-2 bg-muted/10">
+      <div class="flex items-center gap-1">
+        <UIcon name="i-lucide-activity" class="size-3" />
+        <span>RMS {{ formattedDiagnostics.rms }}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <UIcon name="i-lucide-volume" class="size-3" />
+        <span>Peak {{ formattedDiagnostics.peak }}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <UIcon name="i-lucide-trending-up" class="size-3" />
+        <span>Crest {{ formattedDiagnostics.crest }}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <UIcon name="i-lucide-moon" class="size-3" />
+        <span>Silence {{ formattedDiagnostics.silence }}%</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <UIcon name="i-lucide-wave-square" class="size-3" />
+        <span>Noise {{ formattedDiagnostics.noiseFloor }} dBFS</span>
+      </div>
     </div>
 
     <!-- Controls -->

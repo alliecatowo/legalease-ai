@@ -173,6 +173,10 @@ class SpacyNERExtractor(NameExtractionStrategy):
                 if ent.label_ == "PERSON":
                     logger.debug(f"spaCy found PERSON: '{ent.text}' in segment {idx}: {text[:50]}")
 
+                    normalized_name = self._normalize_entity_text(ent)
+                    if not normalized_name:
+                        continue
+
                     # Determine context type using linguistic analysis
                     context_type = self._classify_context(ent, doc, text)
 
@@ -182,7 +186,7 @@ class SpacyNERExtractor(NameExtractionStrategy):
                     logger.debug(f"  -> Context: {context_type.value}, Confidence: {confidence:.2f}")
 
                     evidence = NameEvidence(
-                        name=ent.text,
+                        name=normalized_name,
                         context_type=context_type,
                         speaker_id=speaker,
                         segment_index=idx,
@@ -193,7 +197,8 @@ class SpacyNERExtractor(NameExtractionStrategy):
                             'pos_tags': [token.pos_ for token in ent],
                             'dep_tags': [token.dep_ for token in ent],
                             'entity_label': ent.label_,
-                            'entity_kb_id': ent.kb_id_
+                            'entity_kb_id': ent.kb_id_,
+                            'raw_text': ent.text
                         }
                     )
                     evidence_list.append(evidence)
@@ -323,6 +328,26 @@ class SpacyNERExtractor(NameExtractionStrategy):
             return True
 
         return False
+
+    def _normalize_entity_text(self, entity) -> str:
+        """
+        Clean up entity text by removing trailing verbs/adverbs and retaining proper nouns.
+
+        Prevents cases like "Vincent happens" from being treated as the full name.
+        """
+        tokens = [token for token in entity if token.text.strip()]
+        if not tokens:
+            return entity.text.strip()
+
+        filtered_tokens = []
+        for token in tokens:
+            if token.pos_ in {"PROPN", "NOUN"} or token.text[:1].isupper():
+                filtered_tokens.append(token.text)
+
+        if not filtered_tokens:
+            filtered_tokens = [tokens[0].text]
+
+        return " ".join(filtered_tokens).strip()
 
     def _compute_confidence(self, entity, context_type: NameContextType) -> float:
         """Compute confidence score based on entity and context"""

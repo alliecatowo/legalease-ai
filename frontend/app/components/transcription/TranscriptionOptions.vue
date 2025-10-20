@@ -8,6 +8,8 @@ const props = defineProps<{
     max_speakers: number
     temperature: number
     initial_prompt: string | null
+    adaptive_enhancement: boolean
+    quality_boost: boolean
   }
 }>()
 
@@ -72,6 +74,14 @@ function updateMinSpeakers(value: number) {
 
 function updateMaxSpeakers(value: number) {
   localValue.value = { ...localValue.value, max_speakers: value }
+}
+
+function updateAdaptiveEnhancement(value: boolean) {
+  localValue.value = { ...localValue.value, adaptive_enhancement: value }
+}
+
+function updateQualityBoost(value: boolean) {
+  localValue.value = { ...localValue.value, quality_boost: value }
 }
 </script>
 
@@ -197,6 +207,38 @@ function updateMaxSpeakers(value: number) {
             title="Speaker Count Tips"
             description="For depositions: 2-5 speakers. For hearings/trials: 5-15 speakers. Setting accurate ranges improves diarization quality."
           />
+        </div>
+
+        <!-- Audio Optimization -->
+        <div class="space-y-4 p-4 rounded-lg border border-default bg-muted/5">
+          <div class="flex items-center gap-2">
+            <UIcon name="i-lucide-waveform" class="size-4 text-primary" />
+            <p class="font-semibold">Audio Optimization</p>
+          </div>
+
+          <div class="space-y-3 text-sm text-muted">
+            <div class="flex items-start gap-3">
+              <UCheckbox
+                :model-value="modelValue.adaptive_enhancement"
+                @update:model-value="updateAdaptiveEnhancement"
+              />
+              <div>
+                <p class="font-medium text-foreground">Adaptive audio cleanup</p>
+                <p class="text-xs">Apply loudness normalization and gentle denoising before transcription to improve recognition on variable recordings.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <UCheckbox
+                :model-value="modelValue.quality_boost"
+                @update:model-value="updateQualityBoost"
+              />
+              <div>
+                <p class="font-medium text-foreground">High-accuracy segment refinement</p>
+                <p class="text-xs">Automatically re-check low-confidence passages with stricter decoding for cleaner transcripts.</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Advanced Options Toggle -->

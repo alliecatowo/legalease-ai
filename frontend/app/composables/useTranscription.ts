@@ -7,6 +7,10 @@ export interface TranscriptSegment {
   text: string
   speaker?: string
   confidence?: number
+  avg_logprob?: number
+  no_speech_prob?: number
+  compression_ratio?: number
+  refined?: boolean
   isKeyMoment?: boolean
   tags?: string[]
 }

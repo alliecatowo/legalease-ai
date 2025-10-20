@@ -68,3 +68,25 @@ async def test_pipeline_applies_self_identification_name():
     # Ensure vocative evidence does not cause misattribution
     assert "SPEAKER_02" in result
     assert result["SPEAKER_02"]["confidence"] < 0.5
+
+
+@pytest.mark.asyncio
+async def test_spacy_normalizes_entity_text():
+    segments = [
+        {"speaker": "SPEAKER_01", "text": "Vincent happens to know the details.", "start": 0.0},
+    ]
+
+    context = ConversationContext(
+        segments=segments,
+        speakers=["SPEAKER_01"],
+        filename=None,
+        duration=5.0,
+    )
+
+    extractor = SpacyNERExtractor()
+    await extractor._initialize()
+    doc = extractor.nlp("Vincent happens to know the details.")
+    entity_span = doc[0:2]  # Simulate entity covering the problematic phrase
+    normalized = extractor._normalize_entity_text(entity_span)
+
+    assert normalized == "Vincent"

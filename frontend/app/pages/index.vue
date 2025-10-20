@@ -89,7 +89,9 @@ const transcriptionOptions = ref({
   min_speakers: 2,
   max_speakers: 10,
   temperature: 0.0,
-  initial_prompt: null as string | null
+  initial_prompt: null as string | null,
+  adaptive_enhancement: true,
+  quality_boost: true
 })
 const fileInputRef = ref<HTMLInputElement>()
 

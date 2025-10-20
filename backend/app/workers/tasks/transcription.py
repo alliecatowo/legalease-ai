@@ -212,6 +212,196 @@ class AudioProcessor:
                 os.unlink(enhanced_path)
             return False, f"Audio enhancement error: {exc}"
 
+
+def _annotation_to_dataframe(annotation) -> Optional["pd.DataFrame"]:
+    """Convert a pyannote Annotation object to a pandas DataFrame compatible with whisperx."""
+    try:
+        import pandas as pd  # type: ignore
+    except ImportError:
+        logger.warning("pandas is required for advanced diarization alignment but is not available.")
+        return None
+
+    rows = []
+    for segment, _, speaker in annotation.itertracks(yield_label=True):
+        rows.append({
+            "start": segment.start,
+            "end": segment.end,
+            "speaker": speaker,
+        })
+
+    return pd.DataFrame(rows, columns=["start", "end", "speaker"])
+
+
+def _assign_speakers_from_annotation(
+    segments: List[Dict[str, Any]],
+    annotation,
+    coverage_threshold: float = 0.25
+) -> List[Dict[str, Any]]:
+    """Fallback speaker assignment using overlap between transcript segments and diarization annotation."""
+    try:
+        from pyannote.core import Segment  # type: ignore
+    except ImportError:
+        logger.warning("pyannote.core is required for overlap-based speaker assignment.")
+        return segments
+
+    assigned = []
+    previous_speaker = None
+
+    for segment in segments:
+        speech_span = Segment(segment['start'], segment['end'])
+        cropped = annotation.crop(speech_span)
+
+        assigned_speaker = None
+        coverage_ratio = 0.0
+
+        if cropped and cropped.labels():
+            label_durations = {
+                label: cropped.label_duration(label)
+                for label in cropped.labels()
+            }
+            assigned_speaker = max(label_durations, key=label_durations.get)
+            coverage_ratio = label_durations[assigned_speaker] / max(1e-6, speech_span.duration)
+            if not str(assigned_speaker).startswith("SPEAKER_"):
+                assigned_speaker = f"SPEAKER_{assigned_speaker}"
+
+        if not assigned_speaker:
+            assigned_speaker = previous_speaker or "SPEAKER_00"
+        elif coverage_ratio < coverage_threshold and previous_speaker:
+            assigned_speaker = previous_speaker
+
+        segment['speaker'] = assigned_speaker
+        assigned.append(segment)
+        previous_speaker = assigned_speaker
+
+    return assigned
+
+
+def _segments_to_dicts(segments: List["TranscriptionSegment"]) -> List[Dict[str, Any]]:
+    """Convert WhisperX transcription segments into serializable dictionaries with IDs."""
+    segment_dicts: List[Dict[str, Any]] = []
+    for seg in segments:
+        seg_dict = seg.to_dict()
+        seg_dict['id'] = seg_dict.get('id') or str(uuid.uuid4())
+        segment_dicts.append(seg_dict)
+    return segment_dicts
+
+
+def _refine_low_confidence_segments(
+    pipeline: "WhisperXPipeline",
+    transcription_result,
+    audio_path: str,
+    language: Optional[str],
+    batch_size: int,
+    max_segments: int = 6
+) -> None:
+    """Re-transcribe low-confidence segments with more aggressive decoding settings."""
+    if getattr(pipeline, "_whisper_model", None) is None:
+        return
+
+    try:
+        import whisperx  # type: ignore
+    except ImportError:
+        logger.warning("WhisperX unavailable for quality refinement.")
+        return
+
+    try:
+        audio = whisperx.load_audio(audio_path)
+    except Exception as exc:
+        logger.warning(f"Failed to load audio for refinement: {exc}")
+        return
+
+    sample_rate = 16000
+    duration = transcription_result.duration or (len(audio) / sample_rate)
+
+    low_confidence_segments = [
+        seg for seg in transcription_result.segments
+        if (seg.confidence or 1.0) < 0.6 and (seg.end - seg.start) > 0.3
+    ]
+
+    if not low_confidence_segments:
+        return
+
+    low_confidence_segments.sort(key=lambda s: s.confidence or 0.0)
+    segments_to_refine = low_confidence_segments[:max_segments]
+
+    logger.info(f"Refining {len(segments_to_refine)} low-confidence segment(s) with targeted decoding.")
+
+    for segment in segments_to_refine:
+        chunk_padding = 0.4
+        chunk_start = max(0.0, segment.start - chunk_padding)
+        chunk_end = min(duration, segment.end + chunk_padding)
+
+        start_index = int(chunk_start * sample_rate)
+        end_index = int(chunk_end * sample_rate)
+        chunk_audio = audio[start_index:end_index]
+
+        if len(chunk_audio) < int(0.2 * sample_rate):
+            continue
+
+        try:
+            refined = pipeline._whisper_model.transcribe(  # type: ignore[union-attr]
+                chunk_audio,
+                batch_size=max(1, batch_size // 2) if batch_size else 1,
+                language=language if language and language != "auto" else None,
+                temperature=0.0,
+                beam_size=8,
+                best_of=8,
+                condition_on_previous_text=False,
+                no_speech_threshold=0.3,
+                compression_ratio_threshold=2.4,
+                log_prob_threshold=-2.0,
+                print_progress=False,
+            )
+        except Exception as decode_error:
+            logger.debug(f"Refinement decoding failed for segment at {segment.start:.1f}s: {decode_error}")
+            continue
+
+        refined_segments = refined.get("segments", []) if isinstance(refined, dict) else []
+        if not refined_segments:
+            continue
+
+        # Align refined segments for word-level timings if alignment model is available
+        try:
+            if getattr(pipeline, "_alignment_model", None) is not None:
+                aligned = whisperx.align(
+                    refined_segments,
+                    pipeline._alignment_model,
+                    pipeline._alignment_metadata,
+                    chunk_audio,
+                    device=pipeline.device,
+                    return_char_alignments=False,
+                )
+                refined_segments = aligned.get("segments", refined_segments)
+        except Exception as align_error:
+            logger.debug(f"Alignment of refined segment failed: {align_error}")
+
+        combined_text = " ".join(seg.get("text", "").strip() for seg in refined_segments).strip()
+        if not combined_text:
+            continue
+
+        refined_confidences = [pipeline._estimate_confidence(seg) for seg in refined_segments]
+        new_confidence = max(refined_confidences) if refined_confidences else segment.confidence or 0.0
+
+        if new_confidence < (segment.confidence or 0.0) + 0.05 and len(combined_text) <= len(segment.text):
+            continue
+
+        segment.text = combined_text
+        segment.avg_logprob = sum(seg.get("avg_logprob", -1.0) for seg in refined_segments) / len(refined_segments)
+        segment.no_speech_prob = sum(seg.get("no_speech_prob", 0.0) for seg in refined_segments) / len(refined_segments)
+        segment.compression_ratio = max(seg.get("compression_ratio", 0.0) for seg in refined_segments)
+        segment.confidence = max(min(new_confidence, 1.0), 0.0)
+        segment.start = chunk_start + min(seg.get("start", 0.0) for seg in refined_segments)
+        segment.end = chunk_start + max(seg.get("end", 0.0) for seg in refined_segments)
+        segment.words = []
+        for refined_seg in refined_segments:
+            for word in refined_seg.get("words", []):
+                segment.words.append({
+                    **word,
+                    "start": word.get("start", 0.0) + chunk_start,
+                    "end": word.get("end", 0.0) + chunk_start,
+                })
+        segment.refined = True
+
     @staticmethod
     def preprocess_audio(input_path: str, output_path: str) -> Tuple[bool, str]:
         """
@@ -1030,6 +1220,7 @@ def transcribe_audio(
     """
     db = SessionLocal()
     temp_dir = None
+    overall_start = time.time()
 
     # Parse options with defaults
     options = options or {}
@@ -1047,6 +1238,8 @@ def transcribe_audio(
     enable_diarization = options.get("enable_diarization", True)
     temperature = options.get("temperature", 0.0)
     initial_prompt = options.get("initial_prompt")
+    adaptive_enhancement = options.get("adaptive_enhancement", True)
+    quality_boost = options.get("quality_boost", True)
 
     try:
         # Update task state to STARTED
@@ -1129,25 +1322,28 @@ def transcribe_audio(
             logger.warning("Failed to extract waveform data, will fallback to client-side generation")
 
         # Step 3.6: Enhance audio (normalization + denoise) before transcription
-        logger.info("Enhancing audio prior to transcription")
-        enhancement_success, enhancement_message = processor.enhance_audio(processed_wav)
-        if enhancement_success:
-            logger.info(enhancement_message)
-            # Recompute waveform + metrics after enhancement for accurate adaptation
-            waveform_data = processor.extract_waveform_data(processed_wav) or waveform_data
-            if waveform_data:
-                audio_metrics = waveform_data.get('metrics')
-                if audio_metrics:
-                    logger.info(
-                        "Post-enhancement metrics: rms=%.4f peak=%.4f crest=%.2f silence=%.1f%% noise_floor=%.1f dBFS",
-                        audio_metrics['rms'],
-                        audio_metrics['peak'],
-                        audio_metrics['crest_factor'],
-                        audio_metrics['silence_ratio'] * 100,
-                        audio_metrics['noise_floor'],
-                    )
+        if adaptive_enhancement:
+            logger.info("Enhancing audio prior to transcription")
+            enhancement_success, enhancement_message = processor.enhance_audio(processed_wav)
+            if enhancement_success:
+                logger.info(enhancement_message)
+                # Recompute waveform + metrics after enhancement for accurate adaptation
+                waveform_data = processor.extract_waveform_data(processed_wav) or waveform_data
+                if waveform_data:
+                    audio_metrics = waveform_data.get('metrics')
+                    if audio_metrics:
+                        logger.info(
+                            "Post-enhancement metrics: rms=%.4f peak=%.4f crest=%.2f silence=%.1f%% noise_floor=%.1f dBFS",
+                            audio_metrics['rms'],
+                            audio_metrics['peak'],
+                            audio_metrics['crest_factor'],
+                            audio_metrics['silence_ratio'] * 100,
+                            audio_metrics['noise_floor'],
+                        )
+            else:
+                logger.warning(enhancement_message)
         else:
-            logger.warning(enhancement_message)
+            logger.info("Adaptive audio enhancement disabled; proceeding with preprocessed audio")
 
         # Step 4: Transcribe with Whisper
         self.update_state(
@@ -1157,6 +1353,9 @@ def transcribe_audio(
 
         # Use self-hosted transcription with Pyannote diarization (NO HuggingFace token needed)
         logger.info(f"Starting self-hosted transcription (language={language or 'auto'}, diarization={enable_diarization})")
+
+        whisper_result = None
+        segment_dicts: List[Dict[str, Any]] = []
 
         try:
             import torch
@@ -1299,7 +1498,7 @@ def transcribe_audio(
 
                 # Transcribe with alignment only (no diarization yet)
                 whisperx_start = time.time()
-                result = pipeline.transcribe(
+                whisper_result = pipeline.transcribe(
                     audio_path=processed_wav,
                     enable_alignment=True,
                     enable_diarization=False,  # We'll do this separately with Pyannote
@@ -1307,17 +1506,21 @@ def transcribe_audio(
                 )
                 whisperx_time = time.time() - whisperx_start
 
-                # Convert WhisperX result to our format and add UUIDs
-                segments = []
-                for seg in result.segments:
-                    seg_dict = seg.to_dict()
-                    seg_dict['id'] = str(uuid.uuid4())  # Add unique ID for each segment
-                    segments.append(seg_dict)
+                detected_language = whisper_result.language
+                full_text = whisper_result.get_full_text()
 
-                full_text = result.get_full_text()
-                detected_language = result.language
+                if quality_boost:
+                    _refine_low_confidence_segments(
+                        pipeline,
+                        whisper_result,
+                        processed_wav,
+                        detected_language,
+                        batch_size,
+                    )
 
-                logger.info(f"WhisperX transcription completed in {whisperx_time:.1f}s: {len(segments)} segments, language={detected_language}")
+                segment_dicts = _segments_to_dicts(whisper_result.segments)
+
+                logger.info(f"WhisperX transcription completed in {whisperx_time:.1f}s: {len(segment_dicts)} segments, language={detected_language}")
                 logger.info(f"Performance: {duration/whisperx_time:.2f}x realtime (processed {duration:.0f}s audio in {whisperx_time:.1f}s)")
 
                 # Cleanup WhisperX models from memory
@@ -1340,13 +1543,13 @@ def transcribe_audio(
                     )
                     local_time = time.time() - local_start
 
-                    segments = transcription_result['segments']
+                    segment_dicts = transcription_result['segments']
                     full_text = transcription_result['text']
                     detected_language = transcription_result.get('language', language)
 
                     logger.info(
                         f"Faster-Whisper transcription completed in {local_time:.1f}s "
-                        f"({len(segments)} segments, language={detected_language})"
+                        f"({len(segment_dicts)} segments, language={detected_language})"
                     )
                 except TranscriptionError as local_error:
                     logger.warning(f"Faster-Whisper unavailable: {local_error}")
@@ -1363,11 +1566,11 @@ def transcribe_audio(
                             task_id=self.request.id
                         )
 
-                        segments = transcription_result['segments']
+                        segment_dicts = transcription_result['segments']
                         full_text = transcription_result['text']
                         detected_language = transcription_result.get('language', language)
 
-                        logger.info(f"OpenAI Whisper transcription completed: {len(segments)} segments")
+                        logger.info(f"OpenAI Whisper transcription completed: {len(segment_dicts)} segments")
                     else:
                         raise TranscriptionError(
                             "No transcription backend available. Install WhisperX or Faster-Whisper, "
@@ -1424,50 +1627,40 @@ def transcribe_audio(
 
                         diarization_time = time.time() - diarization_start
 
-                        from pyannote.core import Segment
+                        try:
+                            import whisperx  # type: ignore
+                            diarize_df = _annotation_to_dataframe(diarization)
+                            if diarize_df is not None and whisper_result is not None:
+                                try:
+                                    aligned_result = whisperx.assign_word_speakers(diarize_df, whisper_result)
+                                    if aligned_result:
+                                        whisper_result = aligned_result
+                                        segment_dicts = _segments_to_dicts(whisper_result.segments)
+                                except Exception as assign_error:
+                                    logger.warning(
+                                        "Word-level speaker assignment failed (%s). Falling back to overlap heuristic.",
+                                        assign_error
+                                    )
+                                    segment_dicts = _assign_speakers_from_annotation(segment_dicts, diarization)
+                            else:
+                                segment_dicts = _assign_speakers_from_annotation(segment_dicts, diarization)
+                        except Exception as assign_error:
+                            logger.warning(
+                                "Advanced diarization alignment unavailable (%s); using overlap heuristic.",
+                                assign_error
+                            )
+                            segment_dicts = _assign_speakers_from_annotation(segment_dicts, diarization)
 
-                        # Assign speakers to segments with overlap-aware scoring
-                        diarized_segments = []
-                        for segment in segments:
-                            # Find overlapping speaker from diarization
-                            segment_start = segment['start']
-                            segment_end = segment['end']
-                            speech_span = Segment(segment_start, segment_end)
-
-                            cropped = diarization.crop(speech_span)
-                            assigned_speaker = None
-                            coverage_ratio = 0.0
-
-                            if cropped and cropped.labels():
-                                label_durations = {
-                                    label: cropped.label_duration(label)
-                                    for label in cropped.labels()
-                                }
-                                assigned_speaker = max(label_durations, key=label_durations.get)
-                                coverage_ratio = label_durations[assigned_speaker] / max(1e-6, speech_span.duration)
-                                if not assigned_speaker.startswith("SPEAKER_"):
-                                    assigned_speaker = f"SPEAKER_{assigned_speaker}"
-
-                            if not assigned_speaker:
-                                assigned_speaker = diarized_segments[-1].get('speaker', "SPEAKER_00") if diarized_segments else "SPEAKER_00"
-                            elif coverage_ratio < 0.25 and diarized_segments:
-                                # Guard against weak matches by deferring to previous speaker
-                                assigned_speaker = diarized_segments[-1].get('speaker', assigned_speaker)
-
-                            segment['speaker'] = assigned_speaker
-                            diarized_segments.append(segment)
-
-                        num_detected_speakers = len(set(s['speaker'] for s in diarized_segments))
-                        logger.info(f"Diarization completed in {diarization_time:.1f}s: {num_detected_speakers} speakers detected")
-                        logger.info(f"Diarization performance: {duration/diarization_time:.2f}x realtime")
-
-                        # Apply post-processing smoothing to reduce rapid speaker changes
                         diarizer = SpeakerDiarizer()
                         diarized_segments = diarizer.smooth_speaker_changes(
-                            diarized_segments,
+                            segment_dicts,
                             min_segment_duration=min_segment_duration,
                             min_speaker_gap=min_speaker_gap
                         )
+                        segment_dicts = diarized_segments
+                        num_detected_speakers = len({s.get('speaker') for s in diarized_segments})
+                        logger.info(f"Diarization completed in {diarization_time:.1f}s: {num_detected_speakers} speakers detected")
+                        logger.info(f"Diarization performance: {duration/diarization_time:.2f}x realtime")
 
                         # Cleanup Pyannote pipeline to free GPU memory for speaker name inference
                         del diarization_pipeline
@@ -1483,7 +1676,7 @@ def transcribe_audio(
 
                         diarizer = SpeakerDiarizer()
                         diarized_segments = diarizer.diarize_segments(
-                            segments,
+                            segment_dicts,
                             pause_threshold=pause_threshold
                         )
                         diarized_segments = diarizer.smooth_speaker_changes(
@@ -1491,12 +1684,13 @@ def transcribe_audio(
                             min_segment_duration=min_segment_duration,
                             min_speaker_gap=min_speaker_gap
                         )
+                        segment_dicts = diarized_segments
                 else:
                     # Pyannote not available, use simple heuristic diarization
                     logger.info("Using simple heuristic diarization (no HF token or diarization disabled)")
                     diarizer = SpeakerDiarizer()
                     diarized_segments = diarizer.diarize_segments(
-                        segments,
+                        segment_dicts,
                         pause_threshold=pause_threshold
                     )
                     diarized_segments = diarizer.smooth_speaker_changes(
@@ -1504,9 +1698,20 @@ def transcribe_audio(
                         min_segment_duration=min_segment_duration,
                         min_speaker_gap=min_speaker_gap
                     )
+                    segment_dicts = diarized_segments
             else:
                 logger.info("Speaker diarization disabled")
-                diarized_segments = segments
+                segment_dicts = segment_dicts
+
+            diarized_segments = segment_dicts
+
+            if duration is None:
+                if whisper_result is not None and whisper_result.duration:
+                    duration = whisper_result.duration
+                elif diarized_segments:
+                    duration = max(segment.get('end', 0.0) for segment in diarized_segments)
+                else:
+                    duration = 0.0
 
         except Exception as e:
             logger.error(f"Self-hosted transcription failed: {e}", exc_info=True)
@@ -1705,11 +1910,12 @@ def transcribe_audio(
         db.commit()
 
         # Calculate total processing time
-        total_time = time.time() - time.time()  # Will be updated below
+        total_time = time.time() - overall_start
 
         logger.info(f"Transcription completed successfully for transcription GID {transcription_gid} (UUID: {transcription.id})")
         logger.info("=" * 80)
         logger.info("PERFORMANCE SUMMARY:")
+        logger.info(f"  Total pipeline time: {total_time:.1f}s")
         logger.info(f"  Audio duration: {duration:.1f}s ({duration/60:.1f} minutes)")
         if 'whisperx_time' in locals():
             logger.info(f"  WhisperX time: {whisperx_time:.1f}s ({duration/whisperx_time:.2f}x realtime)")

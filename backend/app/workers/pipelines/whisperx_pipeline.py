@@ -10,6 +10,7 @@ WhisperX: https://github.com/m-bain/whisperX
 """
 
 import os
+import math
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -27,10 +28,18 @@ class TranscriptionSegment:
     text: str
     speaker: Optional[str] = None
     words: Optional[List[Dict[str, Any]]] = None
+    avg_logprob: Optional[float] = None
+    no_speech_prob: Optional[float] = None
+    compression_ratio: Optional[float] = None
+    temperature: Optional[float] = None
+    confidence: Optional[float] = None
+    refined: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert segment to dictionary."""
-        return asdict(self)
+        data = asdict(self)
+        # filter out None values for optional metrics to reduce payload size
+        return {k: v for k, v in data.items() if v is not None}
 
 
 @dataclass
@@ -228,6 +237,29 @@ class WhisperXPipeline:
             logger.error(f"Failed to load diarization pipeline: {e}")
             raise
 
+    @staticmethod
+    def _estimate_confidence(segment: Dict[str, Any]) -> float:
+        """
+        Estimate a 0-1 confidence score for a Whisper segment based on decoding statistics.
+
+        Uses logistic scaling of avg_logprob with penalties for high no_speech probability
+        and excessive compression ratio (hallucination indicator).
+        """
+        avg_logprob = segment.get("avg_logprob")
+        if avg_logprob is None:
+            avg_logprob = -1.0
+
+        base = 1.0 / (1.0 + math.exp(-1.4 * (avg_logprob + 1.1)))
+
+        no_speech = segment.get("no_speech_prob", 0.0)
+        compression = segment.get("compression_ratio", 0.0)
+
+        penalty_no_speech = max(0.0, 1.0 - no_speech)
+        penalty_compression = 1.0 if compression <= 2.4 else max(0.0, 1.45 - 0.2 * compression)
+
+        confidence = base * penalty_no_speech * penalty_compression
+        return max(0.0, min(1.0, confidence))
+
     def transcribe(
         self,
         audio_path: str,
@@ -331,6 +363,7 @@ class WhisperXPipeline:
         # Convert to our data structures
         transcription_segments = []
         for seg in segments:
+            confidence = self._estimate_confidence(seg)
             transcription_segments.append(
                 TranscriptionSegment(
                     start=seg["start"],
@@ -338,6 +371,11 @@ class WhisperXPipeline:
                     text=seg["text"],
                     speaker=seg.get("speaker"),
                     words=seg.get("words"),
+                    avg_logprob=seg.get("avg_logprob"),
+                    no_speech_prob=seg.get("no_speech_prob"),
+                    compression_ratio=seg.get("compression_ratio"),
+                    temperature=seg.get("temperature"),
+                    confidence=confidence,
                 )
             )
 
