@@ -165,18 +165,5 @@ export const useApi = () => {
       recent: (limit: number = 10) => api('/api/v1/activity/recent', { params: { limit } })
     },
 
-    // Entities
-    entities: {
-      list: (params?: any) => api('/api/v1/entities', { params }),
-      get: (id: string) => api(`/api/v1/entities/${id}`),
-      byType: (type: string) => api(`/api/v1/entities/type/${type}`)
-    },
-
-    // Knowledge Graph
-    graph: {
-      get: (caseId?: string) => api('/api/v1/graph', { params: { case_id: caseId } }),
-      node: (id: string) => api(`/api/v1/graph/nodes/${id}`),
-      neighbors: (id: string) => api(`/api/v1/graph/nodes/${id}/neighbors`)
-    }
   }
 }

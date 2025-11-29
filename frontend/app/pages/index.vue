@@ -572,19 +572,6 @@ function getStatusColor(status: string) {
                 </NuxtLink>
 
                 <NuxtLink
-                  :to="'/graph'"
-                  class="flex items-center gap-3 p-2 rounded-lg hover:bg-elevated/50 transition-colors"
-                >
-                  <div class="p-2 bg-blue-500/10 rounded">
-                    <UIcon name="i-lucide-network" class="size-4 text-blue-500" />
-                  </div>
-                  <div>
-                    <p class="text-sm font-medium">Knowledge Graph</p>
-                    <p class="text-xs text-muted">Explore entities</p>
-                  </div>
-                </NuxtLink>
-
-                <NuxtLink
                   :to="'/analytics'"
                   class="flex items-center gap-3 p-2 rounded-lg hover:bg-elevated/50 transition-colors"
                 >

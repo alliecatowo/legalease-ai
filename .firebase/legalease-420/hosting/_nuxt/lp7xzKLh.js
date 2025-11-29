@@ -1,0 +1,1 @@
+import{_ as t}from"./DlAUqK2U.js";import{D as o,o as r,r as s}from"#entry";const c={},n={class:"min-h-screen bg-muted"};function a(e,_){return r(),o("div",n,[s(e.$slots,"default")])}const l=t(c,[["render",a]]);export{l as default};
