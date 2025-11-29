@@ -1,0 +1,17 @@
+{
+  "name": "legalease",
+  "version": "1.0.0",
+  "description": "Legal document analysis platform",
+  "private": true,
+  "scripts": {
+    "firebase": "firebase",
+    "firebase:login": "firebase login",
+    "firebase:init": "firebase init",
+    "firebase:deploy": "firebase deploy",
+    "firebase:emulators": "firebase emulators:start"
+  },
+  "packageManager": "pnpm@10.18.2",
+  "devDependencies": {
+    "firebase-tools": "^14.26.0"
+  }
+}

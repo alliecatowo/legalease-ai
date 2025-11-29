@@ -91,3 +91,25 @@ prune = "docker system prune -af --volumes"
 
 # === Monitoring ===
 watch = "watch -n 2 docker compose ps"
+
+# === Firebase (via pnpm) ===
+firebase = "pnpm exec firebase"
+"firebase:login" = "pnpm exec firebase login"
+"firebase:init" = "pnpm exec firebase init"
+"firebase:deploy" = "pnpm exec firebase deploy"
+"firebase:deploy:hosting" = "pnpm exec firebase deploy --only hosting"
+"firebase:emulators" = "pnpm exec firebase emulators:start"
+"firebase:emulators:hosting" = "pnpm exec firebase emulators:start --only hosting"
+
+# === GCP / Cloud Run ===
+"gcloud:auth" = "gcloud auth application-default login"
+"gcloud:project" = "gcloud config get-value project"
+"gcloud:set-project" = "gcloud config set project ${PROJECT_ID}"
+"cloudrun:deploy:api" = "gcloud run deploy legalease-api --source ./backend --region us-central1"
+"cloudrun:deploy:ai" = "gcloud run deploy legalease-ai --source ./functions --region us-central1"
+
+# === Genkit AI Service ===
+"genkit:install" = "cd functions && pnpm install"
+"genkit:dev" = "cd functions && pnpm dev"
+"genkit:build" = "cd functions && pnpm build"
+"genkit:start" = "cd functions && pnpm start"

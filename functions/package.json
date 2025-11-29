@@ -1,0 +1,29 @@
+{
+  "name": "legalease-ai",
+  "version": "1.0.0",
+  "description": "Genkit AI service for LegalEase",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "dev": "genkit start -- npx tsx --watch src/index.ts",
+    "build": "tsc",
+    "start": "node lib/index.js",
+    "deploy": "gcloud run deploy legalease-ai --source . --region us-central1"
+  },
+  "dependencies": {
+    "genkit": "^1.14.0",
+    "@genkit-ai/google-genai": "^1.14.0",
+    "@genkit-ai/googleai": "^1.14.0",
+    "express": "^5.1.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

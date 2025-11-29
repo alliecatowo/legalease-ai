@@ -6,6 +6,11 @@ export default defineNuxtConfig({
     '@vueuse/nuxt'
   ],
 
+  // Firebase App Hosting preset for SSR deployment
+  nitro: {
+    preset: 'firebase'
+  },
+
   app: {
     head: {
       link: [
@@ -22,7 +27,16 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000'
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      // Firebase client config (set via environment variables)
+      firebase: {
+        apiKey: process.env.FIREBASE_API_KEY || '',
+        authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
+        projectId: process.env.FIREBASE_PROJECT_ID || '',
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+        appId: process.env.FIREBASE_APP_ID || ''
+      }
     }
   },
 
