@@ -1,0 +1,75 @@
+name: Deploy Preview
+on:
+  pull_request:
+    branches: [main, production]
+    paths:
+      - 'frontend/**'
+      - 'functions/**'
+      - 'firebase.json'
+      - 'firestore.rules'
+      - 'storage.rules'
+      - '.github/workflows/preview.yml'
+
+jobs:
+  build_and_preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: pnpm run build
+        env:
+          NUXT_PUBLIC_API_BASE: https://legalease-api-legalease-420.run.app
+          FIREBASE_PROJECT_ID: legalease-420
+          FIREBASE_AUTH_DOMAIN: legalease-420.firebaseapp.com
+          FIREBASE_STORAGE_BUCKET: legalease-420.firebasestorage.app
+          FIREBASE_MESSAGING_SENDER_ID: '1029046565992'
+          FIREBASE_APP_ID: '1:1029046565992:web:7c178d11823b0988744fdd'
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+
+      - name: Install functions dependencies
+        working-directory: ./functions
+        run: pnpm install --frozen-lockfile
+
+      - name: Build functions
+        working-directory: ./functions
+        run: pnpm run build
+
+      - name: Deploy to Firebase Hosting Preview Channel
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: legalease-420
+          expires: 7d
