@@ -2,7 +2,8 @@ import { getFunctions, httpsCallable } from 'firebase/functions'
 
 // Types for transcription
 export interface TranscriptionInput {
-  gcsUri: string
+  gcsUri?: string
+  url?: string
   language?: string
   enableDiarization?: boolean
   enableSummary?: boolean

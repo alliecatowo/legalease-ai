@@ -22,9 +22,11 @@ export interface Mail {
 }
 
 export interface Member {
+  id: string
   name: string
   username: string
-  role: 'member' | 'owner'
+  email: string
+  role: 'member' | 'admin' | 'owner'
   avatar: AvatarProps
 }
 

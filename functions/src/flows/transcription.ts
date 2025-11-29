@@ -4,10 +4,13 @@ import { ai } from '../genkit.js'
 
 // Input schema
 export const TranscriptionInput = z.object({
-  gcsUri: z.string().describe('GCS URI of the audio/video file (gs://bucket/path)'),
+  gcsUri: z.string().optional().describe('GCS URI of the audio/video file (gs://bucket/path)'),
+  url: z.string().optional().describe('URL to transcribe (YouTube, direct media URL)'),
   language: z.string().default('en').describe('Language code'),
   enableDiarization: z.boolean().default(true).describe('Enable speaker diarization'),
   enableSummary: z.boolean().default(false).describe('Generate summary with transcription')
+}).refine(data => data.gcsUri || data.url, {
+  message: 'Either gcsUri or url must be provided'
 })
 
 export type TranscriptionInputType = z.infer<typeof TranscriptionInput>
@@ -39,6 +42,30 @@ export const TranscriptionOutput = z.object({
 
 export type TranscriptionOutputType = z.infer<typeof TranscriptionOutput>
 
+// Helper to detect if URL is YouTube
+function isYouTubeUrl(url: string): boolean {
+  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/
+  return youtubeRegex.test(url)
+}
+
+// Helper to detect content type from URL
+function getContentTypeFromUrl(url: string): string {
+  if (isYouTubeUrl(url)) {
+    return 'video/mp4' // YouTube videos
+  }
+  const ext = url.split('.').pop()?.toLowerCase()
+  const contentTypes: Record<string, string> = {
+    'mp3': 'audio/mpeg',
+    'mp4': 'video/mp4',
+    'wav': 'audio/wav',
+    'm4a': 'audio/m4a',
+    'webm': 'video/webm',
+    'ogg': 'audio/ogg',
+    'flac': 'audio/flac'
+  }
+  return contentTypes[ext || ''] || 'audio/mpeg'
+}
+
 // Transcription flow
 export const transcribeMediaFlow = ai.defineFlow(
   {
@@ -47,7 +74,15 @@ export const transcribeMediaFlow = ai.defineFlow(
     outputSchema: TranscriptionOutput
   },
   async (input) => {
-    const { gcsUri, language, enableDiarization, enableSummary } = input
+    const { gcsUri, url, language, enableDiarization, enableSummary } = input
+
+    // Determine the media URL to use
+    const mediaUrl = gcsUri || url
+    if (!mediaUrl) {
+      throw new Error('Either gcsUri or url must be provided')
+    }
+
+    const contentType = gcsUri ? 'audio/mpeg' : getContentTypeFromUrl(mediaUrl)
 
     // Build the transcription prompt
     const transcriptionPrompt = `
@@ -82,8 +117,8 @@ Return a JSON object with this exact structure:
         { text: transcriptionPrompt },
         {
           media: {
-            url: gcsUri,
-            contentType: 'audio/mpeg' // Gemini auto-detects the actual type
+            url: mediaUrl,
+            contentType
           }
         }
       ],
