@@ -6,11 +6,6 @@ export default defineNuxtConfig({
     '@vueuse/nuxt'
   ],
 
-  // Firebase App Hosting preset for SSR deployment
-  nitro: {
-    preset: 'firebase'
-  },
-
   app: {
     head: {
       link: [
