@@ -16,7 +16,12 @@ env:
     value: legalease-420.firebaseapp.com
   - variable: FIREBASE_STORAGE_BUCKET
     value: legalease-420.firebasestorage.app
+  - variable: FIREBASE_MESSAGING_SENDER_ID
+    value: "1029046565992"
+  - variable: FIREBASE_APP_ID
+    value: 1:1029046565992:web:7c178d11823b0988744fdd
+  # Firebase API key is safe to expose - it's restricted by domain in Firebase Console
   - variable: FIREBASE_API_KEY
-    secret: FIREBASE_API_KEY
+    value: AIzaSyD6ofaL7TInheG8wo6pOex7_fzvOO1_mB8
   - variable: GOOGLE_GENAI_API_KEY
     secret: GOOGLE_GENAI_API_KEY
