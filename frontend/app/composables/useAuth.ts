@@ -43,13 +43,14 @@ export function useAuth() {
   }
 
   // Initialize auth state listener
-  const initAuth = () => {
-    if (!$auth) {
+  const initAuth = (authInstance?: any) => {
+    const auth = authInstance || $auth
+    if (!auth) {
       isLoading.value = false
       return
     }
 
-    onAuthStateChanged($auth, (firebaseUser) => {
+    onAuthStateChanged(auth, (firebaseUser) => {
       user.value = mapUser(firebaseUser)
       isLoading.value = false
     })

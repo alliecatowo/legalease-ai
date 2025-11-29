@@ -49,12 +49,18 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   submitError.value = null
 
   try {
-    const caseId = await createCase({
+    const caseData: any = {
       name: event.data.name,
       caseNumber: event.data.caseNumber,
-      client: event.data.client,
-      matterType: event.data.matterType || undefined
-    })
+      client: event.data.client
+    }
+    
+    // Only include matterType if it has a value
+    if (event.data.matterType) {
+      caseData.matterType = event.data.matterType
+    }
+    
+    const caseId = await createCase(caseData)
 
     const newCase = await getCase(caseId)
 

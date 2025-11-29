@@ -10,7 +10,7 @@ await Promise.all([listCases(), listDocuments()])
 // Stats computed from Firestore data
 const stats = computed(() => {
   const totalCases = cases.value?.length || 0
-  const activeCases = cases.value?.filter(c => c.status === 'active').length || 0
+  const activeCases = (cases.value || []).filter(c => c.status === 'active').length || 0
   const totalDocs = documents.value?.length || 0
   const totalStorage = documents.value?.reduce((sum, d) => sum + (d.fileSize || 0), 0) || 0
   return { totalCases, activeCases, totalDocs, totalStorage }
@@ -113,7 +113,7 @@ const statusColors: Record<string, string> = {
                 </div>
               </template>
 
-              <div v-if="recentDocuments.length" class="space-y-2">
+              <div v-if="recentDocuments && recentDocuments.length" class="space-y-2">
                 <NuxtLink
                   v-for="doc in recentDocuments"
                   :key="doc.id"
@@ -146,7 +146,7 @@ const statusColors: Record<string, string> = {
                 </div>
               </template>
 
-              <div v-if="recentCases.length" class="space-y-2">
+              <div v-if="recentCases && recentCases.length" class="space-y-2">
                 <NuxtLink
                   v-for="c in recentCases"
                   :key="c.id"

@@ -2,10 +2,7 @@
 import { ConfigProvider } from 'reka-ui'
 
 // Initialize Firebase Auth state listener
-const { initAuth } = useAuth()
-onMounted(() => {
-  initAuth()
-})
+// Moved to plugins/firebase.client.ts
 
 const colorMode = useColorMode()
 
