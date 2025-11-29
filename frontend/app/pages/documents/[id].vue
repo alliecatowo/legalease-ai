@@ -1,389 +1,88 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-
-definePageMeta({
-  layout: 'default'
-})
+definePageMeta({ layout: 'default' })
 
 const route = useRoute()
 const router = useRouter()
-const api = useApi()
 const toast = useToast()
 
 const documentId = computed(() => route.params.id as string)
+const { getDocument, deleteDocument } = useDocuments()
+const { getCase } = useCases()
 
-// Use shared documents cache
-const { documents: documentsCache } = useSharedData()
-
-// Initialize shared data on page mount - only fetch if cache is stale
-await documentsCache.get()
-
-// Find this document in the cached list
-const document = computed(() => {
-  if (!documentsCache.data.value?.documents) return null
-  return documentsCache.data.value.documents.find(d => String(d.id) === String(documentId.value)) || null
-})
-
-const loadingDocument = documentsCache.loading
-const documentError = computed(() => {
-  // If we loaded successfully but document not found, show error
-  if (!documentsCache.loading.value && documentsCache.data.value && !document.value) {
-    return new Error('Document not found')
-  }
-  return documentsCache.error.value
-})
-
-// Refresh function for the document
-async function refreshDocument() {
-  await documentsCache.refresh()
-}
-
-// Fetch document content
-const { data: content, pending: loadingContent, error: contentError } = await useAsyncData(
-  `document-content-${documentId.value}`,
-  () => api.documents.content(documentId.value),
-  {
-    default: () => null
-  }
-)
-
-// Fetch case details if document has case_id (lazy loading)
-const { data: caseData } = useLazyAsyncData(
-  `case-${documentId.value}`,
-  async () => {
-    if (!document.value?.case_id) return null
-    try {
-      return await api.cases.get(document.value.case_id.toString())
-    } catch (err) {
-      console.error('Failed to load case:', err)
-      return null
-    }
-  },
-  {
-    default: () => null,
-    watch: [() => document.value?.case_id]
-  }
-)
-
-// Fetch related documents from the same case (lazy loading)
-const { data: relatedDocs } = useLazyAsyncData(
-  `related-docs-${documentId.value}`,
-  async () => {
-    if (!document.value?.case_id) return []
-    try {
-      const response = await api.documents.listByCase(document.value.case_id)
-      return response?.documents?.filter((d: any) => d.id !== parseInt(documentId.value)) || []
-    } catch (err) {
-      console.error('Failed to load related docs:', err)
-      return []
-    }
-  },
-  {
-    default: () => [],
-    watch: [() => document.value?.case_id]
-  }
-)
-
-// UI State
-const selectedTab = ref('content')
+// Fetch document
+const loading = ref(true)
+const error = ref<string | null>(null)
+const document = ref<any>(null)
+const caseData = ref<any>(null)
 const showDeleteModal = ref(false)
-const showAddToCaseModal = ref(false)
 const isDeleting = ref(false)
-const searchWithinQuery = ref('')
-const bm25Results = ref<any[]>([])  // Blue boxes
-const fusionResults = ref<any[]>([])  // Yellow boxes
-const isSearching = ref(false)
 
-// Initialize from route query
-if (route.query.q) {
-  searchWithinQuery.value = String(route.query.q)
-}
-
-watch(() => route.query.q, (q) => {
-  searchWithinQuery.value = q ? String(q) : ''
-})
-
-// Perform search - BM25 only (blue) + Fusion (yellow)
-async function performHybridSearch(query: string) {
-  if (!query || !document.value) {
-    bm25Results.value = []
-    fusionResults.value = []
-    return
-  }
-
-  isSearching.value = true
+async function fetchData() {
+  loading.value = true
+  error.value = null
   try {
-    const [bm25Response, fusionResponse] = await Promise.all([
-      // 1. BM25 only (blue boxes) - strong keyword matches
-      api.search.hybrid({
-        query,
-        document_ids: [parseInt(documentId.value)],
-        top_k: 5,
-        use_bm25: true,
-        use_dense: false,
-        score_threshold: 0.5  // Reasonable threshold for BM25 matches
-      }),
-      // 2. Fusion: BM25 + semantic (yellow boxes)
-      api.search.hybrid({
-        query,
-        document_ids: [parseInt(documentId.value)],
-        top_k: 5,
-        use_bm25: true,
-        use_dense: true,
-        fusion_method: 'rrf',
-        score_threshold: 0.0
-      })
-    ])
-
-    // Store separately - no combining
-    bm25Results.value = bm25Response.results || []
-    fusionResults.value = fusionResponse.results || []
-
-    console.log(`[DocumentPage] ${bm25Results.value.length} BM25 (blue), ${fusionResults.value.length} fusion (yellow)`)
-    if (bm25Results.value.length > 0) {
-      console.log('[DocumentPage] BM25 scores:', bm25Results.value.map(r => r.score.toFixed(2)))
+    document.value = await getDocument(documentId.value)
+    if (!document.value) {
+      error.value = 'Document not found'
+      return
     }
-    if (fusionResults.value.length > 0) {
-      console.log('[DocumentPage] Fusion scores:', fusionResults.value.slice(0, 5).map(r => r.score.toFixed(2)))
+    if (document.value.caseId) {
+      caseData.value = await getCase(document.value.caseId)
     }
-  } catch (error) {
-    console.error('Search failed:', error)
-    bm25Results.value = []
-    fusionResults.value = []
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to load document'
   } finally {
-    isSearching.value = false
+    loading.value = false
   }
 }
 
-// Debounced search to prevent flickering
-const debouncedSearch = useDebounceFn(performHybridSearch, 300)
+await fetchData()
 
-// Watch for search query changes
-watch(searchWithinQuery, (query) => {
-  if (!query) {
-    // Clear results immediately when query is empty
-    bm25Results.value = []
-    fusionResults.value = []
-  } else {
-    debouncedSearch(query)
-  }
-}, { immediate: true })
-
-// Document type configuration
-const typeConfig = computed(() => {
-  const docType = document.value?.meta_data?.document_type || 'general'
-  const configs: Record<string, { icon: string; color: string; label: string; iconClass: string }> = {
-    contract: { icon: 'i-lucide-file-text', color: 'primary', label: 'Contract', iconClass: 'text-primary' },
-    agreement: { icon: 'i-lucide-handshake', color: 'info', label: 'Agreement', iconClass: 'text-info' },
-    transcript: { icon: 'i-lucide-mic', color: 'warning', label: 'Transcript', iconClass: 'text-warning' },
-    court_filing: { icon: 'i-lucide-gavel', color: 'error', label: 'Court Filing', iconClass: 'text-error' },
-    brief: { icon: 'i-lucide-file-pen', color: 'success', label: 'Brief', iconClass: 'text-success' },
-    motion: { icon: 'i-lucide-file-check', color: 'secondary', label: 'Motion', iconClass: 'text-secondary' },
-    general: { icon: 'i-lucide-file', color: 'neutral', label: 'Document', iconClass: 'text-neutral' }
-  }
-  return configs[docType] || configs.general
-})
-
-// Status badge configuration
-const statusConfig = computed(() => {
-  const status = (document.value?.status || 'pending').toLowerCase()
-  const configs: Record<string, { color: string; label: string; icon: string }> = {
-    pending: { color: 'warning', label: 'Pending', icon: 'i-lucide-clock' },
-    processing: { color: 'info', label: 'Processing', icon: 'i-lucide-loader-circle' },
-    indexed: { color: 'success', label: 'Indexed', icon: 'i-lucide-check-circle' },
-    completed: { color: 'success', label: 'Completed', icon: 'i-lucide-check-circle' },
-    failed: { color: 'error', label: 'Failed', icon: 'i-lucide-alert-circle' }
-  }
-  return configs[status] || configs.pending
-})
-
-// Format helpers
+// Helpers
 function formatBytes(bytes: number) {
-  if (bytes === 0) return '0 B'
+  if (!bytes) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+function formatDate(date: any) {
+  const d = date?.toDate?.() || new Date(date)
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-// Extract stats from document
-const documentStats = computed(() => {
-  const text = content.value?.text || ''
-  const wordCount = text.split(/\s+/).filter(Boolean).length
-  const pageCount = document.value?.meta_data?.page_count ||
-                    document.value?.meta_data?.pages ||
-                    Math.ceil(wordCount / 300) // Estimate pages
-
-  return {
-    wordCount,
-    pageCount,
-    charCount: text.length,
-    paragraphCount: text.split(/\n\n+/).filter(Boolean).length
-  }
-})
-
-// Extract entities from metadata
-const entities = computed(() => {
-  const meta = document.value?.meta_data || {}
-  const extracted: Array<{ type: string; text: string; icon: string }> = []
-
-  // Extract parties
-  if (meta.parties && Array.isArray(meta.parties)) {
-    meta.parties.forEach((party: string) => {
-      extracted.push({ type: 'PERSON', text: party, icon: 'i-lucide-user' })
-    })
-  }
-
-  // Extract court
-  if (meta.court) {
-    extracted.push({ type: 'COURT', text: meta.court, icon: 'i-lucide-landmark' })
-  }
-
-  // Extract organizations
-  if (meta.organizations && Array.isArray(meta.organizations)) {
-    meta.organizations.forEach((org: string) => {
-      extracted.push({ type: 'ORGANIZATION', text: org, icon: 'i-lucide-building' })
-    })
-  }
-
-  // Extract dates
-  if (meta.filing_date) {
-    extracted.push({
-      type: 'DATE',
-      text: new Date(meta.filing_date).toLocaleDateString(),
-      icon: 'i-lucide-calendar'
-    })
-  }
-
-  // Extract entities array if present
-  if (meta.entities && Array.isArray(meta.entities)) {
-    meta.entities.forEach((entity: any) => {
-      const icon = entity.type === 'PERSON' ? 'i-lucide-user' :
-                   entity.type === 'ORGANIZATION' ? 'i-lucide-building' :
-                   entity.type === 'LOCATION' ? 'i-lucide-map-pin' :
-                   'i-lucide-tag'
-      extracted.push({ type: entity.type, text: entity.text, icon })
-    })
-  }
-
-  return extracted
-})
-
-// Tags from metadata
-const tags = computed(() => {
-  return document.value?.meta_data?.tags || []
-})
+const statusColors: Record<string, string> = {
+  uploading: 'warning',
+  processing: 'info',
+  indexed: 'success',
+  completed: 'success',
+  failed: 'error'
+}
 
 // Actions
 async function handleDownload() {
-  if (!import.meta.client) return
-
-  try {
-    const response = await api.documents.download(documentId.value)
-    // Create download link
-    const url = window.URL.createObjectURL(new Blob([response]))
-    const link = window.document.createElement('a')
-    link.href = url
-    link.download = document.value?.filename || 'document'
-    link.click()
-    window.URL.revokeObjectURL(url)
-
-    toast.add({
-      title: 'Download Started',
-      description: `Downloading ${document.value?.filename}`,
-      color: 'success',
-      icon: 'i-lucide-download'
-    })
-  } catch (error) {
-    console.error('Download error:', error)
-  }
+  if (!document.value?.downloadUrl) return
+  window.open(document.value.downloadUrl, '_blank')
 }
 
 async function handleDelete() {
   if (!document.value) return
-
   isDeleting.value = true
   try {
-    await api.documents.delete(documentId.value)
-    toast.add({
-      title: 'Document Deleted',
-      description: `${document.value.filename} has been deleted`,
-      color: 'success',
-      icon: 'i-lucide-trash'
-    })
+    await deleteDocument(documentId.value)
+    toast.add({ title: 'Deleted', description: 'Document deleted successfully', color: 'success' })
     router.push('/documents')
-  } catch (error) {
-    console.error('Delete error:', error)
+  } catch (err) {
+    toast.add({ title: 'Error', description: 'Failed to delete document', color: 'error' })
     isDeleting.value = false
   }
 }
 
 function handleShare() {
-  // Copy link to clipboard
-  const url = window.location.href
-  navigator.clipboard.writeText(url)
-  toast.add({
-    title: 'Link Copied',
-    description: 'Document link copied to clipboard',
-    color: 'success',
-    icon: 'i-lucide-link'
-  })
+  navigator.clipboard.writeText(window.location.href)
+  toast.add({ title: 'Copied', description: 'Link copied to clipboard', color: 'success' })
 }
-
-// Get file extension
-const fileExtension = computed(() => {
-  const filename = document.value?.filename || ''
-  return filename.split('.').pop()?.toUpperCase() || 'FILE'
-})
-
-// Check if file is viewable
-const isViewable = computed(() => {
-  const ext = fileExtension.value.toLowerCase()
-  return ['txt', 'md', 'json', 'xml', 'html'].includes(ext) || content.value?.text
-})
-
-// Breadcrumb items
-const breadcrumbItems = computed(() => {
-  const items = [
-    { label: 'Documents', to: '/documents', icon: 'i-lucide-folder' }
-  ]
-
-  if (caseData.value?.name && caseData.value?.id) {
-    items.push({
-      label: caseData.value.name,
-      to: `/cases/${caseData.value.id}`,
-      icon: 'i-lucide-briefcase'
-    })
-  }
-
-  if (document.value) {
-    items.push({
-      label: document.value.filename || 'Document',
-      to: route.path,
-      icon: typeConfig.value.icon
-    })
-  }
-
-  return items
-})
-
-// Tab items - make it computed to reactively update badge
-const tabItems = computed(() => [
-  { value: 'content', label: 'Content', icon: 'i-lucide-file-text' },
-  { value: 'metadata', label: 'Metadata', icon: 'i-lucide-info' },
-  { value: 'activity', label: 'Activity', icon: 'i-lucide-activity' },
-  { value: 'related', label: 'Related', icon: 'i-lucide-link', badge: relatedDocs.value?.length || 0 }
-])
 </script>
 
 <template>
@@ -392,544 +91,115 @@ const tabItems = computed(() => [
       <UDashboardNavbar>
         <template #leading>
           <div class="flex items-center gap-3">
-            <UButton
-              icon="i-lucide-arrow-left"
-              color="neutral"
-              variant="ghost"
-              @click="router.back()"
-            />
+            <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" @click="router.back()" />
             <USeparator orientation="vertical" class="h-6" />
-            <UBreadcrumb :items="breadcrumbItems" />
+            <UBreadcrumb :items="[
+              { label: 'Documents', to: '/documents', icon: 'i-lucide-folder' },
+              { label: document?.filename || 'Document', icon: 'i-lucide-file-text' }
+            ]" />
           </div>
         </template>
         <template #trailing>
           <div class="flex items-center gap-2">
-            <UTooltip text="Refresh">
-              <UButton
-                icon="i-lucide-refresh-cw"
-                color="neutral"
-                variant="ghost"
-                :loading="loadingDocument"
-                @click="refreshDocument"
-              />
-            </UTooltip>
-            <UTooltip text="Download">
-              <UButton
-                icon="i-lucide-download"
-                color="neutral"
-                variant="ghost"
-                @click="handleDownload"
-              />
-            </UTooltip>
-            <UTooltip text="Share">
-              <UButton
-                icon="i-lucide-share"
-                color="neutral"
-                variant="ghost"
-                @click="handleShare"
-              />
-            </UTooltip>
-            <UDropdownMenu
-              :items="[
-                [
-                  { label: 'Add to Case', icon: 'i-lucide-folder-plus', click: () => showAddToCaseModal = true },
-                  { label: 'Add Tags', icon: 'i-lucide-tag' },
-                  { label: 'Export', icon: 'i-lucide-file-down' }
-                ],
-                [
-                  { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => showDeleteModal = true }
-                ]
-              ]"
-            >
-              <UButton
-                icon="i-lucide-more-vertical"
-                color="neutral"
-                variant="ghost"
-              />
-            </UDropdownMenu>
+            <UButton icon="i-lucide-download" color="neutral" variant="ghost" @click="handleDownload" />
+            <UButton icon="i-lucide-share" color="neutral" variant="ghost" @click="handleShare" />
+            <UButton icon="i-lucide-trash" color="error" variant="ghost" @click="showDeleteModal = true" />
           </div>
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <!-- Error State -->
-      <div v-if="documentError" class="flex items-center justify-center min-h-[60vh] p-6">
-        <UCard class="max-w-md">
-          <div class="text-center space-y-4">
-            <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto" />
-            <h3 class="text-xl font-semibold">Document Not Found</h3>
-            <p class="text-muted">
-              The document you're looking for doesn't exist or has been deleted.
-            </p>
-            <UButton
-              label="Back to Documents"
-              icon="i-lucide-arrow-left"
-              color="primary"
-              to="/documents"
-            />
-          </div>
-        </UCard>
+      <!-- Loading -->
+      <div v-if="loading" class="flex items-center justify-center py-20">
+        <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin" />
       </div>
 
-      <!-- Loading State -->
-      <div v-else-if="loadingDocument" class="p-6 space-y-6">
-        <USkeleton class="h-32 w-full" />
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="lg:col-span-2 space-y-4">
-            <USkeleton class="h-96 w-full" />
-          </div>
-          <div class="space-y-4">
-            <USkeleton class="h-48 w-full" />
-            <USkeleton class="h-48 w-full" />
-          </div>
-        </div>
+      <!-- Error -->
+      <div v-else-if="error || !document" class="text-center py-20">
+        <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto mb-4 opacity-50" />
+        <h3 class="text-xl font-semibold mb-2">Document Not Found</h3>
+        <p class="text-muted mb-6">{{ error || 'The document you are looking for does not exist.' }}</p>
+        <UButton label="Back to Documents" icon="i-lucide-arrow-left" to="/documents" />
       </div>
 
       <!-- Document Content -->
-      <div v-else-if="document" class="max-w-7xl mx-auto p-6 space-y-6">
-        <!-- Hero Section -->
-        <div class="relative overflow-hidden rounded-xl border border-default bg-gradient-to-br from-primary/5 via-transparent to-secondary/5 p-8">
-          <div class="flex items-start gap-6">
-            <!-- Document Icon -->
-            <div class="flex-shrink-0 p-4 bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-default">
-              <UIcon :name="typeConfig.icon" class="size-16" :class="typeConfig.iconClass" />
+      <div v-else class="max-w-5xl mx-auto p-6 space-y-6">
+        <!-- Header -->
+        <div class="flex items-start gap-6 p-6 bg-muted/10 rounded-xl border border-default">
+          <div class="p-4 bg-primary/10 rounded-xl">
+            <UIcon name="i-lucide-file-text" class="size-12 text-primary" />
+          </div>
+          <div class="flex-1 min-w-0">
+            <h1 class="text-2xl font-bold mb-2">{{ document.title || document.filename }}</h1>
+            <div class="flex items-center gap-3 flex-wrap">
+              <UBadge :label="document.status || 'pending'" :color="statusColors[document.status] || 'neutral'" variant="soft" />
+              <span class="text-sm text-muted">{{ formatBytes(document.fileSize) }}</span>
+              <span class="text-sm text-muted">{{ document.mimeType }}</span>
             </div>
-
-            <!-- Document Info -->
-            <div class="flex-1 min-w-0">
-              <div class="flex items-start justify-between gap-4 mb-3">
-                <div class="flex-1 min-w-0">
-                  <h1 class="text-3xl font-bold text-highlighted mb-2 break-words">
-                    {{ document.meta_data?.title || document.filename }}
-                  </h1>
-                  <div class="flex items-center gap-3 flex-wrap">
-                    <UBadge
-                      :label="typeConfig.label"
-                      :color="typeConfig.color"
-                      variant="soft"
-                    />
-                    <UBadge
-                      :label="statusConfig.label"
-                      :color="statusConfig.color"
-                      variant="subtle"
-                    >
-                      <template #leading>
-                        <UIcon :name="statusConfig.icon" :class="statusConfig.icon.includes('loader') ? 'animate-spin' : ''" />
-                      </template>
-                    </UBadge>
-                    <span class="text-sm text-muted">{{ formatBytes(document.size) }}</span>
-                    <span class="text-sm text-muted">{{ fileExtension }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Case Link -->
-              <div v-if="caseData" class="flex items-center gap-2 text-sm">
-                <UIcon name="i-lucide-briefcase" class="size-4 text-muted" />
-                <span class="text-muted">Part of case:</span>
-                <NuxtLink :to="`/cases/${caseData.id}`" class="text-primary hover:underline font-medium">
-                  {{ caseData.name }}
-                </NuxtLink>
-              </div>
-
-              <!-- Summary -->
-              <p v-if="document.meta_data?.summary" class="mt-4 text-muted leading-relaxed">
-                {{ document.meta_data.summary }}
-              </p>
+            <div v-if="caseData" class="mt-3 flex items-center gap-2 text-sm">
+              <UIcon name="i-lucide-briefcase" class="size-4 text-muted" />
+              <NuxtLink :to="`/cases/${caseData.id}`" class="text-primary hover:underline">
+                {{ caseData.name }}
+              </NuxtLink>
             </div>
           </div>
         </div>
 
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <UCard>
-            <div class="flex items-center gap-3">
-              <div class="p-2 bg-primary/10 rounded-lg">
-                <UIcon name="i-lucide-file-text" class="size-5 text-primary" />
-              </div>
-              <div>
-                <p class="text-2xl font-bold text-highlighted">{{ documentStats.pageCount }}</p>
-                <p class="text-sm text-muted">Pages</p>
-              </div>
-            </div>
+        <!-- Info Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <UCard :ui="{ body: 'p-4' }">
+            <p class="text-xs text-muted mb-1">Filename</p>
+            <p class="font-medium truncate">{{ document.filename }}</p>
           </UCard>
-
-          <UCard>
-            <div class="flex items-center gap-3">
-              <div class="p-2 bg-info/10 rounded-lg">
-                <UIcon name="i-lucide-type" class="size-5 text-info" />
-              </div>
-              <div>
-                <p class="text-2xl font-bold text-highlighted">{{ documentStats.wordCount.toLocaleString() }}</p>
-                <p class="text-sm text-muted">Words</p>
-              </div>
-            </div>
+          <UCard :ui="{ body: 'p-4' }">
+            <p class="text-xs text-muted mb-1">Uploaded</p>
+            <p class="font-medium">{{ formatDate(document.createdAt) }}</p>
           </UCard>
-
-          <UCard>
-            <div class="flex items-center gap-3">
-              <div class="p-2 bg-success/10 rounded-lg">
-                <UIcon name="i-lucide-align-left" class="size-5 text-success" />
-              </div>
-              <div>
-                <p class="text-2xl font-bold text-highlighted">{{ documentStats.paragraphCount }}</p>
-                <p class="text-sm text-muted">Paragraphs</p>
-              </div>
-            </div>
+          <UCard :ui="{ body: 'p-4' }">
+            <p class="text-xs text-muted mb-1">Type</p>
+            <p class="font-medium capitalize">{{ document.documentType || 'General' }}</p>
           </UCard>
-
-          <UCard>
-            <div class="flex items-center gap-3">
-              <div class="p-2 bg-warning/10 rounded-lg">
-                <UIcon name="i-lucide-calendar" class="size-5 text-warning" />
-              </div>
-              <div>
-                <p class="text-sm font-semibold text-highlighted">{{ new Date(document.uploaded_at).toLocaleDateString() }}</p>
-                <p class="text-sm text-muted">Uploaded</p>
-              </div>
-            </div>
+          <UCard :ui="{ body: 'p-4' }">
+            <p class="text-xs text-muted mb-1">Size</p>
+            <p class="font-medium">{{ formatBytes(document.fileSize) }}</p>
           </UCard>
         </div>
 
-        <!-- Main Content Area -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- Left: Document Viewer -->
-          <div class="lg:col-span-2 space-y-4">
-            <!-- Tabs -->
-            <UCard>
-              <template #header>
-                <UTabs v-model="selectedTab" :items="tabItems" :content="false" />
-              </template>
+        <!-- Summary -->
+        <UCard v-if="document.summary">
+          <template #header>
+            <h3 class="font-semibold">Summary</h3>
+          </template>
+          <p class="text-muted">{{ document.summary }}</p>
+        </UCard>
 
-              <!-- Content Tab -->
-              <div v-if="selectedTab === 'content'" class="space-y-4">
-                <!-- Search within document -->
-                <div>
-                  <UInput
-                    v-model="searchWithinQuery"
-                    icon="i-lucide-search"
-                    placeholder="Search within this document..."
-                    size="lg"
-                    :loading="isSearching"
-                  >
-                    <template #trailing>
-                      <UButton
-                        v-if="searchWithinQuery"
-                        icon="i-lucide-x"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click="searchWithinQuery = ''"
-                      />
-                    </template>
-                  </UInput>
-                  <div v-if="bm25Results.length > 0 || fusionResults.length > 0" class="mt-2 text-sm text-muted">
-                    {{ bm25Results.length }} BM25 (blue) + {{ fusionResults.length }} fusion (yellow)
-                  </div>
-                </div>
-
-                <!-- Document Viewer with PDF and bbox highlighting -->
-                <div v-if="isViewable && fileExtension.toLowerCase() === 'pdf'" class="min-h-[600px]">
-                  <LazyDocumentViewer
-                    :document-id="documentId"
-                    :search-query="searchWithinQuery"
-                    :bm25-results="bm25Results"
-                    :fusion-results="fusionResults"
-                    :initial-page="parseInt(route.query.page as string) || 1"
-                    :chunk-id="parseInt(route.query.chunk as string) || undefined"
-                  />
-                </div>
-
-                <!-- Fallback for non-PDF documents -->
-                <div v-else>
-                  <div v-if="loadingContent" class="space-y-3">
-                    <USkeleton class="h-4 w-full" />
-                    <USkeleton class="h-4 w-5/6" />
-                    <USkeleton class="h-4 w-4/6" />
-                  </div>
-                  <div v-else-if="contentError" class="text-center py-12">
-                    <UIcon name="i-lucide-alert-circle" class="size-12 text-error mx-auto mb-4" />
-                    <p class="text-muted">Failed to load document content</p>
-                  </div>
-                  <div v-else-if="content?.text" class="prose prose-sm dark:prose-invert max-w-none">
-                    <div class="whitespace-pre-wrap font-mono text-sm bg-muted/5 p-6 rounded-lg border border-default">
-                      {{ content.text }}
-                    </div>
-                  </div>
-                  <div v-else class="text-center py-12">
-                    <UIcon name="i-lucide-file-x" class="size-12 text-muted mx-auto mb-4 opacity-50" />
-                    <p class="text-muted mb-4">Content preview not available for this file type</p>
-                    <UButton
-                      label="Download to View"
-                      icon="i-lucide-download"
-                      color="primary"
-                      @click="handleDownload"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Metadata Tab -->
-              <div v-else-if="selectedTab === 'metadata'" class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <p class="text-sm text-muted mb-1">Filename</p>
-                    <p class="font-medium text-highlighted">{{ document.filename }}</p>
-                  </div>
-                  <div>
-                    <p class="text-sm text-muted mb-1">MIME Type</p>
-                    <p class="font-medium text-highlighted">{{ document.mime_type || 'Unknown' }}</p>
-                  </div>
-                  <div>
-                    <p class="text-sm text-muted mb-1">File Size</p>
-                    <p class="font-medium text-highlighted">{{ formatBytes(document.size) }}</p>
-                  </div>
-                  <div>
-                    <p class="text-sm text-muted mb-1">Uploaded</p>
-                    <p class="font-medium text-highlighted">{{ formatDate(document.uploaded_at) }}</p>
-                  </div>
-                </div>
-
-                <USeparator />
-
-                <!-- Additional Metadata -->
-                <div v-if="document.meta_data && Object.keys(document.meta_data).length > 0" class="space-y-3">
-                  <h4 class="font-semibold text-highlighted">Additional Information</h4>
-                  <div class="space-y-2">
-                    <div
-                      v-for="[key, value] in Object.entries(document.meta_data).filter(([k]) => !['title', 'summary', 'tags', 'entities', 'parties', 'organizations'].includes(k))"
-                      :key="key"
-                      class="flex items-start gap-3 p-3 bg-muted/10 rounded-lg"
-                    >
-                      <UIcon name="i-lucide-info" class="size-4 text-muted shrink-0 mt-0.5" />
-                      <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-highlighted capitalize">{{ key.replace(/_/g, ' ') }}</p>
-                        <p class="text-sm text-muted break-words">{{ typeof value === 'object' ? JSON.stringify(value) : value }}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Activity Tab -->
-              <div v-else-if="selectedTab === 'activity'" class="space-y-4">
-                <UAlert
-                  color="info"
-                  variant="subtle"
-                  title="Activity Tracking Coming Soon"
-                  description="Document activity history and edit tracking will be available in a future update."
-                  icon="i-lucide-info"
-                />
-              </div>
-
-              <!-- Related Tab -->
-              <div v-else-if="selectedTab === 'related'" class="space-y-3">
-                <div v-if="relatedDocs && relatedDocs.length > 0" class="space-y-3">
-                  <NuxtLink
-                    v-for="doc in relatedDocs.slice(0, 10)"
-                    :key="doc.id"
-                    :to="`/documents/${doc.id}`"
-                    class="block p-4 bg-muted/10 hover:bg-muted/20 rounded-lg border border-default/50 transition-colors"
-                  >
-                    <div class="flex items-center gap-3">
-                      <UIcon name="i-lucide-file-text" class="size-5 text-muted" />
-                      <div class="flex-1 min-w-0">
-                        <p class="font-medium text-highlighted truncate">{{ doc.filename }}</p>
-                        <p class="text-sm text-muted">{{ formatBytes(doc.size || 0) }}</p>
-                      </div>
-                      <UIcon name="i-lucide-arrow-right" class="size-4 text-muted" />
-                    </div>
-                  </NuxtLink>
-                </div>
-                <div v-else class="text-center py-12">
-                  <UIcon name="i-lucide-link-2-off" class="size-12 text-muted mx-auto mb-4 opacity-50" />
-                  <p class="text-muted">No related documents found</p>
-                </div>
-              </div>
-            </UCard>
+        <!-- Actions -->
+        <UCard>
+          <template #header>
+            <h3 class="font-semibold">Actions</h3>
+          </template>
+          <div class="space-y-2">
+            <UButton label="Download Document" icon="i-lucide-download" block variant="soft" @click="handleDownload" />
+            <UButton label="View in Case" icon="i-lucide-folder" block variant="outline" :to="`/cases/${document.caseId}`" v-if="document.caseId" />
           </div>
-
-          <!-- Right: Sidebar -->
-          <div class="space-y-4">
-            <!-- Entities -->
-            <UCard v-if="entities.length > 0">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-tags" class="size-5 text-primary" />
-                  <h3 class="font-semibold text-highlighted">Entities</h3>
-                </div>
-              </template>
-              <div class="space-y-2">
-                <div
-                  v-for="(entity, idx) in entities"
-                  :key="idx"
-                  class="flex items-center gap-2 p-2 bg-muted/10 rounded-lg"
-                >
-                  <UIcon :name="entity.icon" class="size-4 text-muted" />
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-highlighted truncate">{{ entity.text }}</p>
-                    <p class="text-xs text-muted">{{ entity.type }}</p>
-                  </div>
-                </div>
-              </div>
-            </UCard>
-
-            <!-- Tags -->
-            <UCard v-if="tags.length > 0">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-tag" class="size-5 text-primary" />
-                  <h3 class="font-semibold text-highlighted">Tags</h3>
-                </div>
-              </template>
-              <div class="flex flex-wrap gap-2">
-                <UBadge
-                  v-for="tag in tags"
-                  :key="tag"
-                  :label="tag"
-                  color="primary"
-                  variant="soft"
-                />
-              </div>
-            </UCard>
-
-            <!-- Document Info -->
-            <UCard>
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-info" class="size-5 text-primary" />
-                  <h3 class="font-semibold text-highlighted">Document Info</h3>
-                </div>
-              </template>
-              <div class="space-y-3">
-                <div>
-                  <p class="text-xs text-muted mb-1">File Path</p>
-                  <p class="text-sm font-mono text-highlighted break-all">{{ document.file_path }}</p>
-                </div>
-                <USeparator />
-                <div>
-                  <p class="text-xs text-muted mb-1">Document ID</p>
-                  <p class="text-sm font-mono text-highlighted">{{ document.id }}</p>
-                </div>
-                <div>
-                  <p class="text-xs text-muted mb-1">Case ID</p>
-                  <p class="text-sm font-mono text-highlighted">{{ document.case_id }}</p>
-                </div>
-              </div>
-            </UCard>
-
-            <!-- Quick Actions -->
-            <UCard>
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-zap" class="size-5 text-primary" />
-                  <h3 class="font-semibold text-highlighted">Quick Actions</h3>
-                </div>
-              </template>
-              <div class="space-y-2">
-                <UButton
-                  label="Download Document"
-                  icon="i-lucide-download"
-                  color="primary"
-                  variant="soft"
-                  block
-                  @click="handleDownload"
-                />
-                <UButton
-                  label="Search Similar"
-                  icon="i-lucide-search"
-                  color="neutral"
-                  variant="soft"
-                  block
-                  @click="router.push(`/search?q=${document.filename}`)"
-                />
-                <UButton
-                  label="Add to Case"
-                  icon="i-lucide-folder-plus"
-                  color="neutral"
-                  variant="soft"
-                  block
-                  @click="showAddToCaseModal = true"
-                />
-                <UButton
-                  label="Share Document"
-                  icon="i-lucide-share"
-                  color="neutral"
-                  variant="soft"
-                  block
-                  @click="handleShare"
-                />
-              </div>
-            </UCard>
-          </div>
-        </div>
+        </UCard>
       </div>
     </template>
   </UDashboardPanel>
 
-  <!-- Delete Confirmation Modal -->
-    <ClientOnly>
-      <UModal v-model:open="showDeleteModal" title="Delete Document">
+  <!-- Delete Modal -->
+  <ClientOnly>
+    <UModal v-model:open="showDeleteModal" title="Delete Document">
       <template #body>
-        <div class="space-y-4">
-          <div class="flex items-center gap-3">
-            <div class="p-2 bg-error/10 rounded-lg">
-              <UIcon name="i-lucide-alert-triangle" class="size-5 text-error" />
-            </div>
-            <p class="text-muted">
-              Are you sure you want to delete <strong class="text-highlighted">{{ document?.filename }}</strong>?
-              This action cannot be undone.
-            </p>
-          </div>
-          <UAlert
-            color="error"
-            variant="soft"
-            icon="i-lucide-info"
-            title="Warning"
-            description="All associated data and search indexes will be permanently removed."
-          />
-        </div>
+        <p class="text-muted">
+          Are you sure you want to delete <strong>{{ document?.filename }}</strong>? This cannot be undone.
+        </p>
       </template>
-
       <template #footer>
         <div class="flex justify-end gap-2">
-          <UButton
-            label="Cancel"
-            color="neutral"
-            variant="ghost"
-            @click="showDeleteModal = false"
-          />
-          <UButton
-            label="Delete Document"
-            icon="i-lucide-trash"
-            color="error"
-            :loading="isDeleting"
-            @click="handleDelete"
-          />
-        </div>
-      </template>
-    </UModal>
-  </ClientOnly>
-
-    <!-- Add to Case Modal (Placeholder) -->
-    <ClientOnly>
-      <UModal v-model:open="showAddToCaseModal" title="Add to Case">
-      <template #body>
-        <div class="text-center py-8">
-          <UIcon name="i-lucide-folder-plus" class="size-12 text-muted mx-auto mb-4 opacity-50" />
-          <p class="text-muted">Case management coming soon</p>
-        </div>
-      </template>
-
-      <template #footer>
-        <div class="flex justify-end">
-          <UButton
-            label="Close"
-            color="neutral"
-            variant="ghost"
-            @click="showAddToCaseModal = false"
-          />
+          <UButton label="Cancel" variant="ghost" @click="showDeleteModal = false" />
+          <UButton label="Delete" color="error" :loading="isDeleting" @click="handleDelete" />
         </div>
       </template>
     </UModal>

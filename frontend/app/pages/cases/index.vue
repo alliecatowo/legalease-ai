@@ -11,33 +11,30 @@ const searchQuery = ref('')
 const selectedStatus = ref('all')
 const selectedType = ref('all')
 
-// Use shared data cache system
-const { cases: casesCache } = useSharedData()
+// Use Firestore-based cases composable
+const { cases: casesData, listCases, isLoading: casesLoading } = useCases()
 
-// Initialize shared data on page mount - only fetch if cache is stale
-await casesCache.get()
+// Initialize cases on page mount
+await listCases()
 
-// Access the cached cases data
-const casesData = computed(() => casesCache.data.value || { cases: [], total: 0 })
-
-// Transform backend data to frontend format
+// Transform Firestore data to frontend format
 const cases = computed(() => {
-  return (casesData.value?.cases || []).map((c: any) => ({
-    id: String(c.id),
+  return (casesData.value || []).map((c) => ({
+    id: c.id || '',
     name: c.name,
-    caseNumber: c.case_number,
-    type: c.matter_type || 'General',
-    status: c.status.toLowerCase(),
-    court: 'N/A', // TODO: Add to backend
-    jurisdiction: 'N/A', // TODO: Add to backend
-    openedDate: c.created_at,
-    lastActivity: c.updated_at,
-    parties: [c.client], // TODO: Add proper parties to backend
-    documents: c.document_count || 0,
-    deadlines: 0, // TODO: Add to backend
-    description: c.matter_type ? `${c.matter_type} case` : 'Legal case',
-    tags: c.matter_type ? [c.matter_type.toLowerCase()] : [],
-    progress: c.status === 'ACTIVE' ? 50 : c.status === 'STAGING' ? 25 : c.status === 'UNLOADED' ? 100 : 0
+    caseNumber: c.caseNumber,
+    type: c.matterType || 'General',
+    status: c.status,
+    court: 'N/A',
+    jurisdiction: 'N/A',
+    openedDate: c.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    lastActivity: c.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    parties: [c.client],
+    documents: c.documentCount || 0,
+    deadlines: 0,
+    description: c.matterType ? `${c.matterType} case` : 'Legal case',
+    tags: c.matterType ? [c.matterType.toLowerCase()] : [],
+    progress: c.status === 'active' ? 50 : c.status === 'staging' ? 25 : c.status === 'unloaded' ? 100 : 0
   }))
 })
 
@@ -86,7 +83,7 @@ const statusColors: Record<string, string> = {
 
 async function onCaseCreated(caseData: any) {
   console.log('Case created:', caseData)
-  await casesCache.refresh() // Refresh the cached cases list
+  await listCases() // Refresh the cases list
   showCreateModal.value = false
 }
 </script>

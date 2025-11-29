@@ -7,8 +7,11 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
-const api = useApi()
 const toast = useToast()
+
+// Use Firestore composables
+const { getCase, updateCase, archiveCase: archiveCaseAction } = useCases()
+const { documents: documentsData, listDocuments, uploadDocument, deleteDocument: removeDocument } = useDocuments()
 
 // Get case ID from route
 const caseId = computed(() => route.params.id as string)
@@ -22,104 +25,117 @@ const showUploadTranscriptionModal = ref(false)
 const showArchiveConfirm = ref(false)
 const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
+const caseData = ref<any>(null)
 
 // Fetch case data
-const { data: caseData, pending, error: fetchError, refresh: refreshCase } = await useAsyncData(
-  `case-${caseId.value}`,
-  () => api.cases.get(caseId.value),
-  {
-    default: () => null,
-    watch: [caseId]
+async function fetchCaseData() {
+  loading.value = true
+  error.value = null
+  try {
+    caseData.value = await getCase(caseId.value)
+    if (!caseData.value) {
+      error.value = 'Case not found'
+    }
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to load case'
+  } finally {
+    loading.value = false
   }
-)
+}
+
+async function refreshCase() {
+  await fetchCaseData()
+}
 
 // Fetch documents for this case
-const { data: documentsData, refresh: refreshDocuments } = await useAsyncData(
-  `case-${caseId.value}-documents`,
-  () => api.documents.listByCase(caseId.value),
-  {
-    default: () => ({ documents: [], total: 0 }),
-    watch: [caseId]
-  }
-)
+async function refreshDocuments() {
+  await listDocuments({ caseId: caseId.value })
+}
 
-// Update loading state based on pending
-watchEffect(() => {
-  loading.value = pending.value
+// Initialize data
+await fetchCaseData()
+await refreshDocuments()
+
+// Watch for route changes
+watch(caseId, async () => {
+  await fetchCaseData()
+  await refreshDocuments()
 })
 
-// Update error state
-watchEffect(() => {
-  if (fetchError.value) {
-    error.value = fetchError.value.message || 'Failed to load case'
-  }
-})
-
-// Transform case data
+// Transform case data (Firestore uses camelCase)
 const case_ = computed(() => {
   if (!caseData.value) return null
+  const c = caseData.value
+
+  // Handle Firestore Timestamps
+  const createdAt = c.createdAt?.toDate?.() || c.createdAt
+  const updatedAt = c.updatedAt?.toDate?.() || c.updatedAt
 
   return {
-    id: String(caseData.value.id),
-    name: caseData.value.name,
-    caseNumber: caseData.value.case_number,
-    type: caseData.value.matter_type || 'General',
-    status: caseData.value.status?.toLowerCase() || 'active',
-    client: caseData.value.client || 'Unknown Client',
-    opposingParty: caseData.value.opposing_party || 'N/A',
-    court: caseData.value.court || 'N/A',
-    jurisdiction: caseData.value.jurisdiction || 'N/A',
-    openedDate: caseData.value.created_at,
-    lastActivity: caseData.value.updated_at,
-    description: caseData.value.description || `${caseData.value.matter_type || 'Legal'} case for ${caseData.value.client}`,
-    notes: caseData.value.notes,
-    tags: caseData.value.tags || [],
+    id: c.id,
+    name: c.name,
+    caseNumber: c.caseNumber,
+    type: c.matterType || 'General',
+    status: c.status || 'active',
+    client: c.client || 'Unknown Client',
+    opposingParty: 'N/A',
+    court: 'N/A',
+    jurisdiction: 'N/A',
+    openedDate: createdAt?.toISOString?.() || new Date().toISOString(),
+    lastActivity: updatedAt?.toISOString?.() || new Date().toISOString(),
+    description: c.matterType ? `${c.matterType} case for ${c.client}` : `Legal case for ${c.client}`,
+    notes: '',
+    tags: c.matterType ? [c.matterType.toLowerCase()] : [],
     documentCount: documents.value.length
   }
 })
 
 // Transform documents (filter out audio/video files - they should be transcriptions)
 const documents = computed(() => {
-  if (!documentsData.value?.documents) return []
+  if (!documentsData.value?.length) return []
 
-  return documentsData.value.documents
-    .filter((d: any) => {
-      // Exclude audio/video files from documents list
-      const mimeType = d.mime_type || ''
+  return documentsData.value
+    .filter((d) => {
+      const mimeType = d.mimeType || ''
       return !mimeType.startsWith('audio/') && !mimeType.startsWith('video/')
     })
-    .map((d: any) => ({
-      id: String(d.id),
-      filename: d.filename,
-      title: d.meta_data?.title || d.filename,
-      type: d.meta_data?.document_type || 'general',
-      size: d.size || 0,
-      uploadedAt: d.uploaded_at,
-      status: d.status || 'indexed',
-      summary: d.meta_data?.summary,
-      pageCount: d.meta_data?.page_count
-    }))
+    .map((d) => {
+      const uploadedAt = d.createdAt?.toDate?.() || d.createdAt
+      return {
+        id: d.id!,
+        filename: d.filename,
+        title: d.title || d.filename,
+        type: d.documentType || 'general',
+        size: d.fileSize || 0,
+        uploadedAt: uploadedAt?.toISOString?.() || new Date().toISOString(),
+        status: d.status || 'indexed',
+        summary: d.summary,
+        pageCount: d.pageCount
+      }
+    })
 })
 
 // Transform transcriptions (audio/video files only)
 const transcriptions = computed(() => {
-  if (!documentsData.value?.documents) return []
+  if (!documentsData.value?.length) return []
 
-  return documentsData.value.documents
-    .filter((d: any) => {
-      // Include ONLY audio/video files
-      const mimeType = d.mime_type || ''
+  return documentsData.value
+    .filter((d) => {
+      const mimeType = d.mimeType || ''
       return mimeType.startsWith('audio/') || mimeType.startsWith('video/')
     })
-    .map((d: any) => ({
-      id: String(d.id),
-      filename: d.filename,
-      size: d.size || 0,
-      uploadedAt: d.uploaded_at,
-      status: d.status || 'pending',
-      duration: d.meta_data?.duration,
-      speakerCount: d.meta_data?.speaker_count
-    }))
+    .map((d) => {
+      const uploadedAt = d.createdAt?.toDate?.() || d.createdAt
+      return {
+        id: d.id!,
+        filename: d.filename,
+        size: d.fileSize || 0,
+        uploadedAt: uploadedAt?.toISOString?.() || new Date().toISOString(),
+        status: d.status || 'pending',
+        duration: undefined,
+        speakerCount: undefined
+      }
+    })
 })
 
 // Status configuration
@@ -225,100 +241,63 @@ const activityTimeline = computed(() => {
 // Actions
 async function handleLoadCase() {
   try {
-    await api.cases.load(caseId.value)
-    toast.add({
-      title: 'Success',
-      description: 'Case loaded successfully',
-      color: 'success'
-    })
+    await updateCase(caseId.value, { status: 'active' })
+    toast.add({ title: 'Success', description: 'Case loaded successfully', color: 'success' })
     await refreshCase()
   } catch (err) {
-    toast.add({
-      title: 'Error',
-      description: 'Failed to load case',
-      color: 'error'
-    })
+    toast.add({ title: 'Error', description: 'Failed to load case', color: 'error' })
   }
 }
 
 async function handleUnloadCase() {
   try {
-    await api.cases.unload(caseId.value)
-    toast.add({
-      title: 'Success',
-      description: 'Case unloaded successfully',
-      color: 'success'
-    })
+    await updateCase(caseId.value, { status: 'unloaded' })
+    toast.add({ title: 'Success', description: 'Case unloaded successfully', color: 'success' })
     await refreshCase()
   } catch (err) {
-    toast.add({
-      title: 'Error',
-      description: 'Failed to unload case',
-      color: 'error'
-    })
+    toast.add({ title: 'Error', description: 'Failed to unload case', color: 'error' })
   }
 }
 
 async function handleArchiveCase() {
   try {
-    await api.cases.archive(caseId.value)
-    toast.add({
-      title: 'Success',
-      description: 'Case archived successfully',
-      color: 'success'
-    })
+    await archiveCaseAction(caseId.value)
+    toast.add({ title: 'Success', description: 'Case archived successfully', color: 'success' })
     showArchiveConfirm.value = false
     router.push('/cases')
   } catch (err) {
-    toast.add({
-      title: 'Error',
-      description: 'Failed to archive case',
-      color: 'error'
-    })
+    toast.add({ title: 'Error', description: 'Failed to archive case', color: 'error' })
   }
 }
 
 async function handleUploadDocuments() {
-  if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
+  if (!uploadingFiles.value?.length) return
 
   uploadProgress.value = 0
+  const files = uploadingFiles.value
+  const total = files.length
 
   try {
-    const formData = new FormData()
-    uploadingFiles.value.forEach(file => {
-      formData.append('files', file)
-    })
-
-    // Simulate progress
-    const progressInterval = setInterval(() => {
-      uploadProgress.value += 10
-      if (uploadProgress.value >= 90) {
-        clearInterval(progressInterval)
-      }
-    }, 200)
-
-    await api.documents.upload(caseId.value, formData)
-
-    clearInterval(progressInterval)
-    uploadProgress.value = 100
+    for (let i = 0; i < total; i++) {
+      await uploadDocument(caseId.value, files[i], {
+        onProgress: (p) => {
+          uploadProgress.value = Math.round(((i + p.progress / 100) / total) * 100)
+        }
+      })
+    }
 
     toast.add({
       title: 'Success',
-      description: `${uploadingFiles.value.length} document(s) uploaded successfully`,
+      description: `${total} document(s) uploaded successfully`,
       color: 'success'
     })
 
     uploadingFiles.value = null
     uploadProgress.value = 0
     showAddDocumentModal.value = false
-
     await refreshDocuments()
   } catch (err) {
-    toast.add({
-      title: 'Error',
-      description: 'Failed to upload documents',
-      color: 'error'
-    })
+    toast.add({ title: 'Error', description: 'Failed to upload documents', color: 'error' })
     uploadProgress.value = 0
   }
 }
@@ -327,19 +306,11 @@ async function handleDeleteDocument(docId: string) {
   if (!confirm('Are you sure you want to delete this document?')) return
 
   try {
-    await api.documents.delete(docId)
-    toast.add({
-      title: 'Success',
-      description: 'Document deleted successfully',
-      color: 'success'
-    })
+    await removeDocument(docId)
+    toast.add({ title: 'Success', description: 'Document deleted successfully', color: 'success' })
     await refreshDocuments()
   } catch (err) {
-    toast.add({
-      title: 'Error',
-      description: 'Failed to delete document',
-      color: 'error'
-    })
+    toast.add({ title: 'Error', description: 'Failed to delete document', color: 'error' })
   }
 }
 

@@ -1,37 +1,37 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 
-const api = useApi()
-
-// Use shared data cache
-const { documents: documentsCache, cases: casesCache } = useSharedData()
+// Use Firestore-based composables
+const { documents: documentsData, listDocuments, uploadDocument, deleteDocument: removeDocument, isLoading: loadingDocuments } = useDocuments()
+const { cases: casesData, listCases } = useCases()
 
 // Initialize data on mount
-await documentsCache.get()
-await casesCache.get()
+await listDocuments()
+await listCases()
 
 // Computed documents with proper normalization
 const documents = computed(() => {
-  if (!documentsCache.data.value?.documents) return []
+  if (!documentsData.value) return []
 
   // Normalize documents to match expected format
-  return documentsCache.data.value.documents.map((d: any) => ({
-    ...d,
-    document_type: d.meta_data?.document_type || d.document_type || 'general',
-    title: d.meta_data?.title || d.title || d.filename,
-    summary: d.meta_data?.summary || d.summary,
-    file_size: d.size || d.file_size,
-    created_at: d.uploaded_at || d.created_at,
-    updated_at: d.uploaded_at || d.updated_at
+  return documentsData.value.map((d) => ({
+    id: d.id,
+    filename: d.filename,
+    document_type: d.documentType || 'general',
+    title: d.title || d.filename,
+    summary: d.summary,
+    file_size: d.fileSize,
+    created_at: d.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    updated_at: d.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+    status: d.status,
+    caseId: d.caseId,
+    downloadUrl: d.downloadUrl
   }))
 })
 
-// Loading state from cache
-const loadingDocuments = computed(() => documentsCache.loading.value)
-
-// Refresh function using shared cache
+// Refresh function
 async function refresh() {
-  await documentsCache.refresh()
+  await listDocuments()
 }
 
 const searchQuery = ref('')
@@ -150,7 +150,7 @@ async function uploadDocuments() {
   if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
 
   // Get the first available case ID (or show error if no cases exist)
-  if (!casesCache.data.value?.cases || casesCache.data.value.cases.length === 0) {
+  if (!casesData.value || casesData.value.length === 0) {
     if (import.meta.client) {
       const toast = useToast()
       toast.add({
@@ -162,20 +162,18 @@ async function uploadDocuments() {
     return
   }
 
-  const caseId = casesCache.data.value.cases[0].id
+  const caseId = casesData.value[0].id!
   uploadProgress.value = 0
 
-  const formData = new FormData()
-  uploadingFiles.value.forEach(file => {
-    formData.append('files', file)
-  })
-
   try {
-    // Simple progress indicator (show as uploading)
-    uploadProgress.value = 50
-
-    // Call actual API
-    await api.documents.upload(caseId, formData)
+    // Upload each file
+    for (const file of uploadingFiles.value) {
+      await uploadDocument(caseId, file, {
+        onProgress: (progress) => {
+          uploadProgress.value = progress.progress
+        }
+      })
+    }
 
     // Mark complete
     uploadProgress.value = 100
@@ -195,10 +193,17 @@ async function uploadDocuments() {
     uploadingFiles.value = null
     uploadProgress.value = 0
     refresh()
-  } catch (error) {
-    // Error already handled by useApi.ts onResponseError
+  } catch (error: any) {
     console.error('Upload failed:', error)
     uploadProgress.value = 0
+    if (import.meta.client) {
+      const toast = useToast()
+      toast.add({
+        title: 'Upload Failed',
+        description: error?.message || 'Failed to upload documents',
+        color: 'error'
+      })
+    }
   }
 }
 
@@ -232,10 +237,29 @@ async function downloadDocument(docId: string) {
   console.log('Download document:', docId)
 }
 
-async function deleteDocument(docId: string) {
+async function handleDeleteDocument(docId: string) {
   if (confirm('Delete this document?')) {
-    // TODO: Implement delete
-    refresh()
+    try {
+      await removeDocument(docId)
+      if (import.meta.client) {
+        const toast = useToast()
+        toast.add({
+          title: 'Document Deleted',
+          description: 'The document has been deleted',
+          color: 'success'
+        })
+      }
+    } catch (error: any) {
+      console.error('Delete failed:', error)
+      if (import.meta.client) {
+        const toast = useToast()
+        toast.add({
+          title: 'Delete Failed',
+          description: error?.message || 'Failed to delete document',
+          color: 'error'
+        })
+      }
+    }
   }
 }
 
@@ -485,7 +509,7 @@ const documentTypeIcons: Record<string, string> = {
                           { label: 'Share', icon: 'i-lucide-share' }
                         ],
                         [
-                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                          { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => handleDeleteDocument(doc.id) }
                         ]
                       ]"
                     >
@@ -542,7 +566,7 @@ const documentTypeIcons: Record<string, string> = {
                       { label: 'Download', icon: 'i-lucide-download', click: () => downloadDocument(doc.id) }
                     ],
                     [
-                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => deleteDocument(doc.id) }
+                      { label: 'Delete', icon: 'i-lucide-trash', color: 'error', click: () => handleDeleteDocument(doc.id) }
                     ]
                   ]"
                 >

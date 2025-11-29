@@ -7,7 +7,7 @@ const emit = defineEmits<{
   'created': [caseData: any]
 }>()
 
-const api = useApi()
+const { createCase, getCase } = useCases()
 const toast = useToast()
 const router = useRouter()
 
@@ -49,18 +49,18 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   submitError.value = null
 
   try {
-    const payload = {
+    const caseId = await createCase({
       name: event.data.name,
-      case_number: event.data.caseNumber,
+      caseNumber: event.data.caseNumber,
       client: event.data.client,
-      matter_type: event.data.matterType || null
-    }
+      matterType: event.data.matterType || undefined
+    })
 
-    const newCase = await api.cases.create(payload) as { id: string; name: string }
+    const newCase = await getCase(caseId)
 
     toast.add({
       title: 'Case created',
-      description: `${newCase.name} has been created successfully.`,
+      description: `${event.data.name} has been created successfully.`,
       color: 'success'
     })
 
@@ -69,10 +69,10 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     resetForm()
 
     // Navigate to the new case
-    router.push(`/cases/${newCase.id}`)
+    router.push(`/cases/${caseId}`)
   } catch (error: any) {
     console.error('Failed to create case:', error)
-    submitError.value = error?.data?.detail || 'Failed to create case. Please try again.'
+    submitError.value = error?.message || 'Failed to create case. Please try again.'
   } finally {
     isSubmitting.value = false
   }

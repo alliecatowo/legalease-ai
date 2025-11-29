@@ -58,6 +58,44 @@ export interface SummarizationOutput {
   }
 }
 
+// Types for search
+export interface SearchInput {
+  query: string
+  caseId?: string
+  documentType?: string
+  limit?: number
+  scoreThreshold?: number
+}
+
+export interface SearchResult {
+  id: string
+  documentId: string
+  text: string
+  score: number
+  metadata?: {
+    filename?: string
+    pageNumber?: number
+    caseId?: string
+    documentType?: string
+  }
+}
+
+export interface SearchOutput {
+  results: SearchResult[]
+  totalFound: number
+  queryEmbeddingTime?: number
+  searchTime?: number
+}
+
+export interface IndexDocumentInput {
+  documentId: string
+  text: string
+  caseId?: string
+  filename?: string
+  documentType?: string
+  pageNumber?: number
+}
+
 export function useAI() {
   const { $firebase } = useNuxtApp()
 
@@ -91,8 +129,40 @@ export function useAI() {
     return result.data
   }
 
+  const searchDocuments = async (input: SearchInput): Promise<SearchOutput> => {
+    if (!$firebase) {
+      throw new Error('Firebase not initialized')
+    }
+
+    const functions = getFunctions($firebase, 'us-central1')
+    const search = httpsCallable<SearchInput, SearchOutput>(
+      functions,
+      'searchDocuments'
+    )
+
+    const result = await search(input)
+    return result.data
+  }
+
+  const indexDocument = async (input: IndexDocumentInput): Promise<{ success: boolean; pointId: string }> => {
+    if (!$firebase) {
+      throw new Error('Firebase not initialized')
+    }
+
+    const functions = getFunctions($firebase, 'us-central1')
+    const index = httpsCallable<IndexDocumentInput, { success: boolean; pointId: string }>(
+      functions,
+      'indexDocument'
+    )
+
+    const result = await index(input)
+    return result.data
+  }
+
   return {
     transcribeMedia,
-    summarizeTranscript
+    summarizeTranscript,
+    searchDocuments,
+    indexDocument
   }
 }
