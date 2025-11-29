@@ -10,6 +10,18 @@ const toast = useToast()
 await Promise.all([listDocuments(), listCases()])
 
 const transcribingIds = ref<Set<string>>(new Set())
+const showUploadModal = ref(false)
+
+function handleUploadComplete(transcriptionId: string) {
+  showUploadModal.value = false
+  // Refresh the list
+  listDocuments()
+  toast.add({
+    title: 'Upload complete',
+    description: 'Your file has been uploaded and is being transcribed.',
+    color: 'success'
+  })
+}
 
 // Filter to only audio/video files
 const transcriptions = computed(() => {
@@ -114,7 +126,7 @@ async function startTranscription(doc: any) {
     <template #header>
       <UDashboardNavbar title="Transcriptions">
         <template #trailing>
-          <UButton label="Upload Audio" icon="i-lucide-upload" to="/cases" />
+          <UButton label="Upload Transcriptions" icon="i-lucide-upload" @click="showUploadModal = true" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -222,4 +234,10 @@ async function startTranscription(doc: any) {
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- Upload Modal -->
+  <UploadTranscriptionModal
+    v-model:open="showUploadModal"
+    @uploaded="handleUploadComplete"
+  />
 </template>
