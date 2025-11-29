@@ -18,7 +18,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const showEditModal = ref(false)
 const showAddDocumentModal = ref(false)
-const showUploadAudioModal = ref(false)
+const showUploadTranscriptionModal = ref(false)
 const showArchiveConfirm = ref(false)
 const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
@@ -311,7 +311,6 @@ async function handleUploadDocuments() {
     uploadingFiles.value = null
     uploadProgress.value = 0
     showAddDocumentModal.value = false
-    showUploadAudioModal.value = false
 
     await refreshDocuments()
   } catch (err) {
@@ -798,7 +797,7 @@ function getStatusColor(status: string): string {
                       icon="i-lucide-plus"
                       color="primary"
                       size="sm"
-                      @click="showUploadAudioModal = true"
+                      @click="showUploadTranscriptionModal = true"
                     />
                   </div>
                 </template>
@@ -848,7 +847,7 @@ function getStatusColor(status: string): string {
                     icon="i-lucide-plus"
                     color="primary"
                     size="sm"
-                    @click="showUploadAudioModal = true"
+                    @click="showUploadTranscriptionModal = true"
                   />
                 </div>
               </UCard>
@@ -998,56 +997,14 @@ function getStatusColor(status: string): string {
     </UModal>
   </ClientOnly>
 
-    <!-- Upload Audio Modal -->
+    <!-- Upload Transcription Modal -->
     <ClientOnly>
-      <UModal
-        v-model:open="showUploadAudioModal"
-        title="Upload Audio/Video Files"
-        :ui="{ content: 'max-w-2xl' }"
-      >
-      <template #body>
-        <div class="space-y-4">
-          <!-- File Upload Component -->
-          <UFileUpload
-            v-model="uploadingFiles"
-            multiple
-            accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.webm"
-            label="Drop your audio or video files here"
-            description="MP3, MP4, WAV, M4A, WebM (max 100MB each)"
-            icon="i-lucide-upload-cloud"
-            class="min-h-48"
-          />
-
-          <!-- Upload Progress -->
-          <div v-if="uploadProgress > 0 && uploadProgress < 100" class="space-y-2">
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-muted">Uploading...</span>
-              <span class="font-medium text-highlighted">{{ uploadProgress }}%</span>
-            </div>
-            <UProgress :model-value="uploadProgress" color="primary" />
-          </div>
-        </div>
-      </template>
-
-      <template #footer>
-        <div class="flex justify-end gap-2">
-          <UButton
-            label="Cancel"
-            color="neutral"
-            variant="ghost"
-            @click="showUploadAudioModal = false; uploadingFiles = null; uploadProgress = 0"
-          />
-          <UButton
-            label="Upload"
-            icon="i-lucide-upload"
-            color="primary"
-            :disabled="!uploadingFiles || uploadingFiles.length === 0 || uploadProgress > 0"
-            @click="handleUploadDocuments"
-          />
-        </div>
-      </template>
-    </UModal>
-  </ClientOnly>
+      <UploadTranscriptionModal
+        v-model:open="showUploadTranscriptionModal"
+        :case-id="caseId"
+        @uploaded="refreshDocuments"
+      />
+    </ClientOnly>
 
     <!-- Archive Confirmation Modal -->
     <ClientOnly>

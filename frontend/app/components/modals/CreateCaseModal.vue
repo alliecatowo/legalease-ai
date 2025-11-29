@@ -56,7 +56,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       matter_type: event.data.matterType || null
     }
 
-    const newCase = await api.cases.create(payload)
+    const newCase = await api.cases.create(payload) as { id: string; name: string }
 
     toast.add({
       title: 'Case created',
