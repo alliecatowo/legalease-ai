@@ -1,57 +1,36 @@
-import { genkit } from 'genkit'
-import { googleAI } from '@genkit-ai/google-genai'
-import express from 'express'
+import { onCallGenkit } from 'firebase-functions/https'
+import { defineSecret } from 'firebase-functions/params'
 
 // Import flows
-import { transcribeMedia, TranscriptionInput } from './flows/transcription.js'
-import { summarizeTranscript, SummarizationInput } from './flows/summarization.js'
+import { transcribeMediaFlow, TranscriptionInput } from './flows/transcription.js'
+import { summarizeTranscriptFlow, SummarizationInput } from './flows/summarization.js'
 
-// Initialize Genkit with Google AI plugin
-export const ai = genkit({
-  plugins: [googleAI()]
-})
+// Define the API key secret
+const googleAIApiKey = defineSecret('GOOGLE_GENAI_API_KEY')
 
-// Create Express app to expose flows as HTTP endpoints
-const app = express()
-app.use(express.json())
+// Export flows as Firebase callable functions
+export const transcribeMedia = onCallGenkit(
+  {
+    secrets: [googleAIApiKey],
+    // TODO: Add auth policy once Firebase Auth is set up
+    // authPolicy: hasClaim('email_verified'),
+    cors: true,
+    memory: '1GiB',
+    timeoutSeconds: 540 // 9 minutes for long transcriptions
+  },
+  transcribeMediaFlow
+)
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'legalease-ai' })
-})
+export const summarizeTranscript = onCallGenkit(
+  {
+    secrets: [googleAIApiKey],
+    // TODO: Add auth policy once Firebase Auth is set up
+    cors: true,
+    memory: '512MiB',
+    timeoutSeconds: 120
+  },
+  summarizeTranscriptFlow
+)
 
-// Transcription endpoint
-app.post('/transcribe', async (req, res) => {
-  try {
-    const input = TranscriptionInput.parse(req.body)
-    const result = await transcribeMedia(input)
-    res.json(result)
-  } catch (error) {
-    console.error('Transcription error:', error)
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
-  }
-})
-
-// Summarization endpoint
-app.post('/summarize', async (req, res) => {
-  try {
-    const input = SummarizationInput.parse(req.body)
-    const result = await summarizeTranscript(input)
-    res.json(result)
-  } catch (error) {
-    console.error('Summarization error:', error)
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
-  }
-})
-
-// Start server
-const PORT = process.env.PORT || 8080
-app.listen(PORT, () => {
-  console.log(`LegalEase AI service listening on port ${PORT}`)
-})
-
-export { transcribeMedia, summarizeTranscript }
+// Re-export schemas for client-side use
+export { TranscriptionInput, SummarizationInput }

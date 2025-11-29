@@ -1,10 +1,6 @@
-import { genkit } from 'genkit'
+import { z } from 'genkit'
 import { googleAI } from '@genkit-ai/google-genai'
-import { z } from 'zod'
-
-const ai = genkit({
-  plugins: [googleAI()]
-})
+import { ai } from '../genkit.js'
 
 // Input schema
 export const TranscriptionInput = z.object({
@@ -44,7 +40,7 @@ export const TranscriptionOutput = z.object({
 export type TranscriptionOutputType = z.infer<typeof TranscriptionOutput>
 
 // Transcription flow
-export const transcribeMedia = ai.defineFlow(
+export const transcribeMediaFlow = ai.defineFlow(
   {
     name: 'transcribeMedia',
     inputSchema: TranscriptionInput,

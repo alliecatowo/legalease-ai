@@ -1,10 +1,6 @@
-import { genkit } from 'genkit'
+import { z } from 'genkit'
 import { googleAI } from '@genkit-ai/google-genai'
-import { z } from 'zod'
-
-const ai = genkit({
-  plugins: [googleAI()]
-})
+import { ai } from '../genkit.js'
 
 // Input schema
 export const SummarizationInput = z.object({
@@ -40,7 +36,7 @@ export const SummarizationOutput = z.object({
 export type SummarizationOutputType = z.infer<typeof SummarizationOutput>
 
 // Summarization flow
-export const summarizeTranscript = ai.defineFlow(
+export const summarizeTranscriptFlow = ai.defineFlow(
   {
     name: 'summarizeTranscript',
     inputSchema: SummarizationInput,
