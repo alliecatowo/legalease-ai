@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { ConfigProvider } from 'reka-ui'
 
+// Initialize Firebase Auth state listener
+const { initAuth } = useAuth()
+onMounted(() => {
+  initAuth()
+})
+
 const colorMode = useColorMode()
 
 const color = computed(() => colorMode.value === 'dark' ? '#1b1718' : 'white')

@@ -9,14 +9,26 @@ interface CaseListResponse {
 export const useApi = () => {
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase
+  const { $auth } = useNuxtApp()
 
   const api = $fetch.create({
     baseURL,
-    onRequest({ options }) {
-      // Add any auth headers here in the future
-      options.headers = {
-        ...options.headers
+    async onRequest({ options }) {
+      // Add Firebase auth token to requests
+      const headers: Record<string, string> = {
+        ...(options.headers as Record<string, string>)
       }
+
+      if ($auth?.currentUser) {
+        try {
+          const token = await $auth.currentUser.getIdToken()
+          headers.Authorization = `Bearer ${token}`
+        } catch (e) {
+          console.warn('Failed to get auth token:', e)
+        }
+      }
+
+      options.headers = headers
     },
     onResponseError({ response }) {
       // Show toast on client-side only to avoid SSR issues
