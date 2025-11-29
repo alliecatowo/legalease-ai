@@ -42,14 +42,14 @@ const isRangeSelected = (range: { days?: number, months?: number, years?: number
   if (!selected.value.start || !selected.value.end) return false
 
   const currentDate = today(getLocalTimeZone())
-  let startDate = currentDate.copy()
+  let startDate = currentDate
 
   if (range.days) {
-    startDate = startDate.subtract({ days: range.days })
+    startDate = currentDate.subtract({ days: range.days })
   } else if (range.months) {
-    startDate = startDate.subtract({ months: range.months })
+    startDate = currentDate.subtract({ months: range.months })
   } else if (range.years) {
-    startDate = startDate.subtract({ years: range.years })
+    startDate = currentDate.subtract({ years: range.years })
   }
 
   const selectedStart = toCalendarDate(selected.value.start)
@@ -60,14 +60,14 @@ const isRangeSelected = (range: { days?: number, months?: number, years?: number
 
 const selectRange = (range: { days?: number, months?: number, years?: number }) => {
   const endDate = today(getLocalTimeZone())
-  let startDate = endDate.copy()
+  let startDate = endDate
 
   if (range.days) {
-    startDate = startDate.subtract({ days: range.days })
+    startDate = endDate.subtract({ days: range.days })
   } else if (range.months) {
-    startDate = startDate.subtract({ months: range.months })
+    startDate = endDate.subtract({ months: range.months })
   } else if (range.years) {
-    startDate = startDate.subtract({ years: range.years })
+    startDate = endDate.subtract({ years: range.years })
   }
 
   selected.value = {
