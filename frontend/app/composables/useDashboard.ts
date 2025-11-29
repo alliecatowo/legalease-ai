@@ -10,13 +10,9 @@ const _useDashboard = () => {
       usingInput: false,
       handler: () => router.push('/')
     },
-    'g-i': {
-      usingInput: false,
-      handler: () => router.push('/inbox')
-    },
     'g-c': {
       usingInput: false,
-      handler: () => router.push('/customers')
+      handler: () => router.push('/cases')
     },
     'g-s': {
       usingInput: false,

@@ -2,6 +2,7 @@
 import * as z from 'zod'
 import type { FormSubmitEvent } from '@nuxt/ui'
 
+const { user } = useAuth()
 const fileRef = ref<HTMLInputElement>()
 
 const profileSchema = z.object({
@@ -14,13 +15,25 @@ const profileSchema = z.object({
 
 type ProfileSchema = z.output<typeof profileSchema>
 
+// Initialize profile from auth user
 const profile = reactive<Partial<ProfileSchema>>({
-  name: 'Benjamin Canac',
-  email: 'ben@nuxtlabs.com',
-  username: 'benjamincanac',
-  avatar: undefined,
+  name: user.value?.displayName || '',
+  email: user.value?.email || '',
+  username: user.value?.email?.split('@')[0] || '',
+  avatar: user.value?.photoURL || undefined,
   bio: undefined
 })
+
+// Update profile when user changes
+watch(user, (newUser) => {
+  if (newUser) {
+    profile.name = newUser.displayName || profile.name
+    profile.email = newUser.email || profile.email
+    profile.username = newUser.email?.split('@')[0] || profile.username
+    profile.avatar = newUser.photoURL || profile.avatar
+  }
+}, { immediate: true })
+
 const toast = useToast()
 async function onSubmit(event: FormSubmitEvent<ProfileSchema>) {
   toast.add({

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Member } from '~/types'
 
-const { data: members } = await useFetch<Member[]>('/api/members', { default: () => [] })
+// TODO: Implement team members via Firebase when ready
+const members = ref<Member[]>([])
 
 const q = ref('')
 
