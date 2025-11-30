@@ -1,6 +1,7 @@
 // Shared transcription types - single source of truth
 
 export interface TranscriptSegment {
+  id: string     // Unique segment identifier
   start: number  // seconds
   end: number    // seconds
   text: string

@@ -18,6 +18,7 @@ export type TranscriptionInputType = z.infer<typeof TranscriptionInput>
 
 // Segment schema
 const TranscriptSegment = z.object({
+  id: z.string().describe('Unique segment identifier'),
   start: z.number().describe('Start time in seconds'),
   end: z.number().describe('End time in seconds'),
   text: z.string().describe('Transcribed text'),
@@ -87,15 +88,15 @@ export const transcribeMediaFlow = ai.defineFlow(
     // Build the recognizer path - use "_" for default recognizer
     const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
 
-    console.log('Starting Chirp 3 transcription for:', mediaUri)
+    console.log('Starting Chirp 2 transcription for:', mediaUri)
     console.log('Using recognizer:', recognizer)
 
-    // Configure the recognition request for V2 API with Chirp 3
-    // Note: Chirp 3 only supports utterance-level timestamps, not word-level
+    // Configure the recognition request for V2 API with Chirp 2
+    // Note: Chirp 2 is available in global location for BatchRecognize
     const config: any = {
       autoDecodingConfig: {}, // Let the API auto-detect audio encoding
       languageCodes: [language],
-      model: 'chirp_3', // Chirp 3 - latest model with best accuracy
+      model: 'chirp_2', // Chirp 2 - available globally with speaker diarization
       features: {
         enableAutomaticPunctuation: true,
         // Note: Word-level timestamps not supported in Chirp models
@@ -104,7 +105,7 @@ export const transcribeMediaFlow = ai.defineFlow(
     }
 
     // Add speaker diarization if enabled
-    // Note: Chirp 3 supports diarization in specific languages including en-US
+    // Note: Chirp 2 supports diarization in specific languages including en-US
     if (enableDiarization) {
       config.features.diarizationConfig = {
         minSpeakerCount: 1,
@@ -141,6 +142,7 @@ export const transcribeMediaFlow = ai.defineFlow(
     const speakerSet = new Set<string>()
     let fullText = ''
     let lastEndTime = 0
+    let segmentIndex = 0
 
     // V2 API returns results in a different structure
     // Results are keyed by the input file URI
@@ -180,6 +182,7 @@ export const transcribeMediaFlow = ai.defineFlow(
         // Create segment for this utterance
         if (transcriptText.trim()) {
           segments.push({
+            id: `seg-${segmentIndex++}`,
             start: Math.max(0, startTime),
             end: endTime,
             text: transcriptText.trim(),

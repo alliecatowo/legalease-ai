@@ -3,7 +3,6 @@ import type { TranscriptSegment, Speaker } from '~/types/transcription'
 
 // Extended segment type for UI features
 export interface TranscriptSegmentUI extends TranscriptSegment {
-  id: string
   isKeyMoment?: boolean
   tags?: string[]
 }
@@ -117,11 +116,12 @@ export function useTranscription() {
     }))
 
     // Convert segments from backend format to UI format
+    // Use backend ID if available, otherwise generate fallback for backward compatibility
     const segments: TranscriptSegmentUI[] = (doc.segments || []).map((s: TranscriptSegment, index: number) => ({
       ...s,
-      id: `seg-${index}`,
-      isKeyMoment: false,
-      tags: []
+      id: s.id || `seg-${index}`,
+      isKeyMoment: (s as any).isKeyMoment || false,
+      tags: (s as any).tags || []
     }))
 
     currentTranscription.value = {
