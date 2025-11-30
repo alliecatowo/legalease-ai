@@ -1,29 +1,13 @@
-import {
-  ref as storageRef,
-  uploadBytesResumable,
-  getDownloadURL,
-  type UploadTask,
-  type StorageReference
-} from 'firebase/storage'
+/**
+ * Storage composable - provides reactive file upload functionality
+ *
+ * Uses the storage provider abstraction for flexibility.
+ * Currently backs to Firebase Storage, but can be swapped to S3, etc.
+ */
 
-export interface UploadProgress {
-  bytesTransferred: number
-  totalBytes: number
-  progress: number
-  state: 'running' | 'paused' | 'success' | 'error' | 'canceled'
-}
+import { createStorageProvider, type StorageResult, type UploadProgress, type StorageProvider } from '~/services/storage'
 
-export interface UploadResult {
-  downloadUrl: string
-  gsUri: string
-  path: string
-  metadata: {
-    name: string
-    size: number
-    contentType: string
-    timeCreated: string
-  }
-}
+export type { StorageResult, UploadProgress }
 
 export function useStorage() {
   const { $storage } = useNuxtApp()
@@ -32,10 +16,29 @@ export function useStorage() {
   const uploadProgress = ref<UploadProgress | null>(null)
   const isUploading = ref(false)
   const uploadError = ref<string | null>(null)
-  const currentUploadTask = ref<UploadTask | null>(null)
+
+  // Keep reference to current provider for pause/resume/cancel
+  let currentProvider: StorageProvider | null = null
+
+  // Create provider when needed (lazy initialization)
+  function getProvider(): StorageProvider {
+    if (!$storage) {
+      throw new Error('Firebase Storage not initialized')
+    }
+    if (!user.value) {
+      throw new Error('User must be authenticated to upload files')
+    }
+
+    // Create new provider if none exists or user changed
+    if (!currentProvider) {
+      currentProvider = createStorageProvider($storage, user.value.uid)
+    }
+
+    return currentProvider
+  }
 
   /**
-   * Upload a file to Firebase Storage
+   * Upload a file to cloud storage
    * @param file - The file to upload
    * @param path - Storage path (e.g., 'cases/123/transcriptions')
    * @param filename - Optional custom filename (defaults to original)
@@ -44,18 +47,8 @@ export function useStorage() {
     file: File,
     path: string,
     filename?: string
-  ): Promise<UploadResult> {
-    if (!$storage) {
-      throw new Error('Firebase Storage not initialized')
-    }
-
-    if (!user.value) {
-      throw new Error('User must be authenticated to upload files')
-    }
-
-    const finalFilename = filename || `${Date.now()}-${file.name}`
-    const fullPath = `${path}/${finalFilename}`
-    const fileRef = storageRef($storage, fullPath)
+  ): Promise<StorageResult> {
+    const provider = getProvider()
 
     isUploading.value = true
     uploadError.value = null
@@ -66,74 +59,28 @@ export function useStorage() {
       state: 'running'
     }
 
-    return new Promise((resolve, reject) => {
-      const uploadTask = uploadBytesResumable(fileRef, file, {
-        contentType: file.type,
-        customMetadata: {
-          uploadedBy: user.value!.uid,
-          originalName: file.name
-        }
-      })
-
-      currentUploadTask.value = uploadTask
-
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-          uploadProgress.value = {
-            bytesTransferred: snapshot.bytesTransferred,
-            totalBytes: snapshot.totalBytes,
-            progress,
-            state: snapshot.state as UploadProgress['state']
-          }
-        },
-        (error) => {
-          isUploading.value = false
-          uploadError.value = error.message
-          uploadProgress.value = {
-            ...uploadProgress.value!,
-            state: 'error'
-          }
-          currentUploadTask.value = null
-          reject(error)
-        },
-        async () => {
-          try {
-            const downloadUrl = await getDownloadURL(fileRef)
-
-            // Construct the GCS URI for use with Genkit/Gemini
-            const bucket = fileRef.bucket
-            const gsUri = `gs://${bucket}/${fullPath}`
-
-            const result: UploadResult = {
-              downloadUrl,
-              gsUri,
-              path: fullPath,
-              metadata: {
-                name: finalFilename,
-                size: file.size,
-                contentType: file.type,
-                timeCreated: new Date().toISOString()
-              }
-            }
-
-            uploadProgress.value = {
-              ...uploadProgress.value!,
-              state: 'success'
-            }
-            isUploading.value = false
-            currentUploadTask.value = null
-            resolve(result)
-          } catch (error: any) {
-            isUploading.value = false
-            uploadError.value = error.message
-            currentUploadTask.value = null
-            reject(error)
-          }
-        }
-      )
+    // Set up progress tracking
+    provider.onProgress((progress) => {
+      uploadProgress.value = progress
     })
+
+    try {
+      const result = await provider.upload(file, path, { filename })
+
+      // Map storageUri to gsUri for backward compatibility
+      return {
+        downloadUrl: result.downloadUrl,
+        gsUri: result.storageUri, // Alias for backward compatibility
+        storageUri: result.storageUri,
+        path: result.path,
+        metadata: result.metadata
+      } as StorageResult & { gsUri: string }
+    } catch (error: any) {
+      uploadError.value = error.message
+      throw error
+    } finally {
+      isUploading.value = false
+    }
   }
 
   /**
@@ -144,26 +91,23 @@ export function useStorage() {
   async function uploadForTranscription(
     file: File,
     caseId?: string
-  ): Promise<UploadResult> {
+  ): Promise<StorageResult & { gsUri: string }> {
     const basePath = caseId
       ? `cases/${caseId}/transcriptions`
       : `users/${user.value?.uid}/transcriptions`
 
-    return uploadFile(file, basePath)
+    return uploadFile(file, basePath) as Promise<StorageResult & { gsUri: string }>
   }
 
   /**
    * Cancel the current upload
    */
   function cancelUpload() {
-    if (currentUploadTask.value) {
-      currentUploadTask.value.cancel()
-      uploadProgress.value = {
-        ...uploadProgress.value!,
-        state: 'canceled'
-      }
-      isUploading.value = false
-      currentUploadTask.value = null
+    try {
+      const provider = getProvider()
+      provider.cancel()
+    } catch {
+      // Provider may not be initialized
     }
   }
 
@@ -171,12 +115,11 @@ export function useStorage() {
    * Pause the current upload
    */
   function pauseUpload() {
-    if (currentUploadTask.value) {
-      currentUploadTask.value.pause()
-      uploadProgress.value = {
-        ...uploadProgress.value!,
-        state: 'paused'
-      }
+    try {
+      const provider = getProvider()
+      provider.pause()
+    } catch {
+      // Provider may not be initialized
     }
   }
 
@@ -184,12 +127,11 @@ export function useStorage() {
    * Resume a paused upload
    */
   function resumeUpload() {
-    if (currentUploadTask.value) {
-      currentUploadTask.value.resume()
-      uploadProgress.value = {
-        ...uploadProgress.value!,
-        state: 'running'
-      }
+    try {
+      const provider = getProvider()
+      provider.resume()
+    } catch {
+      // Provider may not be initialized
     }
   }
 
@@ -200,7 +142,6 @@ export function useStorage() {
     uploadProgress.value = null
     isUploading.value = false
     uploadError.value = null
-    currentUploadTask.value = null
   }
 
   return {

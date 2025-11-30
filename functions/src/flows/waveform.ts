@@ -1,6 +1,6 @@
 import { z } from 'genkit'
 import { ai } from '../genkit.js'
-import { Storage } from '@google-cloud/storage'
+import { download } from '../storage/index.js'
 
 // Input schema
 export const WaveformInput = z.object({
@@ -20,14 +20,6 @@ export const WaveformOutput = z.object({
 
 export type WaveformOutputType = z.infer<typeof WaveformOutput>
 
-// Parse GCS URI into bucket and path
-function parseGcsUri(uri: string): { bucket: string; path: string } {
-  const match = uri.match(/^gs:\/\/([^/]+)\/(.+)$/)
-  if (!match) {
-    throw new Error(`Invalid GCS URI: ${uri}`)
-  }
-  return { bucket: match[1], path: match[2] }
-}
 
 // Generate waveform peaks from audio file
 export const generateWaveformFlow = ai.defineFlow(
@@ -39,16 +31,9 @@ export const generateWaveformFlow = ai.defineFlow(
   async (input) => {
     const { gcsUri, samplesPerPeak, targetPeaks } = input
 
-    // Validate GCS URI
-    if (!gcsUri.startsWith('gs://')) {
-      throw new Error('Only GCS URIs (gs://bucket/path) are supported')
-    }
-
-    const { bucket, path } = parseGcsUri(gcsUri)
-    const storage = new Storage()
-
-    // Download the audio file to memory
-    const [fileBuffer] = await storage.bucket(bucket).file(path).download()
+    // Download the audio file using storage abstraction
+    // Supports gs://, s3://, and other provider URIs
+    const fileBuffer = await download(gcsUri)
 
     // For MP3/audio files, we need to decode them to get raw samples
     // In a serverless environment, we can use a pure-JS decoder
