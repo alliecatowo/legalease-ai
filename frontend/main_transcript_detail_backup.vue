@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import type { TranscriptSegment, Speaker } from '~/composables/useAI'
+import type { TranscriptSegment, Speaker, Transcription } from '~/composables/useTranscription'
 
 definePageMeta({
   layout: 'default'
@@ -9,11 +9,8 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
+const api = useApi()
 const toast = useToast()
-
-const { getDocument, updateDocument, deleteDocument } = useDocuments()
-const { getCase } = useCases()
-const { transcribeMedia, summarizeTranscript } = useAI()
 
 const transcriptId = computed(() => route.params.id as string)
 
@@ -49,17 +46,49 @@ const flashSegmentId = ref<string | null>(null)
 const metadataSidebarOpen = ref(true)
 const metadataSidebarCollapsed = ref(false)
 
-// Smart search using backend API - DISABLED (needs backend)
+// Perform smart search using backend API
 async function performSmartSearch() {
-  // TODO: Implement smart search with Qdrant/backend
-  searchResults.value = new Set()
-  isSearching.value = false
-  
-  toast.add({
-    title: 'Smart search unavailable',
-    description: 'Smart search requires backend support',
-    color: 'warning'
-  })
+  if (!transcript.value || !searchQuery.value.trim()) {
+    searchResults.value = new Set()
+    return
+  }
+
+  isSearching.value = true
+  try {
+    const searchRequest: any = {
+      query: searchQuery.value,
+      use_bm25: true,
+      use_dense: true,
+      fusion_method: 'rrf',
+      top_k: 50,
+      chunk_types: ['transcript_segment']
+    }
+
+    const docId = (transcript.value as any).document_id
+    if (docId) {
+      searchRequest.document_ids = [docId]
+    }
+
+    const response = await api.search.hybrid(searchRequest)
+
+    const segmentIndices = new Set<number>()
+    response.results?.forEach((result: any) => {
+      const segmentIndex = result.metadata?.position
+      if (segmentIndex !== undefined && segmentIndex !== null) {
+        segmentIndices.add(segmentIndex)
+      }
+    })
+
+    searchResults.value = segmentIndices
+  } catch (err: any) {
+    console.error('Smart search failed:', err)
+    if (process.dev) {
+      console.error('Error details:', err.response?._data || err.message)
+    }
+    searchResults.value = new Set()
+  } finally {
+    isSearching.value = false
+  }
 }
 
 // Debounced smart search
@@ -258,11 +287,7 @@ async function toggleKeyMoment(segmentId: string) {
 
   try {
     segment.isKeyMoment = newStatus
-    
-    // Update in Firestore
-    await updateDocument(transcriptId.value, {
-      segments: transcript.value.segments
-    })
+    await api.transcriptions.toggleKeyMoment(transcript.value.id, segmentId, newStatus)
 
     toast.add({
       title: newStatus ? 'Marked as key moment' : 'Removed key moment',
@@ -280,12 +305,38 @@ async function toggleKeyMoment(segmentId: string) {
 }
 
 async function exportTranscript(format: 'docx' | 'srt' | 'vtt') {
-  // TODO: Implement export functionality
-  toast.add({
-    title: 'Export unavailable',
-    description: 'Export feature requires backend support',
-    color: 'warning'
-  })
+  if (!transcript.value) return
+
+  isExporting.value = true
+  showExportMenu.value = false
+
+  try {
+    const response = await api.transcriptions.export(transcript.value.id, format)
+
+    const blob = new Blob([response], { type: getContentType(format) })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${transcript.value.title}.${format}`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+
+    toast.add({
+      title: 'Export successful',
+      description: `Transcript exported as ${format.toUpperCase()}`,
+      color: 'success'
+    })
+  } catch (err) {
+    toast.add({
+      title: 'Export failed',
+      description: 'Unable to export transcript',
+      color: 'error'
+    })
+  } finally {
+    isExporting.value = false
+  }
 }
 
 function getContentType(format: string): string {
@@ -383,9 +434,9 @@ async function saveSpeakerEdit() {
     editSpeakerName.value = ''
     editSpeakerRole.value = ''
 
-    // Update in Firestore
-    await updateDocument(transcriptId.value, {
-      speakers: transcript.value.speakers
+    await api.transcriptions.updateSpeaker(transcript.value.id, speakerId, {
+      name: speaker.name,
+      role: speaker.role
     })
 
     toast.add({
@@ -418,7 +469,7 @@ async function deleteTranscription() {
   if (!confirmed) return
 
   try {
-    await deleteDocument(transcriptId.value)
+    await api.transcriptions.delete(transcript.value.id)
     toast.add({
       title: 'Transcription deleted',
       description: 'The transcription has been permanently deleted',
@@ -439,24 +490,11 @@ async function loadTranscript() {
   error.value = null
 
   try {
-    const doc = await getDocument(transcriptId.value)
-    if (!doc) {
-      error.value = 'Transcript not found'
-      return
-    }
-
-    // Adapt Firestore document to transcript format
+    const response = await api.transcriptions.get(transcriptId.value)
     transcript.value = {
-      id: doc.id,
-      title: doc.title || doc.filename,
-      audioUrl: doc.downloadUrl,
-      duration: doc.duration || 0,
-      segments: doc.segments || [],
-      speakers: doc.speakers || [],
-      created_at: doc.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      case_id: doc.caseId,
-      status: doc.status
-    } as any
+      ...response,
+      audioUrl: response.audio_url || null
+    }
   } catch (err: any) {
     error.value = err.message || 'Failed to load transcript'
     console.error('Error loading transcript:', err)
