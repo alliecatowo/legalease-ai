@@ -128,15 +128,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <!-- Auth Loading State - prevents flash of content during initialization -->
-  <div v-if="!authReady" class="min-h-screen flex items-center justify-center bg-default">
-    <div class="text-center space-y-4">
-      <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
-      <p class="text-muted">Loading...</p>
-    </div>
-  </div>
-
-  <UDashboardGroup v-else unit="rem">
+  <UDashboardGroup unit="rem">
     <UDashboardSidebar
       id="default"
       v-model:open="open"

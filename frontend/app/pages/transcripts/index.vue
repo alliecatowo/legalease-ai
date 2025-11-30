@@ -139,7 +139,7 @@ async function startTranscription(doc: any) {
     </template>
 
     <template #body>
-      <div class="max-w-7xl mx-auto space-y-6 p-6">
+      <div class="max-w-7xl mx-auto space-y-6">
         <!-- Stats -->
         <div class="grid grid-cols-3 gap-4">
           <UCard :ui="{ body: 'p-4' }">
@@ -238,13 +238,13 @@ async function startTranscription(doc: any) {
           <p class="text-muted mb-6">Upload audio or video files to transcribe</p>
           <UButton label="Upload Transcription" icon="i-lucide-upload" @click="() => showUploadModal = true" />
         </div>
+
+        <!-- Upload Modal -->
+        <ModalsUploadTranscriptionModal
+          v-model:open="showUploadModal"
+          @uploaded="handleUploadComplete"
+        />
       </div>
     </template>
   </UDashboardPanel>
-
-  <!-- Upload Modal -->
-  <ModalsUploadTranscriptionModal
-    v-model:open="showUploadModal"
-    @uploaded="handleUploadComplete"
-  />
 </template>
