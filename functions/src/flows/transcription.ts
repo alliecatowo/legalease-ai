@@ -44,11 +44,24 @@ export const TranscriptionOutput = z.object({
 
 export type TranscriptionOutputType = z.infer<typeof TranscriptionOutput>
 
-// Helper to convert duration string (e.g., "10.500s") to seconds
-function parseDuration(duration: string | null | undefined): number {
+// Helper to convert duration to seconds
+// Handles both string format ("10.500s") and object format ({seconds: "10", nanos: 500000000})
+function parseDuration(duration: any): number {
   if (!duration) return 0
-  // Remove trailing 's' and parse as float
-  return parseFloat(duration.replace('s', '')) || 0
+
+  // String format: "10.500s"
+  if (typeof duration === 'string') {
+    return parseFloat(duration.replace('s', '')) || 0
+  }
+
+  // Object format: {seconds: "10", nanos: 500000000}
+  if (typeof duration === 'object') {
+    const secs = parseInt(duration.seconds || '0', 10)
+    const nanos = parseInt(duration.nanos || '0', 10)
+    return secs + (nanos / 1_000_000_000)
+  }
+
+  return 0
 }
 
 // Transcription flow using Google Cloud Speech-to-Text V2 with Chirp 3
@@ -109,7 +122,7 @@ export const transcribeMediaFlow = ai.defineFlow(
       model: 'chirp_3', // Chirp 3 - latest model with best accuracy
       features: {
         enableAutomaticPunctuation: true,
-        // Note: Word-level timestamps not supported in Chirp models
+        enableWordTimeOffsets: true, // Enable word-level timestamps
         // Diarization config is set separately below
       }
     }
@@ -142,6 +155,9 @@ export const transcribeMediaFlow = ai.defineFlow(
     // Wait for the operation to complete
     const [response] = await operation.promise()
 
+    // Debug response structure if needed
+    // console.log('Speech API response:', JSON.stringify(response?.results, null, 2)?.substring(0, 2000))
+
     // Process results from V2 API response
     const segments: z.infer<typeof TranscriptSegment>[] = []
     const speakerSet = new Set<string>()
@@ -172,64 +188,47 @@ export const transcribeMediaFlow = ai.defineFlow(
         // If we have words with speaker labels, create segments by speaker changes
         if (words.length > 0 && words[0]?.speakerLabel) {
           let currentSpeaker = words[0].speakerLabel
-          let segmentWords: typeof words = []
-          let segmentStartTime = parseDuration(words[0].startOffset)
 
-          for (let i = 0; i < words.length; i++) {
-            const word = words[i]
+          // Group words by speaker
+          const speakerSegments: { speaker: string; words: typeof words }[] = []
+          let currentSegment = { speaker: currentSpeaker, words: [] as typeof words }
+
+          for (const word of words) {
             const wordSpeaker = word.speakerLabel || currentSpeaker
 
-            if (wordSpeaker !== currentSpeaker && segmentWords.length > 0) {
-              // Speaker changed - save current segment
-              const segmentText = segmentWords.map((w: any) => w.word).join(' ')
-              const segmentEndTime = parseDuration(segmentWords[segmentWords.length - 1].endOffset)
-
-              if (segmentText.trim()) {
-                segments.push({
-                  id: `seg-${segmentIndex++}`,
-                  start: Math.max(0, segmentStartTime),
-                  end: segmentEndTime,
-                  text: segmentText.trim(),
-                  speaker: currentSpeaker,
-                  confidence: alternative.confidence || undefined
-                })
-                speakerSet.add(currentSpeaker)
-                fullText += segmentText + ' '
-
-                if (segmentEndTime > lastEndTime) {
-                  lastEndTime = segmentEndTime
-                }
-              }
-
-              // Start new segment
+            if (wordSpeaker !== currentSpeaker && currentSegment.words.length > 0) {
+              speakerSegments.push(currentSegment)
+              currentSegment = { speaker: wordSpeaker, words: [word] }
               currentSpeaker = wordSpeaker
-              segmentWords = [word]
-              segmentStartTime = parseDuration(word.startOffset)
             } else {
-              segmentWords.push(word)
+              currentSegment.words.push(word)
             }
           }
+          if (currentSegment.words.length > 0) {
+            speakerSegments.push(currentSegment)
+          }
 
-          // Don't forget the last segment
-          if (segmentWords.length > 0) {
-            const segmentText = segmentWords.map((w: any) => w.word).join(' ')
-            const segmentEndTime = parseDuration(segmentWords[segmentWords.length - 1].endOffset)
+          // Create segments with real timestamps from word offsets
+          for (const seg of speakerSegments) {
+            const segmentText = seg.words.map((w: any) => w.word).join(' ')
+            if (!segmentText.trim()) continue
 
-            if (segmentText.trim()) {
-              segments.push({
-                id: `seg-${segmentIndex++}`,
-                start: Math.max(0, segmentStartTime),
-                end: segmentEndTime,
-                text: segmentText.trim(),
-                speaker: currentSpeaker,
-                confidence: alternative.confidence || undefined
-              })
-              speakerSet.add(currentSpeaker)
-              fullText += segmentText + ' '
+            const segStart = parseDuration(seg.words[0].startOffset)
+            const segEnd = parseDuration(seg.words[seg.words.length - 1].endOffset)
 
-              if (segmentEndTime > lastEndTime) {
-                lastEndTime = segmentEndTime
-              }
+            segments.push({
+              id: `seg-${segmentIndex++}`,
+              start: segStart,
+              end: segEnd,
+              text: segmentText.trim(),
+              speaker: seg.speaker,
+              confidence: alternative.confidence || undefined
+            })
+            speakerSet.add(seg.speaker)
+            fullText += segmentText + ' '
+
+            if (segEnd > lastEndTime) {
+              lastEndTime = segEnd
             }
           }
         } else {
@@ -273,7 +272,6 @@ export const transcribeMediaFlow = ai.defineFlow(
 
     // Use detected language if auto-detection was used, otherwise use input language
     const outputLanguage = detectedLanguage || (language !== 'auto' ? language : undefined)
-    console.log('Detected language:', detectedLanguage, 'Output language:', outputLanguage)
 
     let result: TranscriptionOutputType = {
       fullText,
