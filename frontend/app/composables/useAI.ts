@@ -6,7 +6,9 @@ import type {
   SummarizationOutput,
   SearchInput,
   SearchOutput,
-  IndexDocumentInput
+  IndexDocumentInput,
+  WaveformInput,
+  WaveformOutput
 } from '~/types/transcription'
 
 // Re-export types for convenience
@@ -17,7 +19,9 @@ export type {
   SummarizationOutput,
   SearchInput,
   SearchOutput,
-  IndexDocumentInput
+  IndexDocumentInput,
+  WaveformInput,
+  WaveformOutput
 }
 
 export function useAI() {
@@ -83,10 +87,26 @@ export function useAI() {
     return result.data
   }
 
+  const generateWaveform = async (input: WaveformInput): Promise<WaveformOutput> => {
+    if (!$firebase) {
+      throw new Error('Firebase not initialized')
+    }
+
+    const functions = getFunctions($firebase, 'us-central1')
+    const generate = httpsCallable<WaveformInput, WaveformOutput>(
+      functions,
+      'generateWaveform'
+    )
+
+    const result = await generate(input)
+    return result.data
+  }
+
   return {
     transcribeMedia,
     summarizeTranscript,
     searchDocuments,
-    indexDocument
+    indexDocument,
+    generateWaveform
   }
 }

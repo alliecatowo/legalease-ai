@@ -15,6 +15,18 @@ const { getTranscription, updateTranscription, deleteTranscription: deleteTransc
 const { getCase } = useCases()
 const { transcribeMedia, summarizeTranscript } = useAI()
 
+// Speaker colors for UI
+const SPEAKER_COLORS = [
+  '#3B82F6',
+  '#8B5CF6',
+  '#10B981',
+  '#F59E0B',
+  '#EF4444',
+  '#EC4899',
+  '#6366F1',
+  '#14B8A6'
+]
+
 const transcriptId = computed(() => route.params.id as string)
 
 // State
@@ -461,14 +473,29 @@ async function loadTranscript() {
       return
     }
 
+    // Transform speakers to add name and color for UI
+    const rawSpeakers = doc.speakers || []
+    const transformedSpeakers = rawSpeakers.map((s: any, index: number) => ({
+      ...s,
+      name: s.name || s.inferredName || s.id || `Speaker ${index + 1}`,
+      color: s.color || SPEAKER_COLORS[index % SPEAKER_COLORS.length]
+    }))
+
+    // Transform segments to ensure they have proper IDs
+    const transformedSegments = (doc.segments || []).map((s: any, index: number) => ({
+      ...s,
+      id: s.id || `seg-${index}`,
+      isKeyMoment: s.isKeyMoment || false
+    }))
+
     // Adapt Firestore document to transcript format
     transcript.value = {
       id: doc.id,
       title: doc.filename,
       audioUrl: doc.downloadUrl,
       duration: doc.duration || 0,
-      segments: doc.segments || [],
-      speakers: doc.speakers || [],
+      segments: transformedSegments,
+      speakers: transformedSpeakers,
       createdAt: doc.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       caseId: doc.caseId,
       status: doc.status

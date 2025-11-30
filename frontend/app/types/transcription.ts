@@ -95,3 +95,16 @@ export interface IndexDocumentInput {
   documentType?: string
   pageNumber?: number
 }
+
+// Waveform types
+export interface WaveformInput {
+  gcsUri: string
+  samplesPerPeak?: number
+  targetPeaks?: number
+}
+
+export interface WaveformOutput {
+  peaks: number[]
+  duration?: number
+  sampleRate?: number
+}

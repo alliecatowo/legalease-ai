@@ -6,7 +6,9 @@ import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps<{
   audioUrl: string
-  transcriptionId?: number  // Optional transcription ID for fetching pre-computed waveform
+  transcriptionId?: string  // Optional transcription ID for fetching pre-computed waveform
+  gcsUri?: string  // GCS URI for generating waveform peaks server-side
+  peaks?: number[]  // Pre-computed peaks array
   currentTime?: number
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
@@ -52,7 +54,8 @@ async function initializeWaveSurfer() {
   audio.preload = 'metadata' // Load metadata quickly, stream rest on demand
   audio.crossOrigin = 'anonymous'
 
-  wavesurfer.value = WaveSurfer.create({
+  // WaveSurfer options
+  const wsOptions: any = {
     container: waveformRef.value,
     waveColor: '#94A3B8',
     progressColor: '#3B82F6',
@@ -66,7 +69,15 @@ async function initializeWaveSurfer() {
     mediaControls: false,
     interact: true,
     media: audio
-  })
+  }
+
+  // Use pre-computed peaks if available (much faster - no audio decoding needed)
+  if (props.peaks && props.peaks.length > 0) {
+    wsOptions.peaks = [props.peaks]
+    console.log('Using pre-computed peaks:', props.peaks.length, 'points')
+  }
+
+  wavesurfer.value = WaveSurfer.create(wsOptions)
 
   // Enable play button immediately - browser will buffer on play
   // This is how native audio works - no waiting!

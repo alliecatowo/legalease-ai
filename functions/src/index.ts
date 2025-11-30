@@ -5,6 +5,7 @@ import { defineSecret } from 'firebase-functions/params'
 import { transcribeMediaFlow, TranscriptionInput } from './flows/transcription.js'
 import { summarizeTranscriptFlow, SummarizationInput } from './flows/summarization.js'
 import { searchDocumentsFlow, indexDocumentFlow, SearchInput, IndexDocumentInput } from './flows/search.js'
+import { generateWaveformFlow, WaveformInput } from './flows/waveform.js'
 
 // Define secrets
 const googleAIApiKey = defineSecret('GOOGLE_GENAI_API_KEY')
@@ -54,5 +55,14 @@ export const indexDocument = onCallGenkit(
   indexDocumentFlow
 )
 
+export const generateWaveform = onCallGenkit(
+  {
+    cors: true,
+    memory: '1GiB', // May need more memory for large audio files
+    timeoutSeconds: 120
+  },
+  generateWaveformFlow
+)
+
 // Re-export schemas for client-side use
-export { TranscriptionInput, SummarizationInput, SearchInput, IndexDocumentInput }
+export { TranscriptionInput, SummarizationInput, SearchInput, IndexDocumentInput, WaveformInput }
