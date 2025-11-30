@@ -77,6 +77,121 @@ const summaryData = ref<{
 } | null>(null)
 const isGeneratingSummary = ref(false)
 
+// Parse timestamp string (MM:SS or M:SS) to seconds
+function parseTimestamp(timestamp: string): number | null {
+  if (!timestamp) return null
+  const match = timestamp.match(/^(\d+):(\d{2})$/)
+  if (!match) return null
+  const [, mins, secs] = match
+  return parseInt(mins) * 60 + parseInt(secs)
+}
+
+// Find segment at a given timestamp
+function findSegmentAtTime(timeSeconds: number): TranscriptSegment | null {
+  if (!transcript.value) return null
+  return transcript.value.segments.find(seg =>
+    timeSeconds >= seg.start && timeSeconds <= seg.end
+  ) || null
+}
+
+// Apply a single key moment from summary to transcript
+async function applyKeyMoment(moment: { timestamp?: string; description: string }) {
+  if (!transcript.value || !moment.timestamp) {
+    toast.add({
+      title: 'Cannot apply key moment',
+      description: 'No valid timestamp available',
+      color: 'warning'
+    })
+    return
+  }
+
+  const timeSeconds = parseTimestamp(moment.timestamp)
+  if (timeSeconds === null) {
+    toast.add({
+      title: 'Cannot apply key moment',
+      description: `Invalid timestamp format: ${moment.timestamp}`,
+      color: 'warning'
+    })
+    return
+  }
+
+  const segment = findSegmentAtTime(timeSeconds)
+  if (!segment) {
+    toast.add({
+      title: 'Cannot apply key moment',
+      description: `No segment found at ${moment.timestamp}`,
+      color: 'warning'
+    })
+    return
+  }
+
+  if (segment.isKeyMoment) {
+    toast.add({
+      title: 'Already marked',
+      description: 'This segment is already a key moment',
+      color: 'info'
+    })
+    return
+  }
+
+  await toggleKeyMoment(segment.id)
+}
+
+// Apply all key moments from summary to transcript
+async function applyAllKeyMoments() {
+  if (!transcript.value || !summaryData.value?.keyMoments?.length) return
+
+  let applied = 0
+  let skipped = 0
+
+  for (const moment of summaryData.value.keyMoments) {
+    if (!moment.timestamp) {
+      skipped++
+      continue
+    }
+
+    const timeSeconds = parseTimestamp(moment.timestamp)
+    if (timeSeconds === null) {
+      skipped++
+      continue
+    }
+
+    const segment = findSegmentAtTime(timeSeconds)
+    if (!segment) {
+      skipped++
+      continue
+    }
+
+    if (segment.isKeyMoment) {
+      skipped++
+      continue
+    }
+
+    // Mark as key moment
+    segment.isKeyMoment = true
+    applied++
+  }
+
+  if (applied > 0) {
+    // Save all changes to Firestore
+    await updateTranscription(transcriptId.value, {
+      segments: transcript.value.segments
+    })
+
+    toast.add({
+      title: 'Key moments applied',
+      description: `${applied} segment${applied > 1 ? 's' : ''} marked as key moments${skipped > 0 ? ` (${skipped} skipped)` : ''}`,
+      color: 'success'
+    })
+  } else {
+    toast.add({
+      title: 'No new key moments',
+      description: skipped > 0 ? `${skipped} could not be applied (already marked or no matching segment)` : 'No key moments to apply',
+      color: 'info'
+    })
+  }
+}
+
 // Smart search using backend API - DISABLED (needs backend)
 async function performSmartSearch() {
   // TODO: Implement smart search with Qdrant/backend
@@ -100,14 +215,15 @@ async function generateSummary() {
   isGeneratingSummary.value = true
 
   try {
-    // Build full transcript text from segments
+    // Build timestamped transcript text from segments
     const fullText = transcript.value.segments
       .map(seg => {
         const speaker = getSpeaker(seg.speaker)
         const speakerName = speaker?.name || 'Unknown'
-        return `${speakerName}: ${seg.text}`
+        const timestamp = formatTime(seg.start)
+        return `[${timestamp}] ${speakerName}: ${seg.text}`
       })
-      .join('\n\n')
+      .join('\n')
 
     const result = await summarizeTranscript({
       transcript: fullText,
@@ -1436,9 +1552,19 @@ onMounted(async () => {
             <!-- Key Moments -->
             <UCard v-if="summaryData.keyMoments?.length">
               <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-star" class="size-5 text-warning" />
-                  <h4 class="font-semibold">Key Moments ({{ summaryData.keyMoments.length }})</h4>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <UIcon name="i-lucide-star" class="size-5 text-warning" />
+                    <h4 class="font-semibold">Key Moments ({{ summaryData.keyMoments.length }})</h4>
+                  </div>
+                  <UButton
+                    icon="i-lucide-check-check"
+                    label="Apply All"
+                    color="warning"
+                    variant="soft"
+                    size="xs"
+                    @click="applyAllKeyMoments"
+                  />
                 </div>
               </template>
               <div class="space-y-3">
@@ -1452,15 +1578,37 @@ onMounted(async () => {
                     'bg-muted/10 border border-default': moment.importance === 'low'
                   }"
                 >
-                  <div class="flex items-start gap-2 mb-1">
-                    <UBadge
-                      :label="moment.importance"
-                      :color="moment.importance === 'high' ? 'error' : moment.importance === 'medium' ? 'warning' : 'neutral'"
-                      size="xs"
-                      variant="soft"
-                      class="capitalize"
-                    />
-                    <span v-if="moment.timestamp" class="text-xs text-muted">{{ moment.timestamp }}</span>
+                  <div class="flex items-start justify-between gap-2 mb-1">
+                    <div class="flex items-center gap-2">
+                      <UBadge
+                        :label="moment.importance"
+                        :color="moment.importance === 'high' ? 'error' : moment.importance === 'medium' ? 'warning' : 'neutral'"
+                        size="xs"
+                        variant="soft"
+                        class="capitalize"
+                      />
+                      <UButton
+                        v-if="moment.timestamp"
+                        :label="moment.timestamp"
+                        icon="i-lucide-clock"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        @click="() => {
+                          const time = parseTimestamp(moment.timestamp!)
+                          if (time !== null) currentTime = time
+                        }"
+                      />
+                    </div>
+                    <UTooltip text="Apply as key moment">
+                      <UButton
+                        icon="i-lucide-star"
+                        color="warning"
+                        variant="ghost"
+                        size="xs"
+                        @click="applyKeyMoment(moment)"
+                      />
+                    </UTooltip>
                   </div>
                   <p class="text-sm text-default">{{ moment.description }}</p>
                   <div v-if="moment.speakers?.length" class="flex flex-wrap gap-1 mt-2">

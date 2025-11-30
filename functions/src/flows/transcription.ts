@@ -113,20 +113,30 @@ export const transcribeMediaFlow = ai.defineFlow(
     if ((input.enableSummary ?? false) && result.text.length > 100) {
       try {
         console.log('Generating detailed summary...')
+
+        // Build timestamped transcript for better key moment identification
+        const timestampedTranscript = result.segments.slice(0, 500).map(seg => {
+          const mins = Math.floor(seg.startTime / 60)
+          const secs = Math.floor(seg.startTime % 60)
+          const timestamp = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+          const speaker = seg.speakerId || 'Unknown'
+          return `[${timestamp}] ${speaker}: ${seg.text}`
+        }).join('\n')
+
         const summaryResponse = await ai.generate({
           model: getModel('standard'),
           prompt: `
 You are a legal document analyst. Analyze this transcript and provide a structured summary.
 
-Transcript:
-${result.text.substring(0, 30000)}
+Transcript (with timestamps):
+${timestampedTranscript.substring(0, 30000)}
 
 Provide your analysis as JSON with this structure:
 {
   "summary": "1-2 paragraph executive summary of the transcript",
   "keyMoments": [
     {
-      "timestamp": "optional timestamp or null",
+      "timestamp": "MM:SS format from transcript",
       "description": "what happened",
       "importance": "high|medium|low",
       "speakers": ["who was involved"]
@@ -141,6 +151,8 @@ Provide your analysis as JSON with this structure:
     "dates": ["dates, times, deadlines mentioned"]
   }
 }
+
+IMPORTANT: For keyMoments, use the actual timestamps from the transcript (e.g., "00:15", "01:30").
 
 Focus on:
 - Admissions or contradictions

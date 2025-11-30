@@ -56,7 +56,7 @@ You are a legal document analyst. Analyze this transcript and provide a structur
 
 ${caseContext ? `Case Context: ${caseContext}\n` : ''}
 
-Transcript:
+Transcript (may include timestamps in [MM:SS] format):
 ${transcript}
 
 Provide your analysis as JSON with this structure:
@@ -64,7 +64,7 @@ Provide your analysis as JSON with this structure:
   "summary": "${lengthGuidance[outputType]} summary of the transcript",
   "keyMoments": [
     {
-      "timestamp": "optional timestamp or 'N/A'",
+      "timestamp": "MM:SS timestamp from the transcript where this moment occurs",
       "description": "what happened",
       "importance": "high|medium|low",
       "speakers": ["who was involved"]
@@ -79,6 +79,8 @@ Provide your analysis as JSON with this structure:
     "dates": ["dates, times, deadlines mentioned"]
   }
 }
+
+IMPORTANT: For keyMoments, extract the actual timestamp from the transcript (e.g., "0:15", "1:30"). Look for [MM:SS] patterns in the input.
 
 Focus on:
 - Admissions or contradictions
