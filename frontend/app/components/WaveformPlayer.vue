@@ -37,27 +37,8 @@ const keyMomentsCanvasRef = ref<HTMLCanvasElement | null>(null)
 // Playback rate options
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
-// Fetch pre-computed waveform data from API
-async function fetchWaveformData(): Promise<{ peaks: number[], duration: number } | null> {
-  if (!props.transcriptionId) {
-    return null
-  }
-
-  try {
-    const response = await fetch(`/api/v1/transcriptions/${props.transcriptionId}/waveform`)
-    if (response.ok) {
-      const data = await response.json()
-      console.log('Fetched pre-computed waveform data:', data.peaks.length, 'peaks')
-      return { peaks: data.peaks, duration: data.duration }
-    } else {
-      console.warn('Pre-computed waveform not available, will load audio file')
-      return null
-    }
-  } catch (error) {
-    console.warn('Failed to fetch waveform data:', error)
-    return null
-  }
-}
+// Pre-computed waveform API removed - Firebase backend doesn't support it
+// Always use client-side waveform generation
 
 // Initialize WaveSurfer
 async function initializeWaveSurfer() {
@@ -146,32 +127,13 @@ async function initializeWaveSurfer() {
     isReady.value = false
   })
 
-  // Try to fetch pre-computed waveform data first
-  const waveformData = await fetchWaveformData()
-
-  if (waveformData && waveformData.peaks && waveformData.duration) {
-    // Use pre-computed waveform data for instant rendering
-    console.log('Using pre-computed waveform data - instant rendering!')
-
-    // WaveSurfer v7 expects an array of channels (even for mono)
-    // Backend returns a single array of peaks, so we wrap it in an array
-    const peaksArray = [waveformData.peaks]
-
-    // Load audio URL for playback and set the peaks manually
-    wavesurfer.value.load(props.audioUrl, peaksArray, waveformData.duration).catch((error) => {
-      console.error('Failed to load audio with pre-computed waveform:', error)
-      isLoading.value = false
-      isAudioReady.value = false
-    })
-  } else {
-    // Fallback: Load audio and generate waveform on client (old behavior)
-    console.log('Falling back to client-side waveform generation')
-    wavesurfer.value.load(props.audioUrl).catch((error) => {
-      console.error('Failed to load audio:', error)
-      isLoading.value = false
-      isAudioReady.value = false
-    })
-  }
+  // Load audio and generate waveform on client
+  console.log('Loading audio and generating waveform:', props.audioUrl)
+  wavesurfer.value.load(props.audioUrl).catch((error) => {
+    console.error('Failed to load audio:', error)
+    isLoading.value = false
+    isAudioReady.value = false
+  })
 }
 
 // Draw segment markers on waveform
@@ -400,11 +362,12 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex flex-col gap-4">
     <!-- Loading Skeleton with Progress -->
-    <div v-if="isLoading || !isReady" class="w-full bg-muted/20 rounded-lg p-8">
+    <div v-if="isLoading && !isReady" class="w-full bg-muted/20 rounded-lg p-8">
       <div class="text-center space-y-4">
         <UIcon name="i-lucide-loader-circle" class="size-8 text-primary animate-spin mx-auto" />
         <div class="space-y-2">
-          <p class="text-sm text-muted">Loading waveform...</p>
+          <p class="text-sm text-muted">Loading waveform... {{ loadingProgress }}%</p>
+          <p class="text-xs text-muted">Audio playback available while loading</p>
         </div>
       </div>
     </div>
