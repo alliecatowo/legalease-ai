@@ -93,9 +93,14 @@ export function useFirestore() {
   async function updateTranscription(id: string, data: Partial<TranscriptionDoc>): Promise<void> {
     if (!$firestore) throw new Error('Firestore not initialized')
 
+    // Filter out undefined values - Firestore doesn't allow them
+    const cleanData = Object.fromEntries(
+      Object.entries(data).filter(([_, v]) => v !== undefined)
+    )
+
     const docRef = doc($firestore, 'transcriptions', id)
     await updateDoc(docRef, {
-      ...data,
+      ...cleanData,
       updatedAt: serverTimestamp()
     })
   }

@@ -109,6 +109,7 @@ async function initializeWaveSurfer() {
   const throttledTimeUpdate = useThrottleFn(() => {
     if (wavesurfer.value) {
       const time = wavesurfer.value.getCurrentTime()
+      console.log('[WaveformPlayer] emitting currentTime:', time.toFixed(2))
       emit('update:currentTime', time)
     }
   }, 100)
@@ -120,6 +121,7 @@ async function initializeWaveSurfer() {
 
   wavesurfer.value.on('seek', (progress) => {
     const time = progress * duration.value
+    console.log('[WaveformPlayer] seek event, progress:', progress.toFixed(3), 'time:', time.toFixed(2))
     emit('update:currentTime', time)
   })
 
@@ -312,8 +314,11 @@ function formatTime(seconds: number): string {
 watch(() => props.currentTime, (newTime) => {
   if (newTime !== undefined && wavesurfer.value) {
     const currentWavesurferTime = wavesurfer.value.getCurrentTime()
+    const diff = Math.abs(newTime - currentWavesurferTime)
+    console.log('[WaveformPlayer] watch currentTime:', newTime?.toFixed(2), 'wavesurfer time:', currentWavesurferTime.toFixed(2), 'diff:', diff.toFixed(2))
     // Only seek if the difference is significant (>0.5s) to avoid feedback loops
-    if (Math.abs(newTime - currentWavesurferTime) > 0.5) {
+    if (diff > 0.5) {
+      console.log('[WaveformPlayer] seeking to:', newTime?.toFixed(2))
       seekTo(newTime)
     }
   }

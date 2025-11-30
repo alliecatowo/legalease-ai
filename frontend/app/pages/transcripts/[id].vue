@@ -86,8 +86,15 @@ const activeSegmentId = computed(() => {
   // Simple: find segment where time is between start and end
   for (const segment of transcript.value.segments) {
     if (time >= segment.start && time <= segment.end) {
+      console.log('[activeSegmentId] time:', time.toFixed(2), '-> segment:', segment.id, `(${segment.start.toFixed(2)}-${segment.end.toFixed(2)})`)
       return segment.id
     }
+  }
+
+  // Debug: log when no segment found
+  if (transcript.value.segments.length > 0) {
+    const first3 = transcript.value.segments.slice(0, 3)
+    console.log('[activeSegmentId] time:', time.toFixed(2), '-> NO MATCH. First 3 segments:', first3.map(s => `${s.id}(${s.start.toFixed(2)}-${s.end.toFixed(2)})`).join(', '))
   }
 
   return null
@@ -507,6 +514,15 @@ async function loadTranscript() {
       caseId: doc.caseId,
       status: doc.status
     } as any
+
+    // Debug: log all segments with their time ranges
+    console.log('[loadTranscript] Loaded', transformedSegments.length, 'segments:')
+    transformedSegments.slice(0, 10).forEach((s: any, i: number) => {
+      console.log(`  [${i}] ${s.id}: ${s.start.toFixed(2)} - ${s.end.toFixed(2)} (duration: ${(s.end - s.start).toFixed(2)}s)`)
+    })
+    if (transformedSegments.length > 10) {
+      console.log(`  ... and ${transformedSegments.length - 10} more segments`)
+    }
   } catch (err: any) {
     error.value = err.message || 'Failed to load transcript'
     console.error('Error loading transcript:', err)
@@ -851,7 +867,7 @@ onMounted(async () => {
                     'animate-pulse bg-warning/20': filteredSegments[virtualRow.index].id === flashSegmentId
                   }
                 ]"
-                @click="currentTime = filteredSegments[virtualRow.index].start"
+                @click="() => { console.log('[SegmentClick] clicked segment', filteredSegments[virtualRow.index].id, 'start:', filteredSegments[virtualRow.index].start); currentTime = filteredSegments[virtualRow.index].start }"
               >
                 <!-- Header -->
                 <div class="flex items-start justify-between gap-3 mb-3">

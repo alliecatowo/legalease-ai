@@ -2,6 +2,7 @@ import { initializeApp, type FirebaseApp } from 'firebase/app'
 import { getFirestore, type Firestore } from 'firebase/firestore'
 import { getStorage, type FirebaseStorage } from 'firebase/storage'
 import { getAuth, type Auth } from 'firebase/auth'
+import { getFunctions, type Functions } from 'firebase/functions'
 
 export default defineNuxtPlugin(async () => {
   const config = useRuntimeConfig()
@@ -15,7 +16,8 @@ export default defineNuxtPlugin(async () => {
         firebase: null as FirebaseApp | null,
         firestore: null as Firestore | null,
         storage: null as FirebaseStorage | null,
-        auth: null as Auth | null
+        auth: null as Auth | null,
+        functions: null as Functions | null
       }
     }
   }
@@ -24,22 +26,29 @@ export default defineNuxtPlugin(async () => {
   const firestore = getFirestore(app)
   const storage = getStorage(app)
   const auth = getAuth(app)
+  const functions = getFunctions(app, 'us-central1')
 
-  // Connect to emulators ONLY in development mode
-  if (import.meta.dev) {
+  // Connect services to emulators when enabled
+  // Note: Storage uses production (Speech API needs real GCS access)
+  // Set NUXT_PUBLIC_USE_EMULATORS=true to use emulators
+  const useEmulators = import.meta.dev && config.public.useEmulators
+  if (useEmulators) {
     const { connectFirestoreEmulator } = await import('firebase/firestore')
-    const { connectStorageEmulator } = await import('firebase/storage')
     const { connectAuthEmulator } = await import('firebase/auth')
+    const { connectFunctionsEmulator } = await import('firebase/functions')
 
-    console.log('🔧 Connecting to Firebase Emulators...')
+    console.log('🔧 Connecting to Firebase Emulator Suite...')
+    console.log('⚠️  Storage uses production (Speech API needs real GCS)')
     try {
       connectFirestoreEmulator(firestore, 'localhost', 8080)
-      connectStorageEmulator(storage, 'localhost', 9199)
       connectAuthEmulator(auth, 'http://localhost:9099')
-      console.log('✅ Connected to emulators')
+      connectFunctionsEmulator(functions, 'localhost', 5001)
+      console.log('✅ Connected to emulators (Firestore, Auth, Functions)')
     } catch (error) {
-      console.warn('⚠️ Emulators not available:', error)
+      console.warn('⚠️ Emulator connection failed:', error)
     }
+  } else if (import.meta.dev) {
+    console.log('🔥 Using production Firebase (emulators disabled)')
   }
 
   const { initAuth } = useAuth()
@@ -50,7 +59,8 @@ export default defineNuxtPlugin(async () => {
       firebase: app,
       firestore,
       storage,
-      auth
+      auth,
+      functions
     }
   }
 })

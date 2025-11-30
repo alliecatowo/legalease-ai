@@ -6,14 +6,25 @@ pnpm = "10.18.2"
 QDRANT_URL = "http://localhost:6333"
 
 [tasks]
-# === Development ===
+# === Local Development (full Firebase Emulator Suite) ===
+# One command starts everything: functions watch + all emulators + frontend
+"dev:local" = """
+echo '🔧 Starting local development with Firebase Emulator Suite...'
+echo '⚠️  Storage uses production (Speech API needs real GCS access)'
+(cd functions && npm run build && npm run build:watch) &
+pnpm exec firebase emulators:start --only functions,firestore,auth &
+sleep 5
+cd frontend && NUXT_PUBLIC_USE_EMULATORS=true pnpm dev
+"""
+
+# === Production Development (hits live Firebase) ===
 dev = "cd frontend && pnpm dev"
-"dev:functions" = "cd functions && npm run dev"
-"dev:all" = "mise run dev & mise run dev:functions"
+
+# === Just the Emulator Suite (for manual testing) ===
+emulators = "pnpm exec firebase emulators:start"
 
 # === Build ===
-build = "cd frontend && pnpm build"
-"build:functions" = "cd functions && npm run build"
+build = "cd frontend && pnpm build && cd ../functions && npm run build"
 
 # === Install ===
 install = "cd frontend && pnpm install && cd ../functions && npm install"
@@ -21,10 +32,9 @@ install = "cd frontend && pnpm install && cd ../functions && npm install"
 # === Firebase ===
 firebase = "pnpm exec firebase"
 "firebase:login" = "pnpm exec firebase login"
-"firebase:deploy" = "pnpm exec firebase deploy"
-"firebase:deploy:hosting" = "pnpm exec firebase deploy --only hosting"
-"firebase:deploy:functions" = "pnpm exec firebase deploy --only functions"
-"firebase:emulators" = "pnpm exec firebase emulators:start"
+deploy = "pnpm exec firebase deploy"
+"deploy:hosting" = "pnpm exec firebase deploy --only hosting"
+"deploy:functions" = "pnpm exec firebase deploy --only functions"
 
 # === Local Qdrant (optional) ===
 "qdrant:start" = "docker compose --profile local up -d qdrant"

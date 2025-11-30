@@ -1,4 +1,4 @@
-import { getFunctions, httpsCallable } from 'firebase/functions'
+import { httpsCallable } from 'firebase/functions'
 import type {
   TranscriptionInput,
   TranscriptionOutput,
@@ -25,81 +25,36 @@ export type {
 }
 
 export function useAI() {
-  const { $firebase } = useNuxtApp()
+  const { $functions } = useNuxtApp()
 
+  if (!$functions) {
+    throw new Error('Firebase Functions not initialized')
+  }
+
+  // All functions use the same $functions instance (emulator-connected in dev)
   const transcribeMedia = async (input: TranscriptionInput): Promise<TranscriptionOutput> => {
-    if (!$firebase) {
-      throw new Error('Firebase not initialized')
-    }
-
-    const functions = getFunctions($firebase, 'us-central1')
-    const transcribe = httpsCallable<TranscriptionInput, TranscriptionOutput>(
-      functions,
-      'transcribeMedia'
-    )
-
-    const result = await transcribe(input)
-    return result.data
+    const fn = httpsCallable<TranscriptionInput, TranscriptionOutput>($functions, 'transcribeMedia')
+    return (await fn(input)).data
   }
 
   const summarizeTranscript = async (input: SummarizationInput): Promise<SummarizationOutput> => {
-    if (!$firebase) {
-      throw new Error('Firebase not initialized')
-    }
-
-    const functions = getFunctions($firebase, 'us-central1')
-    const summarize = httpsCallable<SummarizationInput, SummarizationOutput>(
-      functions,
-      'summarizeTranscript'
-    )
-
-    const result = await summarize(input)
-    return result.data
+    const fn = httpsCallable<SummarizationInput, SummarizationOutput>($functions, 'summarizeTranscript')
+    return (await fn(input)).data
   }
 
   const searchDocuments = async (input: SearchInput): Promise<SearchOutput> => {
-    if (!$firebase) {
-      throw new Error('Firebase not initialized')
-    }
-
-    const functions = getFunctions($firebase, 'us-central1')
-    const search = httpsCallable<SearchInput, SearchOutput>(
-      functions,
-      'searchDocuments'
-    )
-
-    const result = await search(input)
-    return result.data
+    const fn = httpsCallable<SearchInput, SearchOutput>($functions, 'searchDocuments')
+    return (await fn(input)).data
   }
 
   const indexDocument = async (input: IndexDocumentInput): Promise<{ success: boolean; pointId: string }> => {
-    if (!$firebase) {
-      throw new Error('Firebase not initialized')
-    }
-
-    const functions = getFunctions($firebase, 'us-central1')
-    const index = httpsCallable<IndexDocumentInput, { success: boolean; pointId: string }>(
-      functions,
-      'indexDocument'
-    )
-
-    const result = await index(input)
-    return result.data
+    const fn = httpsCallable<IndexDocumentInput, { success: boolean; pointId: string }>($functions, 'indexDocument')
+    return (await fn(input)).data
   }
 
   const generateWaveform = async (input: WaveformInput): Promise<WaveformOutput> => {
-    if (!$firebase) {
-      throw new Error('Firebase not initialized')
-    }
-
-    const functions = getFunctions($firebase, 'us-central1')
-    const generate = httpsCallable<WaveformInput, WaveformOutput>(
-      functions,
-      'generateWaveform'
-    )
-
-    const result = await generate(input)
-    return result.data
+    const fn = httpsCallable<WaveformInput, WaveformOutput>($functions, 'generateWaveform')
+    return (await fn(input)).data
   }
 
   return {

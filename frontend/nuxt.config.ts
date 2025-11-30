@@ -23,6 +23,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      // Set NUXT_PUBLIC_USE_EMULATORS=true to connect to Firebase emulators in dev
+      useEmulators: process.env.NUXT_PUBLIC_USE_EMULATORS === 'true',
       // Firebase client config (set via environment variables)
       firebase: {
         apiKey: process.env.FIREBASE_API_KEY || '',

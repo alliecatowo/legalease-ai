@@ -125,7 +125,7 @@ const onGoogleSignIn = async () => {
         </UButton>
       </UForm>
 
-      <UDivider label="or" class="my-4" />
+      <USeparator label="or" class="my-4" />
 
       <UButton
         block
