@@ -1,8 +1,8 @@
 import { z } from 'genkit'
-import { googleAI } from '@genkit-ai/google-genai'
 import { QdrantClient } from '@qdrant/js-client-rest'
 import { defineSecret } from 'firebase-functions/params'
 import { ai } from '../genkit.js'
+import { getEmbedder, getModelConfig } from '../ai/index.js'
 
 // Secrets
 const qdrantUrl = defineSecret('QDRANT_URL')
@@ -10,8 +10,9 @@ const qdrantApiKey = defineSecret('QDRANT_API_KEY')
 
 // Collection name in Qdrant
 const COLLECTION_NAME = 'legal_documents'
-const EMBEDDING_MODEL = 'text-embedding-004'
-const EMBEDDING_DIMENSION = 768
+// Embedding dimension depends on the configured model
+// Google text-embedding-004 = 768, OpenAI text-embedding-3-small = 1536
+const EMBEDDING_DIMENSION = getModelConfig('embedding').provider === 'google' ? 768 : 1536
 
 // Input schema
 export const SearchInput = z.object({
@@ -48,10 +49,10 @@ export const SearchOutput = z.object({
 
 export type SearchOutputType = z.infer<typeof SearchOutput>
 
-// Generate embeddings using Gemini
+// Generate embeddings using configured embedding model
 async function generateEmbedding(text: string): Promise<number[]> {
   const response = await ai.embed({
-    embedder: googleAI.embedder(EMBEDDING_MODEL),
+    embedder: getEmbedder(),
     content: text
   })
   // ai.embed returns an array of { embedding: number[], metadata?: Record } objects

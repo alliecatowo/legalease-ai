@@ -4,12 +4,12 @@
  * This flow:
  * 1. Receives transcription requests via Genkit callable
  * 2. Delegates to the transcription provider abstraction
- * 3. Optionally generates summaries using Gemini
+ * 3. Optionally generates summaries using configured AI model
  */
 
 import { z } from 'genkit'
-import { googleAI } from '@genkit-ai/google-genai'
 import { ai } from '../genkit.js'
+import { getModel } from '../ai/index.js'
 import { transcribe, getProvider, listProviders } from '../transcription/index.js'
 import type { TranscriptionResult } from '../transcription/index.js'
 
@@ -107,12 +107,12 @@ export const transcribeMediaFlow = ai.defineFlow(
       input.provider
     )
 
-    // Generate summary if requested (use Gemini 2.5 Flash)
+    // Generate summary if requested (uses 'fast' model for quick summaries)
     let summary: string | undefined
     if ((input.enableSummary ?? false) && result.text.length > 100) {
       try {
         const summaryResponse = await ai.generate({
-          model: googleAI.model('gemini-2.5-flash'),
+          model: getModel('fast'),
           prompt: `Provide a brief 2-3 sentence summary of this transcript:\n\n${result.text.substring(0, 10000)}`
         })
         summary = summaryResponse.text

@@ -1,6 +1,6 @@
 import { z } from 'genkit'
-import { googleAI } from '@genkit-ai/google-genai'
 import { ai } from '../genkit.js'
+import { getModel } from '../ai/index.js'
 
 // Input schema
 export const SummarizationInput = z.object({
@@ -89,7 +89,7 @@ Focus on:
 `
 
     const response = await ai.generate({
-      model: googleAI.model('gemini-2.5-flash'),
+      model: getModel('standard'),
       prompt,
       output: { format: 'json', schema: SummarizationOutput }
     })
