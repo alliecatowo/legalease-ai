@@ -228,8 +228,8 @@ async function startTranscription(doc: any) {
         <div v-else class="text-center py-20">
           <UIcon name="i-lucide-mic" class="size-16 text-muted mx-auto mb-4 opacity-30" />
           <h3 class="text-xl font-semibold mb-2">No audio/video files yet</h3>
-          <p class="text-muted mb-6">Upload audio or video files to your cases</p>
-          <UButton label="Go to Cases" icon="i-lucide-folder" to="/cases" />
+          <p class="text-muted mb-6">Upload audio or video files to transcribe</p>
+          <UButton label="Upload Transcription" icon="i-lucide-upload" @click="() => showUploadModal = true" />
         </div>
       </div>
     </template>
