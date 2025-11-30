@@ -13,11 +13,11 @@ import {
   onSnapshot,
   serverTimestamp,
   Timestamp,
-  type DocumentData,
   type QueryConstraint
 } from 'firebase/firestore'
+import type { TranscriptSegment, Speaker } from '~/types/transcription'
 
-// Transcription types for Firestore
+// Transcription document type for Firestore
 export interface TranscriptionDoc {
   id?: string
   caseId?: string
@@ -32,7 +32,7 @@ export interface TranscriptionDoc {
   error?: string
   // Transcription results
   fullText?: string
-  segments?: TranscriptionSegment[]
+  segments?: TranscriptSegment[]
   speakers?: Speaker[]
   duration?: number
   language?: string
@@ -41,19 +41,6 @@ export interface TranscriptionDoc {
   createdAt?: Timestamp
   updatedAt?: Timestamp
   completedAt?: Timestamp
-}
-
-export interface TranscriptionSegment {
-  start: number
-  end: number
-  text: string
-  speaker?: string
-  confidence?: number
-}
-
-export interface Speaker {
-  id: string
-  inferredName?: string
 }
 
 export function useFirestore() {
@@ -194,7 +181,7 @@ export function useFirestore() {
     id: string,
     results: {
       fullText: string
-      segments: TranscriptionSegment[]
+      segments: TranscriptSegment[]
       speakers: Speaker[]
       duration?: number
       language?: string

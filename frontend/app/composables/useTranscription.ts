@@ -1,18 +1,15 @@
 import { ref, computed } from 'vue'
+import type { TranscriptSegment, Speaker } from '~/types/transcription'
 
-export interface TranscriptSegment {
+// Extended segment type for UI features
+export interface TranscriptSegmentUI extends TranscriptSegment {
   id: string
-  start: number  // seconds
-  end: number    // seconds
-  text: string
-  speaker?: string
-  confidence?: number
   isKeyMoment?: boolean
   tags?: string[]
 }
 
-export interface Speaker {
-  id: string
+// Extended speaker type for UI features
+export interface SpeakerUI extends Speaker {
   name: string
   role?: string
   color: string
@@ -27,8 +24,10 @@ export interface Transcription {
   caseId?: string
   caseName?: string
   createdAt: string
-  segments: TranscriptSegment[]
-  speakers: Speaker[]
+  segments: TranscriptSegmentUI[]
+  speakers: SpeakerUI[]
+  fullText?: string
+  summary?: string
   metadata?: {
     fileSize?: number
     format?: string
@@ -37,6 +36,18 @@ export interface Transcription {
   }
 }
 
+// Speaker colors for UI
+const SPEAKER_COLORS = [
+  '#3B82F6',
+  '#8B5CF6',
+  '#10B981',
+  '#F59E0B',
+  '#EF4444',
+  '#EC4899',
+  '#6366F1',
+  '#14B8A6'
+]
+
 export function useTranscription() {
   const currentTranscription = ref<Transcription | null>(null)
   const isLoading = ref(false)
@@ -44,22 +55,10 @@ export function useTranscription() {
 
   const currentTime = ref(0)
   const isPlaying = ref(false)
-  const selectedSegment = ref<TranscriptSegment | null>(null)
+  const selectedSegment = ref<TranscriptSegmentUI | null>(null)
   const searchQuery = ref('')
   const selectedSpeaker = ref<string | null>(null)
   const showOnlyKeyMoments = ref(false)
-
-  // Speaker colors
-  const speakerColors = [
-    '#3B82F6',
-    '#8B5CF6',
-    '#10B981',
-    '#F59E0B',
-    '#EF4444',
-    '#EC4899',
-    '#6366F1',
-    '#14B8A6'
-  ]
 
   // Filter segments
   const filteredSegments = computed(() => {
@@ -103,24 +102,45 @@ export function useTranscription() {
     return currentTranscription.value.segments.filter(s => s.isKeyMoment)
   })
 
-  // Load transcription
-  async function loadTranscription(transcriptionId: string) {
-    isLoading.value = true
-    error.value = null
+  // Load transcription from document data
+  function loadFromDocument(doc: any): void {
+    if (!doc) {
+      currentTranscription.value = null
+      return
+    }
 
-    try {
-      // TODO: Replace with real API call
-      // const response = await api.transcriptions.get(transcriptionId)
-      // currentTranscription.value = response.data
+    // Convert speakers from backend format to UI format
+    const speakers: SpeakerUI[] = (doc.speakers || []).map((s: Speaker, index: number) => ({
+      ...s,
+      name: s.inferredName || s.id,
+      color: SPEAKER_COLORS[index % SPEAKER_COLORS.length]
+    }))
 
-      // Mock delay
-      await new Promise(resolve => setTimeout(resolve, 500))
-      currentTranscription.value = getMockTranscription(transcriptionId)
-    } catch (err) {
-      error.value = 'Failed to load transcription'
-      console.error(err)
-    } finally {
-      isLoading.value = false
+    // Convert segments from backend format to UI format
+    const segments: TranscriptSegmentUI[] = (doc.segments || []).map((s: TranscriptSegment, index: number) => ({
+      ...s,
+      id: `seg-${index}`,
+      isKeyMoment: false,
+      tags: []
+    }))
+
+    currentTranscription.value = {
+      id: doc.id,
+      title: doc.title || doc.filename || 'Untitled',
+      audioUrl: doc.downloadUrl || '',
+      duration: doc.duration || 0,
+      status: doc.status || 'completed',
+      caseId: doc.caseId,
+      caseName: doc.caseName,
+      createdAt: doc.createdAt?.toDate?.().toISOString() || new Date().toISOString(),
+      segments,
+      speakers,
+      fullText: doc.fullText || doc.extractedText,
+      summary: doc.summary,
+      metadata: {
+        fileSize: doc.fileSize,
+        format: doc.mimeType?.split('/').pop()?.toUpperCase()
+      }
     }
   }
 
@@ -130,7 +150,7 @@ export function useTranscription() {
   }
 
   // Seek to segment
-  function seekToSegment(segment: TranscriptSegment) {
+  function seekToSegment(segment: TranscriptSegmentUI) {
     selectedSegment.value = segment
     currentTime.value = segment.start
   }
@@ -142,7 +162,6 @@ export function useTranscription() {
     const segment = currentTranscription.value.segments.find(s => s.id === segmentId)
     if (segment) {
       segment.isKeyMoment = !segment.isKeyMoment
-      // TODO: Save to backend
     }
   }
 
@@ -150,25 +169,23 @@ export function useTranscription() {
   function addSpeaker(name: string, role?: string) {
     if (!currentTranscription.value) return
 
-    const speaker: Speaker = {
+    const speaker: SpeakerUI = {
       id: `speaker-${Date.now()}`,
       name,
       role,
-      color: speakerColors[currentTranscription.value.speakers.length % speakerColors.length]
+      color: SPEAKER_COLORS[currentTranscription.value.speakers.length % SPEAKER_COLORS.length]
     }
 
     currentTranscription.value.speakers.push(speaker)
-    // TODO: Save to backend
   }
 
   // Update speaker
-  function updateSpeaker(speakerId: string, updates: Partial<Speaker>) {
+  function updateSpeaker(speakerId: string, updates: Partial<SpeakerUI>) {
     if (!currentTranscription.value) return
 
     const speaker = currentTranscription.value.speakers.find(s => s.id === speakerId)
     if (speaker) {
       Object.assign(speaker, updates)
-      // TODO: Save to backend
     }
   }
 
@@ -179,7 +196,6 @@ export function useTranscription() {
     const segment = currentTranscription.value.segments.find(s => s.id === segmentId)
     if (segment) {
       segment.speaker = speakerId
-      // TODO: Save to backend
     }
   }
 
@@ -190,7 +206,6 @@ export function useTranscription() {
     const segment = currentTranscription.value.segments.find(s => s.id === segmentId)
     if (segment) {
       segment.text = text
-      // TODO: Save to backend
     }
   }
 
@@ -206,7 +221,6 @@ export function useTranscription() {
       case 'vtt':
         return exportAsVTT()
       default:
-        // TODO: Implement PDF and DOCX export
         return exportAsText()
     }
   }
@@ -289,6 +303,18 @@ export function useTranscription() {
     return time.replace(',', '.')
   }
 
+  // Reset state
+  function reset() {
+    currentTranscription.value = null
+    currentTime.value = 0
+    isPlaying.value = false
+    selectedSegment.value = null
+    searchQuery.value = ''
+    selectedSpeaker.value = null
+    showOnlyKeyMoments.value = false
+    error.value = null
+  }
+
   return {
     currentTranscription,
     isLoading,
@@ -302,7 +328,7 @@ export function useTranscription() {
     filteredSegments,
     currentSegment,
     keyMoments,
-    loadTranscription,
+    loadFromDocument,
     seekToTime,
     seekToSegment,
     toggleKeyMoment,
@@ -311,120 +337,7 @@ export function useTranscription() {
     assignSpeaker,
     editSegmentText,
     exportTranscript,
-    formatTime
-  }
-}
-
-// Mock data generator
-function getMockTranscription(id: string): Transcription {
-  const speakers: Speaker[] = [
-    { id: 'speaker-1', name: 'Attorney Smith', role: 'Plaintiff Attorney', color: '#3B82F6' },
-    { id: 'speaker-2', name: 'Witness Johnson', role: 'Witness', color: '#8B5CF6' },
-    { id: 'speaker-3', name: 'Attorney Davis', role: 'Defense Attorney', color: '#10B981' }
-  ]
-
-  const segments: TranscriptSegment[] = [
-    {
-      id: 'seg-1',
-      start: 0,
-      end: 8,
-      text: 'Good morning. This is the deposition of John Johnson in the matter of Acme Corp versus Global Tech Inc.',
-      speaker: 'speaker-1',
-      confidence: 0.98
-    },
-    {
-      id: 'seg-2',
-      start: 8,
-      end: 15,
-      text: 'Mr. Johnson, please state your full name for the record.',
-      speaker: 'speaker-1',
-      confidence: 0.96
-    },
-    {
-      id: 'seg-3',
-      start: 15,
-      end: 20,
-      text: 'John Robert Johnson.',
-      speaker: 'speaker-2',
-      confidence: 0.99
-    },
-    {
-      id: 'seg-4',
-      start: 20,
-      end: 28,
-      text: 'And what is your current position at Global Tech Inc?',
-      speaker: 'speaker-1',
-      confidence: 0.95
-    },
-    {
-      id: 'seg-5',
-      start: 28,
-      end: 38,
-      text: 'I am the Chief Technology Officer and have been with the company for eight years.',
-      speaker: 'speaker-2',
-      confidence: 0.97,
-      isKeyMoment: true
-    },
-    {
-      id: 'seg-6',
-      start: 38,
-      end: 52,
-      text: 'Can you describe your role in the contract negotiations with Acme Corporation that took place in January 2024?',
-      speaker: 'speaker-1',
-      confidence: 0.94,
-      isKeyMoment: true
-    },
-    {
-      id: 'seg-7',
-      start: 52,
-      end: 68,
-      text: 'I was the primary technical contact. I reviewed all the technical specifications and participated in three meetings with their team.',
-      speaker: 'speaker-2',
-      confidence: 0.96
-    },
-    {
-      id: 'seg-8',
-      start: 68,
-      end: 75,
-      text: 'Objection. The question calls for speculation.',
-      speaker: 'speaker-3',
-      confidence: 0.99
-    },
-    {
-      id: 'seg-9',
-      start: 75,
-      end: 82,
-      text: 'Let me rephrase. Were you present at any meetings with Acme Corporation in January 2024?',
-      speaker: 'speaker-1',
-      confidence: 0.97
-    },
-    {
-      id: 'seg-10',
-      start: 82,
-      end: 92,
-      text: 'Yes, I attended meetings on January 10th, 15th, and 22nd of 2024.',
-      speaker: 'speaker-2',
-      confidence: 0.98,
-      isKeyMoment: true
-    }
-  ]
-
-  return {
-    id,
-    title: 'Deposition - John Johnson',
-    audioUrl: '/mock-audio.mp3',  // TODO: Replace with real audio
-    duration: 92,
-    status: 'completed',
-    caseId: 'case-1',
-    caseName: 'Acme Corp v. Global Tech Inc',
-    createdAt: '2024-03-15T10:00:00Z',
-    segments,
-    speakers,
-    metadata: {
-      fileSize: 15728640,
-      format: 'MP3',
-      sampleRate: 44100,
-      bitRate: 128
-    }
+    formatTime,
+    reset
   }
 }
