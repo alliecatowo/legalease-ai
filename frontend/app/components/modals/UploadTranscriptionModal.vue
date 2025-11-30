@@ -12,6 +12,14 @@ const toast = useToast()
 const { uploadForTranscription, uploadProgress, isUploading, uploadError, resetUpload, cancelUpload } = useStorage()
 const { transcribeMedia } = useAI()
 const { createTranscription, updateTranscription, completeTranscription, failTranscription } = useFirestore()
+const { cases, listCases } = useCases()
+
+// Load cases when modal opens
+watch(open, async (isOpen) => {
+  if (isOpen && !cases.value?.length) {
+    await listCases()
+  }
+})
 
 // Input mode: 'file' or 'url'
 const inputMode = ref<'file' | 'url'>('file')
@@ -20,6 +28,14 @@ const mediaUrl = ref('')
 const transcriptionStatus = ref<'idle' | 'uploading' | 'transcribing' | 'completed' | 'failed'>('idle')
 const transcriptionError = ref<string | null>(null)
 const transcriptionId = ref<string | null>(null)
+
+// Case selection - use prop or allow user to select
+const selectedCaseId = ref<string | undefined>(props.caseId)
+
+// Sync with prop when it changes
+watch(() => props.caseId, (newCaseId) => {
+  selectedCaseId.value = newCaseId
+})
 
 // Options
 const enableDiarization = ref(true)
@@ -63,7 +79,7 @@ async function handleUpload() {
     if (inputMode.value === 'file' && selectedFile.value) {
       // File upload flow
       // Step 1: Upload to Firebase Storage
-      const uploadResult = await uploadForTranscription(selectedFile.value, props.caseId)
+      const uploadResult = await uploadForTranscription(selectedFile.value, selectedCaseId.value)
 
       // Step 2: Create document in Firestore (not transcription-specific)
       const { createDocument } = useDocuments()
@@ -74,7 +90,7 @@ async function handleUpload() {
         mimeType: selectedFile.value.type,
         fileSize: selectedFile.value.size,
         status: 'processing',
-        caseId: props.caseId || undefined
+        caseId: selectedCaseId.value
       })
 
       transcriptionId.value = docId
@@ -102,7 +118,7 @@ async function handleUpload() {
       // URL transcription flow
       // Step 1: Create transcription document
       docId = await createTranscription({
-        caseId: props.caseId,
+        caseId: selectedCaseId.value,
         userId: '',
         filename: isYouTubeUrl.value ? `YouTube: ${mediaUrl.value}` : mediaUrl.value.split('/').pop() || 'URL Media',
         storagePath: '',
@@ -182,6 +198,7 @@ function resetAndClose() {
   transcriptionStatus.value = 'idle'
   transcriptionError.value = null
   transcriptionId.value = null
+  selectedCaseId.value = props.caseId
   resetUpload()
   open.value = false
 }
@@ -297,6 +314,19 @@ const isProcessing = computed(() =>
             size="sm"
             @click="selectedFile = null"
           />
+        </div>
+
+        <!-- Case Selection (only show if no caseId prop provided) -->
+        <div v-if="transcriptionStatus === 'idle' && !props.caseId" class="space-y-2">
+          <UFormField label="Associate with Case" hint="Optional">
+            <USelectMenu
+              v-model="selectedCaseId"
+              :items="[{ label: 'No case', value: undefined }, ...(cases || []).map(c => ({ label: c.name, value: c.id }))]"
+              value-key="value"
+              placeholder="Select a case (optional)"
+              class="w-full"
+            />
+          </UFormField>
         </div>
 
         <!-- Options -->

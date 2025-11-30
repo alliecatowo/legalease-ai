@@ -153,6 +153,48 @@ export function useDocuments() {
   }
 
   /**
+   * Create a document record in Firestore (without uploading file)
+   * Used when file is already uploaded via useStorage
+   */
+  async function createDocument(data: {
+    filename: string
+    storagePath: string
+    downloadUrl: string
+    mimeType: string
+    fileSize: number
+    status: DocumentDoc['status']
+    caseId?: string
+    title?: string
+    documentType?: DocumentDoc['documentType']
+  }): Promise<string> {
+    if (!$firestore) throw new Error('Firestore not initialized')
+    if (!user.value) throw new Error('User must be authenticated')
+
+    const documentsRef = collection($firestore, 'documents')
+    const docRef = await addDoc(documentsRef, {
+      ...data,
+      caseId: data.caseId || null,
+      title: data.title || data.filename,
+      documentType: data.documentType || 'general',
+      userId: user.value.uid,
+      teamId: currentTeam.value?.id || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    })
+
+    // Update case document count if caseId provided
+    if (data.caseId) {
+      const caseRef = doc($firestore, 'cases', data.caseId)
+      await updateDoc(caseRef, {
+        documentCount: increment(1),
+        updatedAt: serverTimestamp()
+      })
+    }
+
+    return docRef.id
+  }
+
+  /**
    * Get a document by ID
    */
   async function getDocument(id: string): Promise<DocumentDoc | null> {
@@ -375,6 +417,7 @@ export function useDocuments() {
     error,
     uploadProgress,
     // Methods
+    createDocument,
     uploadDocument,
     getDocument,
     listDocuments,
