@@ -25,19 +25,21 @@ export default defineNuxtPlugin(async () => {
   const storage = getStorage(app)
   const auth = getAuth(app)
 
-  // TEMPORARY: Always connect to emulators for testing
-  const { connectFirestoreEmulator } = await import('firebase/firestore')
-  const { connectStorageEmulator } = await import('firebase/storage')
-  const { connectAuthEmulator } = await import('firebase/auth')
+  // Connect to emulators ONLY in development mode
+  if (import.meta.dev) {
+    const { connectFirestoreEmulator } = await import('firebase/firestore')
+    const { connectStorageEmulator } = await import('firebase/storage')
+    const { connectAuthEmulator } = await import('firebase/auth')
 
-  console.log('🔧 Connecting to Firebase Emulators...')
-  try {
-    connectFirestoreEmulator(firestore, 'localhost', 8080)
-    connectStorageEmulator(storage, 'localhost', 9199)
-    connectAuthEmulator(auth, 'http://localhost:9099')
-    console.log('✅ Connected to emulators')
-  } catch (error) {
-    console.error('❌ Failed to connect to emulators:', error)
+    console.log('🔧 Connecting to Firebase Emulators...')
+    try {
+      connectFirestoreEmulator(firestore, 'localhost', 8080)
+      connectStorageEmulator(storage, 'localhost', 9199)
+      connectAuthEmulator(auth, 'http://localhost:9099')
+      console.log('✅ Connected to emulators')
+    } catch (error) {
+      console.warn('⚠️ Emulators not available:', error)
+    }
   }
 
   const { initAuth } = useAuth()

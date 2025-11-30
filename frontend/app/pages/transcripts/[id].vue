@@ -338,16 +338,32 @@ function startEdit(segment: TranscriptSegment) {
   editText.value = segment.text
 }
 
-function saveEdit(segmentId: string) {
+async function saveEdit(segmentId: string) {
   if (!transcript.value) return
 
   const segment = transcript.value.segments.find(s => s.id === segmentId)
   if (segment) {
+    const originalText = segment.text
     segment.text = editText.value
-    toast.add({
-      title: 'Segment updated',
-      color: 'success'
-    })
+
+    // Persist to Firestore
+    try {
+      await updateDocument(transcriptId.value, {
+        segments: transcript.value.segments
+      })
+      toast.add({
+        title: 'Segment updated',
+        color: 'success'
+      })
+    } catch (err: any) {
+      // Rollback on error
+      segment.text = originalText
+      toast.add({
+        title: 'Failed to save',
+        description: err.message || 'An error occurred',
+        color: 'error'
+      })
+    }
   }
 
   editingSegmentId.value = null
