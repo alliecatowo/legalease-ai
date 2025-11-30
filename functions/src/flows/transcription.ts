@@ -1,7 +1,6 @@
 import { z } from 'genkit'
 import { googleAI } from '@genkit-ai/google-genai'
 import { ai } from '../genkit.js'
-import speech from '@google-cloud/speech'
 
 // Input schema
 export const TranscriptionInput = z.object({
@@ -44,22 +43,14 @@ export const TranscriptionOutput = z.object({
 
 export type TranscriptionOutputType = z.infer<typeof TranscriptionOutput>
 
-// Helper to detect encoding from URL/file extension
-function getEncodingFromUri(uri: string): string {
-  const ext = uri.split('.').pop()?.toLowerCase()
-  const encodings: Record<string, string> = {
-    'mp3': 'MP3',
-    'wav': 'LINEAR16',
-    'flac': 'FLAC',
-    'ogg': 'OGG_OPUS',
-    'webm': 'WEBM_OPUS',
-    'm4a': 'MP3', // AAC in M4A container - Speech API handles it
-    'mp4': 'MP3'  // Audio track extraction
-  }
-  return encodings[ext || ''] || 'ENCODING_UNSPECIFIED'
+// Helper to convert duration string (e.g., "10.500s") to seconds
+function parseDuration(duration: string | null | undefined): number {
+  if (!duration) return 0
+  // Remove trailing 's' and parse as float
+  return parseFloat(duration.replace('s', '')) || 0
 }
 
-// Transcription flow using Google Cloud Speech-to-Text
+// Transcription flow using Google Cloud Speech-to-Text V2 with Chirp 3
 export const transcribeMediaFlow = ai.defineFlow(
   {
     name: 'transcribeMedia',
@@ -80,115 +71,120 @@ export const transcribeMediaFlow = ai.defineFlow(
       throw new Error('Only GCS URIs (gs://bucket/path) are supported for transcription. Upload the file to Firebase Storage first.')
     }
 
-    // Create Speech-to-Text client
-    const client = new speech.SpeechClient()
+    // Import Speech V2 client dynamically
+    const { SpeechClient } = await import('@google-cloud/speech').then(m => m.v2)
 
-    // Configure the recognition request
-    const config: speech.protos.google.cloud.speech.v1.IRecognitionConfig = {
-      encoding: getEncodingFromUri(mediaUri) as any,
-      languageCode: language,
-      enableAutomaticPunctuation: true,
-      enableWordTimeOffsets: true,
-      model: 'latest_long', // Best for long-form audio like recordings
-      useEnhanced: true,    // Enhanced model for better accuracy
+    // Create Speech-to-Text V2 client
+    const client = new SpeechClient()
+
+    // Get project ID from environment or default
+    const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'legalease-420'
+
+    // Chirp 3 is available in us, eu, asia-northeast1, asia-southeast1
+    // Using 'us' multi-region for best coverage
+    const location = 'us-central1'
+
+    // Build the recognizer path - use "_" for default recognizer
+    const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
+
+    console.log('Starting Chirp 3 transcription for:', mediaUri)
+    console.log('Using recognizer:', recognizer)
+
+    // Configure the recognition request for V2 API with Chirp 3
+    // Note: Chirp 3 only supports utterance-level timestamps, not word-level
+    const config: any = {
+      autoDecodingConfig: {}, // Let the API auto-detect audio encoding
+      languageCodes: [language],
+      model: 'chirp_3', // Chirp 3 - latest model with best accuracy
+      features: {
+        enableAutomaticPunctuation: true,
+        // Note: Word-level timestamps not supported in Chirp models
+        // Diarization config is set separately below
+      }
     }
 
-    // Add diarization config if enabled
+    // Add speaker diarization if enabled
+    // Note: Chirp 3 supports diarization in specific languages including en-US
     if (enableDiarization) {
-      config.diarizationConfig = {
-        enableSpeakerDiarization: true,
+      config.features.diarizationConfig = {
         minSpeakerCount: 1,
         maxSpeakerCount: maxSpeakers
       }
     }
 
-    const audio: speech.protos.google.cloud.speech.v1.IRecognitionAudio = {
-      uri: mediaUri
+    // Use BatchRecognize for long audio files (1 minute to 8 hours)
+    const request = {
+      recognizer,
+      config,
+      files: [{
+        uri: mediaUri
+      }],
+      recognitionOutputConfig: {
+        inlineResponseConfig: {} // Return results inline
+      }
     }
 
-    console.log('Starting long-running transcription for:', mediaUri)
+    console.log('Starting batch recognition...')
 
-    // Use long-running recognize for audio files (required for >1 minute)
-    const [operation] = await client.longRunningRecognize({ config, audio })
+    // Call BatchRecognize - this returns a long-running operation
+    const [operation] = await client.batchRecognize(request)
 
-    console.log('Transcription operation started, waiting for completion...')
+    console.log('Batch recognition operation started, waiting for completion...')
 
-    // Wait for the operation to complete (can take several minutes for long audio)
+    // Wait for the operation to complete
     const [response] = await operation.promise()
 
-    if (!response.results || response.results.length === 0) {
-      throw new Error('No transcription results returned')
-    }
+    console.log('Batch recognition complete, processing results...')
 
-    // Process results into our format
+    // Process results from V2 API response
     const segments: z.infer<typeof TranscriptSegment>[] = []
-    const speakerSet = new Set<number>()
+    const speakerSet = new Set<string>()
     let fullText = ''
+    let lastEndTime = 0
 
-    for (const result of response.results) {
-      if (!result.alternatives || result.alternatives.length === 0) continue
+    // V2 API returns results in a different structure
+    // Results are keyed by the input file URI
+    const results = response.results || {}
 
-      const alternative = result.alternatives[0]
-      fullText += (alternative.transcript || '') + ' '
+    for (const [fileUri, fileResult] of Object.entries(results)) {
+      const transcript = (fileResult as any).transcript
+      if (!transcript?.results) continue
 
-      // Process word-level timing and speaker info
-      if (alternative.words) {
-        let currentSegment: {
-          start: number
-          end: number
-          text: string
-          speaker?: string
-          confidence?: number
-        } | null = null
+      for (const result of transcript.results) {
+        if (!result.alternatives || result.alternatives.length === 0) continue
 
-        for (const wordInfo of alternative.words) {
-          const startTime = Number(wordInfo.startTime?.seconds || 0) +
-            Number(wordInfo.startTime?.nanos || 0) / 1e9
-          const endTime = Number(wordInfo.endTime?.seconds || 0) +
-            Number(wordInfo.endTime?.nanos || 0) / 1e9
-          const speakerTag = wordInfo.speakerTag || 0
+        const alternative = result.alternatives[0]
+        const transcriptText = alternative.transcript || ''
 
-          if (speakerTag > 0) {
+        fullText += transcriptText + ' '
+
+        // Get timing from result level (utterance-level timestamps)
+        const startTime = parseDuration(result.resultEndOffset) - (transcriptText.length * 0.05) // Estimate start
+        const endTime = parseDuration(result.resultEndOffset)
+
+        if (endTime > lastEndTime) {
+          lastEndTime = endTime
+        }
+
+        // Get speaker tag if diarization was enabled
+        let speaker: string | undefined
+        if (alternative.words && alternative.words.length > 0) {
+          // In V2 API with diarization, speaker tag is on words
+          const speakerTag = alternative.words[0]?.speakerLabel
+          if (speakerTag) {
+            speaker = speakerTag
             speakerSet.add(speakerTag)
-          }
-
-          const speaker = speakerTag > 0 ? `Speaker${speakerTag}` : undefined
-
-          // Group words into segments by speaker
-          if (!currentSegment || currentSegment.speaker !== speaker) {
-            // Save previous segment
-            if (currentSegment && currentSegment.text.trim()) {
-              segments.push({
-                start: currentSegment.start,
-                end: currentSegment.end,
-                text: currentSegment.text.trim(),
-                speaker: currentSegment.speaker,
-                confidence: currentSegment.confidence
-              })
-            }
-            // Start new segment
-            currentSegment = {
-              start: startTime,
-              end: endTime,
-              text: wordInfo.word || '',
-              speaker,
-              confidence: alternative.confidence || undefined
-            }
-          } else {
-            // Continue current segment
-            currentSegment.end = endTime
-            currentSegment.text += ' ' + (wordInfo.word || '')
           }
         }
 
-        // Don't forget the last segment
-        if (currentSegment && currentSegment.text.trim()) {
+        // Create segment for this utterance
+        if (transcriptText.trim()) {
           segments.push({
-            start: currentSegment.start,
-            end: currentSegment.end,
-            text: currentSegment.text.trim(),
-            speaker: currentSegment.speaker,
-            confidence: currentSegment.confidence
+            start: Math.max(0, startTime),
+            end: endTime,
+            text: transcriptText.trim(),
+            speaker,
+            confidence: alternative.confidence || undefined
           })
         }
       }
@@ -198,16 +194,14 @@ export const transcribeMediaFlow = ai.defineFlow(
 
     // Build speakers list
     const speakers: z.infer<typeof Speaker>[] = Array.from(speakerSet)
-      .sort((a, b) => a - b)
+      .sort()
       .map(tag => ({
-        id: `Speaker${tag}`,
+        id: tag,
         inferredName: undefined
       }))
 
-    // Calculate duration from last segment
-    const duration = segments.length > 0
-      ? segments[segments.length - 1].end
-      : undefined
+    // Duration from last segment end time
+    const duration = lastEndTime > 0 ? lastEndTime : undefined
 
     let result: TranscriptionOutputType = {
       fullText,
