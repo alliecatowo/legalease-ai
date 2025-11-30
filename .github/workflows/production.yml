@@ -72,6 +72,8 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: legalease-420
           channelId: live
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
 
       - name: Deploy Functions
         run: npx firebase-tools deploy --only functions --project legalease-420

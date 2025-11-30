@@ -54,9 +54,14 @@ export function useFirestore() {
     if (!$firestore) throw new Error('Firestore not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
+    // Filter out undefined values - Firestore doesn't allow them
+    const cleanData = Object.fromEntries(
+      Object.entries(data).filter(([_, v]) => v !== undefined)
+    )
+
     const transcriptionsRef = collection($firestore, 'transcriptions')
     const docRef = await addDoc(transcriptionsRef, {
-      ...data,
+      ...cleanData,
       userId: user.value.uid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
