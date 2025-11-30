@@ -111,7 +111,7 @@ async function handleUpload() {
         speakers: result.speakers,
         duration: result.duration,
         language: result.language,
-        summary: result.summary
+        summarization: result.summarization
       })
     } else {
       // URL transcription flow
@@ -143,7 +143,7 @@ async function handleUpload() {
         speakers: result.speakers,
         duration: result.duration,
         language: result.language,
-        summary: result.summary
+        summarization: result.summarization
       })
     }
 

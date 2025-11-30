@@ -94,7 +94,7 @@ async function startTranscription(doc: any) {
     await updateTranscription(doc.id, {
       status: 'completed',
       fullText: result.fullText,
-      summary: result.summary,
+      summarization: result.summarization,
       segments: result.segments,
       speakers: result.speakers,
       duration: result.duration,

@@ -55,7 +55,8 @@ export interface TranscriptionOutput {
   speakers: Speaker[]
   duration?: number
   language?: string
-  summary?: string
+  // Detailed summarization output (replaces legacy summary string)
+  summarization?: SummarizationOutput
   provider?: string  // Which provider was used
 }
 

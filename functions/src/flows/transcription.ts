@@ -4,7 +4,7 @@
  * This flow:
  * 1. Receives transcription requests via Genkit callable
  * 2. Delegates to the transcription provider abstraction
- * 3. Optionally generates summaries using configured AI model
+ * 3. Optionally generates detailed summaries using configured AI model
  */
 
 import { z } from 'genkit'
@@ -12,6 +12,7 @@ import { ai } from '../genkit.js'
 import { getModel } from '../ai/index.js'
 import { transcribe, getProvider, listProviders } from '../transcription/index.js'
 import type { TranscriptionResult } from '../transcription/index.js'
+import { SummarizationOutput, type SummarizationOutputType } from './summarization.js'
 
 // Input schema (maintains backward compatibility with existing frontend)
 export const TranscriptionInput = z.object({
@@ -49,17 +50,17 @@ export const TranscriptionOutput = z.object({
   speakers: z.array(Speaker).describe('Identified speakers'),
   duration: z.number().optional().describe('Total duration in seconds'),
   language: z.string().optional().describe('Detected language'),
-  summary: z.string().optional().describe('Brief summary if requested'),
+  // Detailed summarization output (replaces brief summary)
+  summarization: SummarizationOutput.optional().describe('Detailed AI summary if requested'),
   provider: z.string().optional().describe('Provider used for transcription')
 })
 
 export type TranscriptionOutputType = z.infer<typeof TranscriptionOutput>
 
 /**
- * Convert standard TranscriptionResult to legacy output format
- * (maintains backward compatibility with frontend)
+ * Convert standard TranscriptionResult to output format
  */
-function toOutputFormat(result: TranscriptionResult): TranscriptionOutputType {
+function toOutputFormat(result: TranscriptionResult, summarization?: SummarizationOutputType): TranscriptionOutputType {
   return {
     fullText: result.text,
     segments: result.segments.map(seg => ({
@@ -76,7 +77,7 @@ function toOutputFormat(result: TranscriptionResult): TranscriptionOutputType {
     })),
     duration: result.duration,
     language: result.language,
-    summary: result.summary,
+    summarization,
     provider: result.provider
   }
 }
@@ -107,25 +108,58 @@ export const transcribeMediaFlow = ai.defineFlow(
       input.provider
     )
 
-    // Generate summary if requested (uses 'fast' model for quick summaries)
-    let summary: string | undefined
+    // Generate detailed summary if requested (uses 'standard' model for quality)
+    let summarization: SummarizationOutputType | undefined
     if ((input.enableSummary ?? false) && result.text.length > 100) {
       try {
+        console.log('Generating detailed summary...')
         const summaryResponse = await ai.generate({
-          model: getModel('fast'),
-          prompt: `Provide a brief 2-3 sentence summary of this transcript:\n\n${result.text.substring(0, 10000)}`
+          model: getModel('standard'),
+          prompt: `
+You are a legal document analyst. Analyze this transcript and provide a structured summary.
+
+Transcript:
+${result.text.substring(0, 30000)}
+
+Provide your analysis as JSON with this structure:
+{
+  "summary": "1-2 paragraph executive summary of the transcript",
+  "keyMoments": [
+    {
+      "timestamp": "optional timestamp or null",
+      "description": "what happened",
+      "importance": "high|medium|low",
+      "speakers": ["who was involved"]
+    }
+  ],
+  "actionItems": ["any follow-up actions mentioned or implied"],
+  "topics": ["main topics discussed"],
+  "entities": {
+    "people": ["names mentioned"],
+    "organizations": ["companies, firms, agencies"],
+    "locations": ["places mentioned"],
+    "dates": ["dates, times, deadlines mentioned"]
+  }
+}
+
+Focus on:
+- Admissions or contradictions
+- Key facts and evidence discussed
+- Legal issues or claims mentioned
+- Dates and deadlines
+- Agreements or disputes
+`,
+          output: { format: 'json', schema: SummarizationOutput }
         })
-        summary = summaryResponse.text
+        summarization = summaryResponse.output as SummarizationOutputType
+        console.log(`Summary generated: ${summarization.keyMoments?.length || 0} key moments, ${summarization.actionItems?.length || 0} action items`)
       } catch (error) {
         console.warn('Summary generation failed:', error)
       }
     }
 
     // Convert to output format
-    const output = toOutputFormat(result)
-    if (summary) {
-      output.summary = summary
-    }
+    const output = toOutputFormat(result, summarization)
 
     console.log(`Transcription complete: ${result.segments.length} segments, ${result.speakers.length} speakers (provider: ${result.provider})`)
 

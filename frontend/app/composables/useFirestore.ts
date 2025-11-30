@@ -15,7 +15,7 @@ import {
   Timestamp,
   type QueryConstraint
 } from 'firebase/firestore'
-import type { TranscriptSegment, Speaker } from '~/types/transcription'
+import type { TranscriptSegment, Speaker, SummarizationOutput } from '~/types/transcription'
 
 // Transcription document type for Firestore
 export interface TranscriptionDoc {
@@ -36,7 +36,8 @@ export interface TranscriptionDoc {
   speakers?: Speaker[]
   duration?: number
   language?: string
-  summary?: string
+  // Detailed summarization (replaces legacy summary string)
+  summarization?: SummarizationOutput
   // Timestamps
   createdAt?: Timestamp
   updatedAt?: Timestamp
@@ -195,7 +196,7 @@ export function useFirestore() {
       speakers: Speaker[]
       duration?: number
       language?: string
-      summary?: string
+      summarization?: SummarizationOutput
     }
   ): Promise<void> {
     await updateTranscription(id, {
