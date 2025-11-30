@@ -167,39 +167,93 @@ export const transcribeMediaFlow = ai.defineFlow(
         }
 
         const alternative = result.alternatives[0]
-        const transcriptText = alternative.transcript || ''
+        const words = alternative.words || []
 
-        fullText += transcriptText + ' '
+        // If we have words with speaker labels, create segments by speaker changes
+        if (words.length > 0 && words[0]?.speakerLabel) {
+          let currentSpeaker = words[0].speakerLabel
+          let segmentWords: typeof words = []
+          let segmentStartTime = parseDuration(words[0].startOffset)
 
-        // Get timing from result level (utterance-level timestamps)
-        const startTime = parseDuration(result.resultEndOffset) - (transcriptText.length * 0.05) // Estimate start
-        const endTime = parseDuration(result.resultEndOffset)
+          for (let i = 0; i < words.length; i++) {
+            const word = words[i]
+            const wordSpeaker = word.speakerLabel || currentSpeaker
 
-        if (endTime > lastEndTime) {
-          lastEndTime = endTime
-        }
+            if (wordSpeaker !== currentSpeaker && segmentWords.length > 0) {
+              // Speaker changed - save current segment
+              const segmentText = segmentWords.map((w: any) => w.word).join(' ')
+              const segmentEndTime = parseDuration(segmentWords[segmentWords.length - 1].endOffset)
 
-        // Get speaker tag if diarization was enabled
-        let speaker: string | undefined
-        if (alternative.words && alternative.words.length > 0) {
-          // In V2 API with diarization, speaker tag is on words
-          const speakerTag = alternative.words[0]?.speakerLabel
-          if (speakerTag) {
-            speaker = speakerTag
-            speakerSet.add(speakerTag)
+              if (segmentText.trim()) {
+                segments.push({
+                  id: `seg-${segmentIndex++}`,
+                  start: Math.max(0, segmentStartTime),
+                  end: segmentEndTime,
+                  text: segmentText.trim(),
+                  speaker: currentSpeaker,
+                  confidence: alternative.confidence || undefined
+                })
+                speakerSet.add(currentSpeaker)
+                fullText += segmentText + ' '
+
+                if (segmentEndTime > lastEndTime) {
+                  lastEndTime = segmentEndTime
+                }
+              }
+
+              // Start new segment
+              currentSpeaker = wordSpeaker
+              segmentWords = [word]
+              segmentStartTime = parseDuration(word.startOffset)
+            } else {
+              segmentWords.push(word)
+            }
           }
-        }
 
-        // Create segment for this utterance
-        if (transcriptText.trim()) {
-          segments.push({
-            id: `seg-${segmentIndex++}`,
-            start: Math.max(0, startTime),
-            end: endTime,
-            text: transcriptText.trim(),
-            speaker,
-            confidence: alternative.confidence || undefined
-          })
+          // Don't forget the last segment
+          if (segmentWords.length > 0) {
+            const segmentText = segmentWords.map((w: any) => w.word).join(' ')
+            const segmentEndTime = parseDuration(segmentWords[segmentWords.length - 1].endOffset)
+
+            if (segmentText.trim()) {
+              segments.push({
+                id: `seg-${segmentIndex++}`,
+                start: Math.max(0, segmentStartTime),
+                end: segmentEndTime,
+                text: segmentText.trim(),
+                speaker: currentSpeaker,
+                confidence: alternative.confidence || undefined
+              })
+              speakerSet.add(currentSpeaker)
+              fullText += segmentText + ' '
+
+              if (segmentEndTime > lastEndTime) {
+                lastEndTime = segmentEndTime
+              }
+            }
+          }
+        } else {
+          // No word-level data or no speaker labels - fall back to result-level
+          const transcriptText = alternative.transcript || ''
+          fullText += transcriptText + ' '
+
+          const startTime = parseDuration(result.resultEndOffset) - (transcriptText.length * 0.05)
+          const endTime = parseDuration(result.resultEndOffset)
+
+          if (endTime > lastEndTime) {
+            lastEndTime = endTime
+          }
+
+          if (transcriptText.trim()) {
+            segments.push({
+              id: `seg-${segmentIndex++}`,
+              start: Math.max(0, startTime),
+              end: endTime,
+              text: transcriptText.trim(),
+              speaker: undefined,
+              confidence: alternative.confidence || undefined
+            })
+          }
         }
       }
     }
