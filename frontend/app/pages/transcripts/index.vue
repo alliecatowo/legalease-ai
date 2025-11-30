@@ -1,13 +1,20 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'default' })
 
-const { documents, listDocuments, updateDocument } = useDocuments()
+const { listTranscriptions, updateTranscription } = useFirestore()
 const { cases, listCases } = useCases()
 const { transcribeMedia, indexDocument } = useAI()
 const toast = useToast()
 
-// Load audio/video documents
-await Promise.all([listDocuments(), listCases()])
+// Transcriptions from Firestore
+const transcriptions = ref<any[]>([])
+
+// Load transcriptions
+async function loadTranscriptions() {
+  transcriptions.value = await listTranscriptions()
+}
+
+await Promise.all([loadTranscriptions(), listCases()])
 
 const transcribingIds = ref<Set<string>>(new Set())
 const showUploadModal = ref(false)
@@ -15,21 +22,13 @@ const showUploadModal = ref(false)
 function handleUploadComplete(transcriptionId: string) {
   showUploadModal.value = false
   // Refresh the list
-  listDocuments()
+  loadTranscriptions()
   toast.add({
     title: 'Upload complete',
     description: 'Your file has been uploaded and is being transcribed.',
     color: 'success'
   })
 }
-
-// Filter to only audio/video files
-const transcriptions = computed(() => {
-  return (documents.value || []).filter(d => {
-    const mime = d.mimeType || ''
-    return mime.startsWith('audio/') || mime.startsWith('video/')
-  })
-})
 
 // Stats
 const stats = computed(() => ({
@@ -81,7 +80,7 @@ async function startTranscription(doc: any) {
 
   try {
     // Update status to processing
-    await updateDocument(doc.id, { status: 'processing' })
+    await updateTranscription(doc.id, { status: 'processing' })
 
     // Call transcription function - prefer GCS URI for Firebase Storage files (no size limit)
     // Fall back to URL for external files
@@ -92,9 +91,9 @@ async function startTranscription(doc: any) {
     const result = await transcribeMedia(transcriptionInput)
 
     // Store transcription results in Firestore
-    await updateDocument(doc.id, {
+    await updateTranscription(doc.id, {
       status: 'completed',
-      extractedText: result.fullText,
+      fullText: result.fullText,
       summary: result.summary,
       segments: result.segments,
       speakers: result.speakers,
@@ -118,10 +117,10 @@ async function startTranscription(doc: any) {
     }
 
     toast.add({ title: 'Success', description: 'Transcription complete', color: 'success' })
-    await listDocuments()
+    await loadTranscriptions()
   } catch (err: any) {
     console.error('Transcription failed:', err)
-    await updateDocument(doc.id, { status: 'failed' })
+    await updateTranscription(doc.id, { status: 'failed' })
     toast.add({ title: 'Error', description: err?.message || 'Transcription failed', color: 'error' })
   } finally {
     transcribingIds.value.delete(doc.id)

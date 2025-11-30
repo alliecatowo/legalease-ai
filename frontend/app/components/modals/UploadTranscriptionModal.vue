@@ -11,7 +11,7 @@ const emit = defineEmits<{
 const toast = useToast()
 const { uploadForTranscription, uploadProgress, isUploading, uploadError, resetUpload, cancelUpload } = useStorage()
 const { transcribeMedia } = useAI()
-const { createTranscription, updateTranscription, completeTranscription, failTranscription } = useFirestore()
+const { createTranscription, completeTranscription, failTranscription } = useFirestore()
 const { cases, listCases } = useCases()
 
 // Load cases when modal opens
@@ -81,43 +81,40 @@ async function handleUpload() {
       // Step 1: Upload to Firebase Storage
       const uploadResult = await uploadForTranscription(selectedFile.value, selectedCaseId.value)
 
-      // Step 2: Create document in Firestore (not transcription-specific)
-      const { createDocument } = useDocuments()
-      docId = await createDocument({
+      // Step 2: Create transcription document in Firestore (transcriptions collection)
+      docId = await createTranscription({
+        caseId: selectedCaseId.value,
+        userId: '', // Will be set by useFirestore
         filename: selectedFile.value.name,
         storagePath: uploadResult.path,
+        gsUri: uploadResult.gsUri,
         downloadUrl: uploadResult.downloadUrl,
         mimeType: selectedFile.value.type,
         fileSize: selectedFile.value.size,
-        status: 'processing',
-        caseId: selectedCaseId.value
+        status: 'processing'
       })
 
       transcriptionId.value = docId
       transcriptionStatus.value = 'transcribing'
 
-      // Step 3: Call transcription function with GCS URI (not HTTP URL)
-      // GCS URIs don't have size limits since Gemini reads directly from GCS
+      // Step 3: Call transcription function with GCS URI
       const result = await transcribeMedia({
         gcsUri: uploadResult.gsUri,
         enableDiarization: enableDiarization.value,
         enableSummary: enableSummary.value
       })
 
-      // Step 4: Update document with transcription results
-      const { updateDocument } = useDocuments()
-      await updateDocument(docId, {
-        status: 'completed',
-        extractedText: result.fullText,
-        summary: result.summary,
+      // Step 4: Update transcription with results
+      await completeTranscription(docId, {
+        fullText: result.fullText,
         segments: result.segments,
         speakers: result.speakers,
         duration: result.duration,
-        language: result.language
+        language: result.language,
+        summary: result.summary
       })
     } else {
       // URL transcription flow
-      // Step 1: Create transcription document
       docId = await createTranscription({
         caseId: selectedCaseId.value,
         userId: '',
@@ -132,14 +129,14 @@ async function handleUpload() {
 
       transcriptionId.value = docId
 
-      // Step 2: Call Genkit transcription with URL
+      // Call transcription with URL
       const result = await transcribeMedia({
         url: mediaUrl.value,
         enableDiarization: enableDiarization.value,
         enableSummary: enableSummary.value
       })
 
-      // Step 3: Save results to Firestore
+      // Save results to Firestore
       await completeTranscription(docId, {
         fullText: result.fullText,
         segments: result.segments,

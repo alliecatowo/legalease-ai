@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import type { TranscriptSegment, Speaker } from '~/composables/useAI'
+import type { TranscriptSegment, Speaker } from '~/types/transcription'
 
 definePageMeta({
   layout: 'default'
@@ -11,7 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
-const { getDocument, updateDocument, deleteDocument } = useDocuments()
+const { getTranscription, updateTranscription, deleteTranscription: deleteTranscriptionDoc } = useFirestore()
 const { getCase } = useCases()
 const { transcribeMedia, summarizeTranscript } = useAI()
 
@@ -258,9 +258,9 @@ async function toggleKeyMoment(segmentId: string) {
 
   try {
     segment.isKeyMoment = newStatus
-    
+
     // Update in Firestore
-    await updateDocument(transcriptId.value, {
+    await updateTranscription(transcriptId.value, {
       segments: transcript.value.segments
     })
 
@@ -348,7 +348,7 @@ async function saveEdit(segmentId: string) {
 
     // Persist to Firestore
     try {
-      await updateDocument(transcriptId.value, {
+      await updateTranscription(transcriptId.value, {
         segments: transcript.value.segments
       })
       toast.add({
@@ -400,7 +400,7 @@ async function saveSpeakerEdit() {
     editSpeakerRole.value = ''
 
     // Update in Firestore
-    await updateDocument(transcriptId.value, {
+    await updateTranscription(transcriptId.value, {
       speakers: transcript.value.speakers
     })
 
@@ -427,14 +427,14 @@ function cancelSpeakerEdit() {
   editSpeakerRole.value = ''
 }
 
-async function deleteTranscription() {
+async function handleDeleteTranscription() {
   if (!transcript.value) return
 
   const confirmed = confirm(`Are you sure you want to delete "${transcript.value.title}"? This action cannot be undone.`)
   if (!confirmed) return
 
   try {
-    await deleteDocument(transcriptId.value)
+    await deleteTranscriptionDoc(transcriptId.value)
     toast.add({
       title: 'Transcription deleted',
       description: 'The transcription has been permanently deleted',
@@ -455,7 +455,7 @@ async function loadTranscript() {
   error.value = null
 
   try {
-    const doc = await getDocument(transcriptId.value)
+    const doc = await getTranscription(transcriptId.value)
     if (!doc) {
       error.value = 'Transcript not found'
       return
@@ -464,13 +464,13 @@ async function loadTranscript() {
     // Adapt Firestore document to transcript format
     transcript.value = {
       id: doc.id,
-      title: doc.title || doc.filename,
+      title: doc.filename,
       audioUrl: doc.downloadUrl,
       duration: doc.duration || 0,
       segments: doc.segments || [],
       speakers: doc.speakers || [],
-      created_at: doc.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-      case_id: doc.caseId,
+      createdAt: doc.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      caseId: doc.caseId,
       status: doc.status
     } as any
   } catch (err: any) {
@@ -570,7 +570,7 @@ onMounted(async () => {
                 { label: 'Export as VTT', icon: 'i-lucide-captions', click: () => exportTranscript('vtt') }
               ],
               [
-                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: deleteTranscription, class: 'text-error' }
+                { label: 'Delete Transcription', icon: 'i-lucide-trash-2', click: handleDeleteTranscription, class: 'text-error' }
               ]
             ]"
           >
