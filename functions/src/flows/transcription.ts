@@ -80,9 +80,9 @@ export const transcribeMediaFlow = ai.defineFlow(
     // Get project ID from environment or default
     const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'legalease-420'
 
-    // Chirp 3 is available in us, eu, asia-northeast1, asia-southeast1
-    // Using 'us' multi-region for best coverage
-    const location = 'us-central1'
+    // Chirp 3 requires 'global' location for BatchRecognize API
+    // See: https://cloud.google.com/speech-to-text/v2/docs/chirp-model
+    const location = 'global'
 
     // Build the recognizer path - use "_" for default recognizer
     const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
