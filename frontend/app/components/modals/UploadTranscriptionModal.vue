@@ -65,37 +65,38 @@ async function handleUpload() {
       // Step 1: Upload to Firebase Storage
       const uploadResult = await uploadForTranscription(selectedFile.value, props.caseId)
 
-      // Step 2: Create transcription document in Firestore
-      docId = await createTranscription({
-        caseId: props.caseId,
-        userId: '', // Will be set by useFirestore
+      // Step 2: Create document in Firestore (not transcription-specific)
+      const { createDocument } = useDocuments()
+      docId = await createDocument({
         filename: selectedFile.value.name,
         storagePath: uploadResult.path,
-        gsUri: uploadResult.gsUri,
         downloadUrl: uploadResult.downloadUrl,
         mimeType: selectedFile.value.type,
         fileSize: selectedFile.value.size,
-        status: 'processing'
+        status: 'processing',
+        caseId: props.caseId || undefined
       })
 
       transcriptionId.value = docId
       transcriptionStatus.value = 'transcribing'
 
-      // Step 3: Call Genkit transcription function
+      // Step 3: Call transcription function
       const result = await transcribeMedia({
-        gcsUri: uploadResult.gsUri,
+        url: uploadResult.downloadUrl,
         enableDiarization: enableDiarization.value,
         enableSummary: enableSummary.value
       })
 
-      // Step 4: Save results to Firestore
-      await completeTranscription(docId, {
-        fullText: result.fullText,
+      // Step 4: Update document with transcription results
+      const { updateDocument } = useDocuments()
+      await updateDocument(docId, {
+        status: 'completed',
+        extractedText: result.fullText,
+        summary: result.summary,
         segments: result.segments,
         speakers: result.speakers,
         duration: result.duration,
-        language: result.language,
-        summary: result.summary
+        language: result.language
       })
     } else {
       // URL transcription flow
