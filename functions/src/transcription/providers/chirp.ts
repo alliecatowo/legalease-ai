@@ -87,9 +87,8 @@ export class ChirpProvider implements TranscriptionProvider {
       languageCodes: [effectiveLanguage],
       model: 'chirp_3',
       features: {
-        enableAutomaticPunctuation: true
-        // Note: Word-level timestamps come from diarization, not enableWordTimeOffsets
-        // Chirp 3 doesn't officially support enableWordTimeOffsets
+        enableAutomaticPunctuation: true,
+        enableWordTimeOffsets: true // Provides timestamps for words (used with diarization)
       }
     }
 
@@ -139,12 +138,6 @@ export class ChirpProvider implements TranscriptionProvider {
 
         const alternative = result.alternatives[0]
         const words = alternative.words || []
-
-        // Debug: log first word structure to see available fields
-        if (words.length > 0) {
-          console.log('[Chirp] First word object keys:', Object.keys(words[0]))
-          console.log('[Chirp] First word sample:', JSON.stringify(words[0], null, 2))
-        }
 
         // If we have words with speaker labels, group by speaker
         if (words.length > 0 && words[0]?.speakerLabel) {
