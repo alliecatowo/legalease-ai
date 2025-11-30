@@ -59,11 +59,11 @@ jobs:
 
       - name: Install functions dependencies
         working-directory: ./functions
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Build functions
         working-directory: ./functions
-        run: pnpm run build
+        run: npm run build
 
       - name: Deploy to Firebase Hosting (Live)
         uses: FirebaseExtended/action-hosting-deploy@v0

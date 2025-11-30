@@ -27,11 +27,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./functions
-        run: pnpm install
+        run: npm ci
 
       - name: Build functions
         working-directory: ./functions
-        run: pnpm build
+        run: npm run build
 
       - name: Deploy to Firebase
         uses: w9jds/firebase-action@master
