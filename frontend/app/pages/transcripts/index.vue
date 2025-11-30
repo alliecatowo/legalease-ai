@@ -64,9 +64,16 @@ function getCaseName(caseId: string) {
   return c?.name || 'Unknown Case'
 }
 
+// Helper to construct GCS URI from storage path
+function getGcsUri(storagePath: string): string {
+  const config = useRuntimeConfig()
+  const bucket = config.public.storageBucket || 'legalease-420.firebasestorage.app'
+  return `gs://${bucket}/${storagePath}`
+}
+
 async function startTranscription(doc: any) {
-  if (!doc.downloadUrl) {
-    toast.add({ title: 'Error', description: 'No download URL available', color: 'error' })
+  if (!doc.downloadUrl && !doc.storagePath) {
+    toast.add({ title: 'Error', description: 'No media source available', color: 'error' })
     return
   }
 
@@ -76,12 +83,13 @@ async function startTranscription(doc: any) {
     // Update status to processing
     await updateDocument(doc.id, { status: 'processing' })
 
-    // Call transcription function
-    const result = await transcribeMedia({
-      url: doc.downloadUrl,
-      enableDiarization: true,
-      enableSummary: true
-    })
+    // Call transcription function - prefer GCS URI for Firebase Storage files (no size limit)
+    // Fall back to URL for external files
+    const transcriptionInput = doc.storagePath
+      ? { gcsUri: getGcsUri(doc.storagePath), enableDiarization: true, enableSummary: true }
+      : { url: doc.downloadUrl, enableDiarization: true, enableSummary: true }
+
+    const result = await transcribeMedia(transcriptionInput)
 
     // Store transcription results in Firestore
     await updateDocument(doc.id, {

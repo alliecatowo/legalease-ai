@@ -96,9 +96,10 @@ async function handleUpload() {
       transcriptionId.value = docId
       transcriptionStatus.value = 'transcribing'
 
-      // Step 3: Call transcription function
+      // Step 3: Call transcription function with GCS URI (not HTTP URL)
+      // GCS URIs don't have size limits since Gemini reads directly from GCS
       const result = await transcribeMedia({
-        url: uploadResult.downloadUrl,
+        gcsUri: uploadResult.gsUri,
         enableDiarization: enableDiarization.value,
         enableSummary: enableSummary.value
       })
