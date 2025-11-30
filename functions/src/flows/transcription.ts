@@ -6,7 +6,7 @@ import { ai } from '../genkit.js'
 export const TranscriptionInput = z.object({
   gcsUri: z.string().optional().describe('GCS URI of the audio/video file (gs://bucket/path)'),
   url: z.string().optional().describe('URL to transcribe (direct media URL)'),
-  language: z.string().default('en-US').describe('Language code'),
+  language: z.string().default('auto').describe('BCP-47 language code or "auto" for detection'),
   enableDiarization: z.boolean().default(true).describe('Enable speaker diarization'),
   enableSummary: z.boolean().default(false).describe('Generate summary with transcription'),
   maxSpeakers: z.number().default(6).describe('Maximum number of speakers to identify')
@@ -59,7 +59,13 @@ export const transcribeMediaFlow = ai.defineFlow(
     outputSchema: TranscriptionOutput
   },
   async (input) => {
-    const { gcsUri, url, language, enableDiarization, enableSummary, maxSpeakers } = input
+    // Apply defaults since Genkit may not apply Zod defaults
+    const gcsUri = input.gcsUri
+    const url = input.url
+    const language = input.language
+    const enableDiarization = input.enableDiarization ?? true  // Default: true
+    const enableSummary = input.enableSummary ?? false         // Default: false
+    const maxSpeakers = input.maxSpeakers ?? 6                 // Default: 6
 
     // Determine the media URI - prefer GCS URI for direct access
     const mediaUri = gcsUri || url
@@ -75,28 +81,32 @@ export const transcribeMediaFlow = ai.defineFlow(
     // Import Speech V2 client dynamically
     const { SpeechClient } = await import('@google-cloud/speech').then(m => m.v2)
 
-    // Create Speech-to-Text V2 client
-    const client = new SpeechClient()
+    // Chirp 3 is available in 'us' multi-region (NOT 'global')
+    // See: https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model
+    const location = 'us'
+
+    // Create Speech-to-Text V2 client with regional endpoint
+    const client = new SpeechClient({
+      apiEndpoint: `${location}-speech.googleapis.com`
+    })
 
     // Get project ID from environment or default
     const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'legalease-420'
 
-    // Chirp 3 requires 'global' location for BatchRecognize API
-    // See: https://cloud.google.com/speech-to-text/v2/docs/chirp-model
-    const location = 'global'
-
     // Build the recognizer path - use "_" for default recognizer
     const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
 
-    console.log('Starting Chirp 2 transcription for:', mediaUri)
-    console.log('Using recognizer:', recognizer)
+    // Configure the recognition request for V2 API with Chirp 3
+    // Note: Chirp 3 is available in 'us' multi-region
+    // The V2 BatchRecognize API doesn't support "auto" as a language code
+    // Default to en-US when auto is specified or language is not provided
+    // (Zod defaults may not be applied by Genkit, so we handle undefined too)
+    const effectiveLanguage = (!language || language === 'auto') ? 'en-US' : language
 
-    // Configure the recognition request for V2 API with Chirp 2
-    // Note: Chirp 2 is available in global location for BatchRecognize
     const config: any = {
       autoDecodingConfig: {}, // Let the API auto-detect audio encoding
-      languageCodes: [language],
-      model: 'chirp_2', // Chirp 2 - available globally with speaker diarization
+      languageCodes: [effectiveLanguage], // BCP-47 code (e.g., "en-US", "es-ES")
+      model: 'chirp_3', // Chirp 3 - latest model with best accuracy
       features: {
         enableAutomaticPunctuation: true,
         // Note: Word-level timestamps not supported in Chirp models
@@ -105,13 +115,14 @@ export const transcribeMediaFlow = ai.defineFlow(
     }
 
     // Add speaker diarization if enabled
-    // Note: Chirp 2 supports diarization in specific languages including en-US
+    // Note: Chirp 3 supports diarization in specific languages including en-US
     if (enableDiarization) {
       config.features.diarizationConfig = {
         minSpeakerCount: 1,
         maxSpeakerCount: maxSpeakers
       }
     }
+
 
     // Use BatchRecognize for long audio files (1 minute to 8 hours)
     const request = {
@@ -125,17 +136,11 @@ export const transcribeMediaFlow = ai.defineFlow(
       }
     }
 
-    console.log('Starting batch recognition...')
-
     // Call BatchRecognize - this returns a long-running operation
     const [operation] = await client.batchRecognize(request)
 
-    console.log('Batch recognition operation started, waiting for completion...')
-
     // Wait for the operation to complete
     const [response] = await operation.promise()
-
-    console.log('Batch recognition complete, processing results...')
 
     // Process results from V2 API response
     const segments: z.infer<typeof TranscriptSegment>[] = []
@@ -143,6 +148,7 @@ export const transcribeMediaFlow = ai.defineFlow(
     let fullText = ''
     let lastEndTime = 0
     let segmentIndex = 0
+    let detectedLanguage: string | undefined
 
     // V2 API returns results in a different structure
     // Results are keyed by the input file URI
@@ -154,6 +160,11 @@ export const transcribeMediaFlow = ai.defineFlow(
 
       for (const result of transcript.results) {
         if (!result.alternatives || result.alternatives.length === 0) continue
+
+        // Extract detected language from the result (set by auto-detection)
+        if (result.languageCode && !detectedLanguage) {
+          detectedLanguage = result.languageCode
+        }
 
         const alternative = result.alternatives[0]
         const transcriptText = alternative.transcript || ''
@@ -206,12 +217,16 @@ export const transcribeMediaFlow = ai.defineFlow(
     // Duration from last segment end time
     const duration = lastEndTime > 0 ? lastEndTime : undefined
 
+    // Use detected language if auto-detection was used, otherwise use input language
+    const outputLanguage = detectedLanguage || (language !== 'auto' ? language : undefined)
+    console.log('Detected language:', detectedLanguage, 'Output language:', outputLanguage)
+
     let result: TranscriptionOutputType = {
       fullText,
       segments,
       speakers,
       duration,
-      language
+      language: outputLanguage
     }
 
     // Generate summary if requested (use Gemini 2.5 Flash for this)
