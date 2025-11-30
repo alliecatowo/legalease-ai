@@ -79,11 +79,35 @@ const debouncedSmartSearch = useDebounceFn(performSmartSearch, 500)
 
 // Computed property for active segment ID
 const activeSegmentId = computed(() => {
-  if (!transcript.value) return null
-  const segment = transcript.value.segments.find(segment =>
+  if (!transcript.value || !transcript.value.segments.length) return null
+
+  // First try exact match
+  const exactMatch = transcript.value.segments.find(segment =>
     currentTime.value >= segment.start && currentTime.value <= segment.end
   )
-  return segment?.id || null
+  if (exactMatch) return exactMatch.id
+
+  // If no exact match, find the segment that just passed (for gaps between segments)
+  // This keeps the previous segment highlighted during gaps
+  const passedSegments = transcript.value.segments.filter(s => s.end <= currentTime.value)
+  if (passedSegments.length > 0) {
+    // Return the most recent segment that ended
+    const lastPassed = passedSegments.reduce((prev, curr) =>
+      curr.end > prev.end ? curr : prev
+    )
+    // Only return if we're within 2 seconds of its end (reasonable gap)
+    if (currentTime.value - lastPassed.end < 2) {
+      return lastPassed.id
+    }
+  }
+
+  // Check if we're before the first segment
+  const firstSegment = transcript.value.segments[0]
+  if (firstSegment && currentTime.value < firstSegment.start) {
+    return null
+  }
+
+  return null
 })
 
 // Watch for search changes

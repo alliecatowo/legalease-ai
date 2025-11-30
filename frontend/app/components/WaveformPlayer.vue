@@ -105,11 +105,18 @@ async function initializeWaveSurfer() {
   })
 
   // Throttle audioprocess to 100ms instead of 60fps for better performance
-  const throttledAudioProcess = useThrottleFn((time: number) => {
-    emit('update:currentTime', time)
+  // Note: We explicitly get getCurrentTime() as some WaveSurfer versions don't pass time as arg
+  const throttledTimeUpdate = useThrottleFn(() => {
+    if (wavesurfer.value) {
+      const time = wavesurfer.value.getCurrentTime()
+      emit('update:currentTime', time)
+    }
   }, 100)
 
-  wavesurfer.value.on('audioprocess', throttledAudioProcess)
+  wavesurfer.value.on('audioprocess', throttledTimeUpdate)
+
+  // Also listen to timeupdate as a fallback for MediaElement backend
+  wavesurfer.value.on('timeupdate', throttledTimeUpdate)
 
   wavesurfer.value.on('seek', (progress) => {
     const time = progress * duration.value
