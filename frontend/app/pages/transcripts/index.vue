@@ -236,7 +236,7 @@ async function startTranscription(doc: any) {
   </UDashboardPanel>
 
   <!-- Upload Modal -->
-  <UploadTranscriptionModal
+  <ModalsUploadTranscriptionModal
     v-model:open="showUploadModal"
     @uploaded="handleUploadComplete"
   />
