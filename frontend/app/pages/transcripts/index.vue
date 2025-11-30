@@ -126,7 +126,7 @@ async function startTranscription(doc: any) {
     <template #header>
       <UDashboardNavbar title="Transcriptions">
         <template #trailing>
-          <UButton label="Upload Transcriptions" icon="i-lucide-upload" @click="showUploadModal = true" />
+          <UButton label="Upload Transcriptions" icon="i-lucide-upload" @click="() => showUploadModal = true" />
         </template>
       </UDashboardNavbar>
     </template>
