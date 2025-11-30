@@ -77,34 +77,17 @@ async function performSmartSearch() {
 // Debounced smart search
 const debouncedSmartSearch = useDebounceFn(performSmartSearch, 500)
 
-// Computed property for active segment ID
+// Computed property for active segment ID - simple linear search
 const activeSegmentId = computed(() => {
-  if (!transcript.value || !transcript.value.segments.length) return null
+  if (!transcript.value?.segments?.length) return null
 
-  // First try exact match
-  const exactMatch = transcript.value.segments.find(segment =>
-    currentTime.value >= segment.start && currentTime.value <= segment.end
-  )
-  if (exactMatch) return exactMatch.id
+  const time = currentTime.value
 
-  // If no exact match, find the segment that just passed (for gaps between segments)
-  // This keeps the previous segment highlighted during gaps
-  const passedSegments = transcript.value.segments.filter(s => s.end <= currentTime.value)
-  if (passedSegments.length > 0) {
-    // Return the most recent segment that ended
-    const lastPassed = passedSegments.reduce((prev, curr) =>
-      curr.end > prev.end ? curr : prev
-    )
-    // Only return if we're within 2 seconds of its end (reasonable gap)
-    if (currentTime.value - lastPassed.end < 2) {
-      return lastPassed.id
+  // Simple: find segment where time is between start and end
+  for (const segment of transcript.value.segments) {
+    if (time >= segment.start && time <= segment.end) {
+      return segment.id
     }
-  }
-
-  // Check if we're before the first segment
-  const firstSegment = transcript.value.segments[0]
-  if (firstSegment && currentTime.value < firstSegment.start) {
-    return null
   }
 
   return null
