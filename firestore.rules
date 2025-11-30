@@ -98,5 +98,23 @@ service cloud.firestore {
         (resource.data.teamId != null && isTeamAdmin(resource.data.teamId))
       );
     }
+
+    // Documents collection (top-level) - for transcripts, PDFs, etc.
+    match /documents/{documentId} {
+      // Allow if user owns the document or is member of the team
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (resource.data.teamId != null && isTeamMember(resource.data.teamId))
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (resource.data.teamId != null && isTeamMember(resource.data.teamId))
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (resource.data.teamId != null && isTeamAdmin(resource.data.teamId))
+      );
+    }
   }
 }
