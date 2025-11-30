@@ -5,6 +5,9 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
+// Auth state - show loading while auth is initializing
+const { isReady: authReady, user } = useAuth()
+
 const open = ref(false)
 
 // Error boundary state
@@ -125,7 +128,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UDashboardGroup unit="rem">
+  <!-- Auth Loading State - prevents flash of content during initialization -->
+  <div v-if="!authReady" class="min-h-screen flex items-center justify-center bg-default">
+    <div class="text-center space-y-4">
+      <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
+      <p class="text-muted">Loading...</p>
+    </div>
+  </div>
+
+  <UDashboardGroup v-else unit="rem">
     <UDashboardSidebar
       id="default"
       v-model:open="open"

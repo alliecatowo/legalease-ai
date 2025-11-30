@@ -7,7 +7,8 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
   updateProfile,
-  type User
+  type User,
+  type Auth
 } from 'firebase/auth'
 
 export interface AuthUser {
@@ -18,13 +19,19 @@ export interface AuthUser {
   emailVerified: boolean
 }
 
+// Global promise that resolves when auth state is determined
+// This follows VueFire's pattern for reliable auth checking
+let authReadyPromise: Promise<AuthUser | null> | null = null
+let authReadyResolve: ((user: AuthUser | null) => void) | null = null
+
 export function useAuth() {
   const { $auth } = useNuxtApp()
   const router = useRouter()
 
-  // Auth state
+  // Auth state - using shared state across all composable instances
   const user = useState<AuthUser | null>('auth-user', () => null)
   const isLoading = useState<boolean>('auth-loading', () => true)
+  const isReady = useState<boolean>('auth-ready', () => false)
   const error = useState<string | null>('auth-error', () => null)
 
   // Computed
@@ -42,17 +49,54 @@ export function useAuth() {
     }
   }
 
+  // VueFire-style getCurrentUser() - returns a Promise that resolves when auth is ready
+  // This is the KEY pattern for reliable auth in middleware
+  const getCurrentUser = (): Promise<AuthUser | null> => {
+    // If auth is already ready, return current user immediately
+    if (isReady.value) {
+      return Promise.resolve(user.value)
+    }
+
+    // If we're already waiting for auth, return the existing promise
+    if (authReadyPromise) {
+      return authReadyPromise
+    }
+
+    // Create a new promise that will be resolved when onAuthStateChanged fires
+    authReadyPromise = new Promise<AuthUser | null>((resolve) => {
+      authReadyResolve = resolve
+    })
+
+    return authReadyPromise
+  }
+
   // Initialize auth state listener
-  const initAuth = (authInstance?: any) => {
+  const initAuth = (authInstance?: Auth) => {
     const auth = authInstance || $auth
     if (!auth) {
       isLoading.value = false
+      isReady.value = true
+      if (authReadyResolve) {
+        authReadyResolve(null)
+        authReadyResolve = null
+      }
       return
     }
 
+    // Set up the auth state listener - this is the source of truth
     onAuthStateChanged(auth, (firebaseUser) => {
-      user.value = mapUser(firebaseUser)
+      const mappedUser = mapUser(firebaseUser)
+      user.value = mappedUser
       isLoading.value = false
+
+      // Mark auth as ready and resolve any waiting promises
+      if (!isReady.value) {
+        isReady.value = true
+        if (authReadyResolve) {
+          authReadyResolve(mappedUser)
+          authReadyResolve = null
+        }
+      }
     })
   }
 
@@ -175,9 +219,11 @@ export function useAuth() {
   return {
     user,
     isLoading,
+    isReady,
     isAuthenticated,
     error,
     initAuth,
+    getCurrentUser,
     signInWithEmail,
     signUpWithEmail,
     signInWithGoogle,

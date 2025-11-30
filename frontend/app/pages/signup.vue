@@ -6,15 +6,31 @@ definePageMeta({
   layout: 'auth'
 })
 
-const { signUpWithEmail, signInWithGoogle, error, isLoading, isAuthenticated } = useAuth()
+const { signUpWithEmail, signInWithGoogle, error, isLoading, isReady, user } = useAuth()
 const router = useRouter()
+const route = useRoute()
 
-// Redirect if already authenticated
-watch(isAuthenticated, (authenticated) => {
-  if (authenticated) {
-    router.push('/')
+// Get redirect path from query params
+const redirectPath = computed(() => {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' ? redirect : '/'
+})
+
+// VueFire pattern: Watch for auth changes only after component is mounted
+onMounted(() => {
+  // If already authenticated when page loads, redirect immediately
+  if (isReady.value && user.value) {
+    router.replace(redirectPath.value)
+    return
   }
-}, { immediate: true })
+
+  // Watch for future auth changes (e.g., user signs up or uses Google)
+  watch(user, (newUser, oldUser) => {
+    if (newUser && !oldUser) {
+      router.replace(redirectPath.value)
+    }
+  })
+})
 
 const schema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -38,7 +54,7 @@ const state = reactive({
 const onSubmit = async (event: FormSubmitEvent<Schema>) => {
   try {
     await signUpWithEmail(event.data.email, event.data.password, event.data.name)
-    router.push('/')
+    // Navigation will happen via the watcher
   } catch (e) {
     // Error is handled by useAuth
   }
@@ -47,7 +63,7 @@ const onSubmit = async (event: FormSubmitEvent<Schema>) => {
 const onGoogleSignUp = async () => {
   try {
     await signInWithGoogle()
-    router.push('/')
+    // Navigation will happen via the watcher
   } catch (e) {
     // Error is handled by useAuth
   }
