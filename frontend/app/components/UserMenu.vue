@@ -7,12 +7,12 @@ defineProps<{
 
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
-const { user: authUser, logout } = useAuth()
+const { user: authUser, isReady: authReady, logout } = useAuth()
 
 const colors = ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose']
 const neutrals = ['slate', 'gray', 'zinc', 'neutral', 'stone']
 
-// Computed user based on auth state
+// Computed user based on auth state - only show real data when auth is ready
 const user = computed(() => {
   if (authUser.value) {
     return {
@@ -23,17 +23,16 @@ const user = computed(() => {
       } : undefined
     }
   }
-  return {
-    name: 'Guest',
-    avatar: undefined
-  }
+  return null
 })
 
-const items = computed<DropdownMenuItem[][]>(() => ([[{
-  type: 'label',
-  label: user.value.name,
-  avatar: user.value.avatar
-}], [{
+const items = computed<DropdownMenuItem[][]>(() => {
+  if (!user.value) return []
+  return [[{
+    type: 'label',
+    label: user.value.name,
+    avatar: user.value.avatar
+  }], [{
   label: 'Profile',
   icon: 'i-lucide-user',
   to: '/settings'
@@ -113,18 +112,25 @@ const items = computed<DropdownMenuItem[][]>(() => ([[{
   label: 'Log out',
   icon: 'i-lucide-log-out',
   onSelect: () => logout()
-}]]))
+}]]})
 </script>
 
 <template>
+  <!-- Show loading skeleton while auth initializes -->
+  <div v-if="!authReady" class="p-2">
+    <USkeleton class="h-8 w-full rounded" />
+  </div>
+
+  <!-- Show user menu when authenticated -->
   <UDropdownMenu
+    v-else-if="user"
     :items="items"
     :content="{ align: 'center', collisionPadding: 12 }"
     :ui="{ content: collapsed ? 'w-48' : 'w-(--reka-dropdown-menu-trigger-width)' }"
   >
     <UButton
-      :label="collapsed ? undefined : user?.name"
-      :avatar="user?.avatar"
+      :label="collapsed ? undefined : user.name"
+      :avatar="user.avatar"
       :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
       color="neutral"
       variant="ghost"
