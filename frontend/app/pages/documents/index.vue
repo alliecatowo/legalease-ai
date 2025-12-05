@@ -43,6 +43,16 @@ const showUploadModal = ref(false)
 const showBulkActionsModal = ref(false)
 const uploadingFiles = ref<File[] | null>(null)
 const uploadProgress = ref(0)
+const selectedCaseId = ref<string | null>(null)
+
+// Case options for the upload modal dropdown
+const caseOptions = computed(() => {
+  if (!casesData.value) return []
+  return casesData.value.map(c => ({
+    label: c.name,
+    value: c.id
+  }))
+})
 
 const typeOptions = [
   { label: 'All Documents', value: 'all' },
@@ -149,20 +159,20 @@ function toggleSelect(docId: string | number) {
 async function uploadDocuments() {
   if (!uploadingFiles.value || uploadingFiles.value.length === 0) return
 
-  // Get the first available case ID (or show error if no cases exist)
-  if (!casesData.value || casesData.value.length === 0) {
+  // Validate case selection
+  if (!selectedCaseId.value) {
     if (import.meta.client) {
       const toast = useToast()
       toast.add({
-        title: 'No Case Available',
-        description: 'Please create a case first before uploading documents',
+        title: 'Case Required',
+        description: 'Please select a case to associate with the documents',
         color: 'error'
       })
     }
     return
   }
 
-  const caseId = casesData.value[0].id!
+  const caseId = selectedCaseId.value
   uploadProgress.value = 0
 
   try {
@@ -192,6 +202,7 @@ async function uploadDocuments() {
     showUploadModal.value = false
     uploadingFiles.value = null
     uploadProgress.value = 0
+    selectedCaseId.value = null
     refresh()
   } catch (error: any) {
     console.error('Upload failed:', error)
@@ -622,6 +633,22 @@ const documentTypeIcons: Record<string, string> = {
       <UModal v-model:open="showUploadModal" title="Upload Documents" :ui="{ content: 'max-w-2xl' }">
       <template #body>
         <div class="space-y-4">
+          <!-- Case Selection -->
+          <UFormField label="Select Case" required>
+            <USelectMenu
+              v-model="selectedCaseId"
+              :items="caseOptions"
+              placeholder="Choose a case..."
+              value-key="value"
+              class="w-full"
+            />
+            <template #hint>
+              <span v-if="caseOptions.length === 0" class="text-warning">
+                No cases available. <NuxtLink to="/cases" class="underline">Create a case</NuxtLink> first.
+              </span>
+            </template>
+          </UFormField>
+
           <!-- File Upload Component -->
           <UFileUpload
             v-model="uploadingFiles"
@@ -655,13 +682,13 @@ const documentTypeIcons: Record<string, string> = {
             label="Cancel"
             color="neutral"
             variant="ghost"
-            @click="showUploadModal = false; uploadingFiles = null"
+            @click="showUploadModal = false; uploadingFiles = null; selectedCaseId = null"
           />
           <UButton
             label="Upload"
             icon="i-lucide-upload"
             color="primary"
-            :disabled="!uploadingFiles || uploadingFiles.length === 0"
+            :disabled="!uploadingFiles || uploadingFiles.length === 0 || !selectedCaseId"
             @click="uploadDocuments"
           />
         </div>
