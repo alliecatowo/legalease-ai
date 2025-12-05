@@ -1,0 +1,77 @@
+# Docling Cloud Run Service Configuration (GPU)
+#
+# Deploy with: gcloud run services replace service-gpu.yaml --region us-central1
+#
+# Performance characteristics:
+#   ~0.5s/page processing time (6x faster than CPU)
+#   ~30s cold start
+#   Higher cost but excellent for batch processing
+#
+# Requirements:
+#   - GPU quota in us-central1 (nvidia-l4)
+#   - Images in Artifact Registry (not external registries)
+#
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: docling-extraction
+  labels:
+    app: legalease
+    component: document-extraction
+  annotations:
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        # Scale to zero - no idle costs
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "5"
+        # Use gen2 execution environment (required for GPU)
+        run.googleapis.com/execution-environment: gen2
+        # Don't throttle CPU
+        run.googleapis.com/cpu-throttling: "false"
+        # Startup CPU boost
+        run.googleapis.com/startup-cpu-boost: "true"
+        # Disable GPU zonal redundancy (requires extra quota)
+        run.googleapis.com/gpu-zonal-redundancy: "disabled"
+    spec:
+      # Service account for storage access
+      serviceAccountName: docling-runner@legalease-420.iam.gserviceaccount.com
+      # Single request per container (GPU is shared)
+      containerConcurrency: 1
+      # 15 minute timeout for large documents
+      timeoutSeconds: 900
+      containers:
+        - image: us-central1-docker.pkg.dev/legalease-420/docker-images/docling-serve:latest
+          ports:
+            - containerPort: 5001
+          resources:
+            limits:
+              memory: 16Gi
+              cpu: "4"
+              nvidia.com/gpu: "1"
+          env:
+            - name: OMP_NUM_THREADS
+              value: "4"
+            - name: DOCLING_SERVE_MAX_SYNC_WAIT
+              value: "600"
+            - name: DOCLING_SERVE_ENABLE_UI
+              value: "false"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            periodSeconds: 30
+            timeoutSeconds: 5
+      nodeSelector:
+        run.googleapis.com/accelerator: nvidia-l4

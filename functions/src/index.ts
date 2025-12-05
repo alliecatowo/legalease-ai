@@ -3,6 +3,7 @@ import { onDocumentUpdated } from 'firebase-functions/v2/firestore'
 import { defineSecret } from 'firebase-functions/params'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { initializeApp, getApps } from 'firebase-admin/app'
+import config from './config.js'
 
 // Initialize Firebase Admin if not already initialized
 if (getApps().length === 0) {
@@ -12,13 +13,25 @@ if (getApps().length === 0) {
 // Import flows
 import { transcribeMediaFlow, TranscriptionInput } from './flows/transcription.js'
 import { summarizeTranscriptFlow, SummarizationInput } from './flows/summarization.js'
-import { searchDocumentsFlow, indexDocumentFlow, SearchInput, IndexDocumentInput } from './flows/search.js'
+import {
+  searchDocumentsFlow,
+  indexDocumentChunksFlow,
+  deleteDocumentChunksFlow,
+  SearchInput,
+  IndexDocumentChunksInput,
+  DeleteDocumentChunksInput
+} from './flows/search.js'
 import { generateWaveformFlow, WaveformInput } from './flows/waveform.js'
+import { extractDocumentFlow, ExtractDocumentInput } from './flows/document-extraction.js'
 import { transcribe } from './transcription/index.js'
 import { download } from './storage/index.js'
 import { ai } from './genkit.js'
 import { getModel } from './ai/index.js'
 import { SummarizationOutput } from './flows/summarization.js'
+import { initializeProviders } from './providers/document/index.js'
+
+// Initialize document extraction providers
+initializeProviders()
 
 // Generate waveform peaks from audio buffer (simplified approach)
 function generateWaveformPeaks(buffer: Buffer, targetPeaks: number = 800): number[] {
@@ -85,14 +98,34 @@ export const searchDocuments = onCallGenkit(
   searchDocumentsFlow
 )
 
-export const indexDocument = onCallGenkit(
+export const indexDocumentChunks = onCallGenkit(
   {
     secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
     cors: true,
-    memory: '512MiB',
-    timeoutSeconds: 120
+    memory: '1GiB',
+    timeoutSeconds: 300 // 5 minutes for large documents
   },
-  indexDocumentFlow
+  indexDocumentChunksFlow
+)
+
+export const deleteDocumentChunks = onCallGenkit(
+  {
+    secrets: [qdrantUrl, qdrantApiKey],
+    cors: true,
+    memory: '512MiB',
+    timeoutSeconds: 60
+  },
+  deleteDocumentChunksFlow
+)
+
+export const extractDocument = onCallGenkit(
+  {
+    secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
+    cors: true,
+    memory: '2GiB',
+    timeoutSeconds: 540 // 9 minutes for large documents
+  },
+  extractDocumentFlow
 )
 
 export const generateWaveform = onCallGenkit(
@@ -105,7 +138,15 @@ export const generateWaveform = onCallGenkit(
 )
 
 // Re-export schemas for client-side use
-export { TranscriptionInput, SummarizationInput, SearchInput, IndexDocumentInput, WaveformInput }
+export {
+  TranscriptionInput,
+  SummarizationInput,
+  SearchInput,
+  IndexDocumentChunksInput,
+  DeleteDocumentChunksInput,
+  ExtractDocumentInput,
+  WaveformInput
+}
 
 /**
  * Firestore trigger: Start transcription job (non-blocking)
@@ -160,19 +201,19 @@ export const startTranscriptionJob = onDocumentUpdated(
         apiEndpoint: `${location}-speech.googleapis.com`
       })
 
-      const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'legalease-420'
+      const projectId = config.projectId
       const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
 
       // Output location for results (GCS)
-      const outputBucket = `${projectId}.firebasestorage.app`
-      const outputPath = `transcription-results/${transcriptionId}.json`
+      const outputBucket = config.storageBucket
+      const outputPath = `${config.storage.transcriptionResultsPath}/${transcriptionId}.json`
       const outputUri = `gs://${outputBucket}/${outputPath}`
 
       // Build recognition config
-      const config: any = {
+      const recognitionConfig: any = {
         autoDecodingConfig: {},
         languageCodes: ['en-US'],
-        model: 'chirp_3',
+        model: config.speech.model,
         features: {
           enableAutomaticPunctuation: true,
           enableWordTimeOffsets: true,
@@ -186,7 +227,7 @@ export const startTranscriptionJob = onDocumentUpdated(
       // Start batch recognition with GCS output (async - doesn't wait)
       const batchRequest = {
         recognizer,
-        config,
+        config: recognitionConfig,
         files: [{ uri: mediaUri }],
         recognitionOutputConfig: {
           gcsOutputConfig: {
@@ -221,6 +262,86 @@ export const startTranscriptionJob = onDocumentUpdated(
 )
 
 /**
+ * Firestore trigger: Start document extraction
+ *
+ * When document status changes to "processing":
+ * 1. Extracts document content with bounding boxes via Docling
+ * 2. Stores pages and chunks in Firestore subcollections
+ * 3. Indexes chunks in Qdrant vector store
+ */
+export const startDocumentExtraction = onDocumentUpdated(
+  {
+    document: 'documents/{documentId}',
+    secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
+    memory: '2GiB',
+    timeoutSeconds: 540 // 9 minutes for large documents
+  },
+  async (event) => {
+    const beforeData = event.data?.before.data()
+    const afterData = event.data?.after.data()
+    const documentId = event.params.documentId
+
+    // Only process when status changes to "processing"
+    if (!afterData || beforeData?.status === afterData.status) {
+      return
+    }
+
+    if (afterData.status !== 'processing') {
+      return
+    }
+
+    // Skip if not a document type that needs extraction
+    const extractableMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/html',
+      'text/markdown'
+    ]
+
+    if (!extractableMimeTypes.includes(afterData.mimeType)) {
+      console.log(`[startDocumentExtraction] Skipping non-extractable document ${documentId} (${afterData.mimeType})`)
+      return
+    }
+
+    console.log(`[startDocumentExtraction] Starting extraction for ${documentId}`)
+
+    const gcsUri = `gs://${config.storageBucket}/${afterData.storagePath}`
+
+    try {
+      // Call the extraction flow
+      const result = await extractDocumentFlow({
+        documentId,
+        gcsUri,
+        filename: afterData.filename,
+        caseId: afterData.caseId,
+        options: {
+          skipOcr: false,
+          skipTableStructure: false,
+          skipIndexing: false
+        }
+      })
+
+      if (!result.success) {
+        throw new Error(result.error || 'Extraction failed')
+      }
+
+      console.log(`[startDocumentExtraction] Completed: ${result.pageCount} pages, ${result.chunkCount} chunks`)
+
+    } catch (error: any) {
+      console.error(`[startDocumentExtraction] Failed for ${documentId}:`, error)
+      const db = getFirestore()
+      await db.doc(`documents/${documentId}`).update({
+        status: 'failed',
+        extractionStatus: 'failed',
+        error: error.message || 'Document extraction failed',
+        failedAt: FieldValue.serverTimestamp()
+      })
+    }
+  }
+)
+
+/**
  * Storage trigger: Process completed transcription results
  *
  * Triggered when Chirp writes results to GCS (transcription-results/*.json)
@@ -233,8 +354,8 @@ import { onObjectFinalized } from 'firebase-functions/v2/storage'
 
 export const onTranscriptionComplete = onObjectFinalized(
   {
-    bucket: 'legalease-420.firebasestorage.app',
-    region: 'us-west1', // Must match bucket region
+    bucket: config.storageBucket,
+    region: 'us-west1', // Must match bucket region (Firebase Storage is in us-west1)
     secrets: [googleAIApiKey],
     memory: '2GiB',
     timeoutSeconds: 540,

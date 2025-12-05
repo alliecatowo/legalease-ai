@@ -12,6 +12,7 @@
 import type { TranscriptionProvider, ProviderCapabilities } from '../provider.js'
 import type { TranscriptionRequest, TranscriptionResult, Segment, Speaker } from '../types.js'
 import { applyDefaults } from '../types.js'
+import appConfig from '../../config.js'
 
 // Helper to convert duration to seconds
 // Handles both string format ("10.500s") and object format ({seconds: "10", nanos: 500000000})
@@ -77,8 +78,8 @@ export class ChirpProvider implements TranscriptionProvider {
     })
     logTime('SpeechClient created')
 
-    // Get project ID from environment
-    const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'legalease-420'
+    // Get project ID from config
+    const projectId = appConfig.projectId
 
     // Build the recognizer path - use "_" for default recognizer
     const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
