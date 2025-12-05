@@ -10,13 +10,39 @@ import { QdrantClient } from '@qdrant/js-client-rest'
 import { defineSecret } from 'firebase-functions/params'
 import { ai } from '../genkit.js'
 import { getEmbedder, getModelConfig } from '../ai/index.js'
+import config from '../config.js'
 
-// Secrets
+// Secrets (used when not using local Qdrant)
 const qdrantUrl = defineSecret('QDRANT_URL')
 const qdrantApiKey = defineSecret('QDRANT_API_KEY')
 
+/**
+ * Get Qdrant client
+ *
+ * Configuration is controlled by environment variables:
+ * - QDRANT_LOCAL=true: Use local Qdrant (http://localhost:6333, no auth)
+ * - QDRANT_URL: Override URL (works with both local and cloud)
+ * - QDRANT_API_KEY: API key for Qdrant Cloud
+ *
+ * For cloud Qdrant in production, secrets are loaded via defineSecret()
+ */
+function getQdrantClient(): QdrantClient {
+  if (config.qdrant.isLocal) {
+    // Local Qdrant - use config values (env vars or defaults)
+    return new QdrantClient({
+      url: config.qdrant.url,
+      apiKey: config.qdrant.apiKey || undefined
+    })
+  }
+  // Cloud Qdrant - use Secret Manager values
+  return new QdrantClient({
+    url: qdrantUrl.value(),
+    apiKey: qdrantApiKey.value()
+  })
+}
+
 // Collection name in Qdrant
-const COLLECTION_NAME = 'legal_documents'
+const COLLECTION_NAME = config.qdrant.collectionName
 // Embedding dimension depends on the configured model
 // Google text-embedding-004 = 768, OpenAI text-embedding-3-small = 1536
 const EMBEDDING_DIMENSION = getModelConfig('embedding').provider === 'google' ? 768 : 1536
@@ -101,11 +127,8 @@ export const searchDocumentsFlow = ai.defineFlow(
     const queryEmbedding = await generateEmbedding(query)
     const embeddingTime = Date.now() - startTime
 
-    // Initialize Qdrant client
-    const client = new QdrantClient({
-      url: qdrantUrl.value(),
-      apiKey: qdrantApiKey.value()
-    })
+    // Initialize Qdrant client (local or cloud based on environment)
+    const client = getQdrantClient()
 
     // Build filter conditions
     const mustConditions: any[] = []
@@ -240,11 +263,8 @@ export const indexDocumentChunksFlow = ai.defineFlow(
       }
     }
 
-    // Initialize Qdrant client
-    const client = new QdrantClient({
-      url: qdrantUrl.value(),
-      apiKey: qdrantApiKey.value()
-    })
+    // Initialize Qdrant client (local or cloud based on environment)
+    const client = getQdrantClient()
 
     // Ensure collection exists
     try {
@@ -328,11 +348,8 @@ export const deleteDocumentChunksFlow = ai.defineFlow(
   async (input) => {
     const { documentId } = input
 
-    // Initialize Qdrant client
-    const client = new QdrantClient({
-      url: qdrantUrl.value(),
-      apiKey: qdrantApiKey.value()
-    })
+    // Initialize Qdrant client (local or cloud based on environment)
+    const client = getQdrantClient()
 
     try {
       // Delete all points with matching documentId

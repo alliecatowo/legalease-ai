@@ -7,6 +7,17 @@
  */
 
 /**
+ * Check if running in Firebase emulator mode
+ */
+export function isEmulator(): boolean {
+  return (
+    process.env.FUNCTIONS_EMULATOR === 'true' ||
+    process.env.FIREBASE_EMULATOR_HUB !== undefined ||
+    process.env.USE_EMULATORS === 'true'
+  )
+}
+
+/**
  * Get the GCP project ID from environment or use default
  */
 export function getProjectId(): string {
@@ -67,9 +78,12 @@ export const config = {
 
   /** Docling configuration */
   docling: {
-    /** Cloud Run service URL */
+    /** Cloud Run service URL (local Docker uses port 5050) */
     get serviceUrl() {
-      return process.env.DOCLING_SERVICE_URL || 'http://localhost:5001'
+      if (isEmulator()) {
+        return process.env.DOCLING_SERVICE_URL || 'http://localhost:5050'
+      }
+      return process.env.DOCLING_SERVICE_URL || 'http://localhost:5050'
     },
 
     /** Request timeout in milliseconds */
@@ -85,6 +99,43 @@ export const config = {
     /** Skip table structure detection */
     get skipTableStructure() {
       return process.env.DOCLING_SKIP_TABLE_STRUCTURE === 'true'
+    }
+  },
+
+  /** Qdrant vector database configuration */
+  qdrant: {
+    /**
+     * Whether to use local Qdrant (set via QDRANT_LOCAL=true)
+     * This is independent of Firebase emulator mode - you can mix and match:
+     * - Emulators + Local Qdrant
+     * - Emulators + Cloud Qdrant
+     * - Production + Cloud Qdrant
+     */
+    get useLocal() {
+      return process.env.QDRANT_LOCAL === 'true'
+    },
+
+    /** Qdrant server URL */
+    get url() {
+      // Check env var first (works for both local and cloud)
+      if (process.env.QDRANT_URL) {
+        return process.env.QDRANT_URL
+      }
+      // Default based on useLocal flag
+      return this.useLocal ? 'http://localhost:6333' : ''
+    },
+
+    /** Qdrant API key (empty for local, required for cloud) */
+    get apiKey() {
+      return process.env.QDRANT_API_KEY || ''
+    },
+
+    /** Collection name for document chunks */
+    collectionName: 'legal_documents',
+
+    /** Check if using local Qdrant (no auth needed) */
+    get isLocal() {
+      return this.useLocal || this.url.includes('localhost')
     }
   },
 

@@ -1,9 +1,17 @@
 # LegalEase Docker Compose
-# Minimal setup for local development
-# Most services now run on Firebase (Firestore, Storage, Functions)
+# Local development services
+#
+# Usage:
+#   mise run services:start    # Start all local services
+#   mise run services:stop     # Stop all services
+#
+# Or manually:
+#   docker compose up -d       # Start all services
+#   docker compose --profile gpu up -d  # Include GPU Docling
 
 services:
-  # Qdrant Vector Database (optional - for local dev without Qdrant Cloud)
+  # Qdrant Vector Database
+  # Local alternative to Qdrant Cloud for development
   qdrant:
     image: qdrant/qdrant:latest
     container_name: legalease-qdrant
@@ -20,8 +28,60 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  # Docling Document Extraction (CPU version)
+  # Extracts text, tables, and bounding boxes from PDFs/documents
+  # ~3s/page processing time on CPU
+  docling:
+    image: quay.io/docling-project/docling-serve-cpu:latest
+    container_name: legalease-docling
+    ports:
+      - "5050:5001"  # Use 5050 to avoid conflict with Firebase Functions emulator on 5001
+    environment:
+      OMP_NUM_THREADS: "4"
+      DOCLING_SERVE_MAX_SYNC_WAIT: "600"
+      DOCLING_SERVE_ENABLE_UI: "true"  # Enable UI for local testing at http://localhost:5050/ui
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Docling takes time to load models
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+  # Docling GPU version (optional - much faster ~0.5s/page)
+  # Requires NVIDIA GPU and nvidia-container-toolkit
+  docling-gpu:
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: legalease-docling-gpu
+    ports:
+      - "5050:5001"
+    environment:
+      OMP_NUM_THREADS: "4"
+      DOCLING_SERVE_MAX_SYNC_WAIT: "600"
+      DOCLING_SERVE_ENABLE_UI: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     profiles:
-      - local
+      - gpu
 
 networks:
   default:

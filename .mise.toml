@@ -3,46 +3,102 @@ node = "24.10.0"
 pnpm = "10.18.2"
 
 [env]
+# Default to local Qdrant for development
+QDRANT_LOCAL = "true"
 QDRANT_URL = "http://localhost:6333"
 
 [tasks]
-# === Local Development (full Firebase Emulator Suite) ===
-# One command starts everything: functions watch + all emulators + frontend
+# ============================================
+# Local Development (Full Stack)
+# ============================================
+
+# Start everything for local development
+# Includes: Docker services (Qdrant, Docling) + Firebase emulators + Frontend
 "dev:local" = """
-echo '🔧 Starting local development with Firebase Emulator Suite...'
-echo '⚠️  Storage uses production (Speech API needs real GCS access)'
-(cd functions && npm run build && npm run build:watch) &
-pnpm exec firebase emulators:start --only functions,firestore,auth &
-sleep 5
+echo '🚀 Starting full local development stack...'
+echo ''
+echo '📦 Starting Docker services (Qdrant, Docling)...'
+docker compose up -d
+echo ''
+echo '🔥 Building functions...'
+(cd functions && npm run build)
+echo ''
+echo '🔥 Starting Firebase Emulators...'
+pnpm exec firebase emulators:start --only functions,firestore,auth,storage &
+EMULATOR_PID=$!
+sleep 8
+echo ''
+echo '👤 Creating test user...'
+./scripts/seed-emulator.sh || true
+echo ''
+echo '🎨 Starting frontend...'
 cd frontend && NUXT_PUBLIC_USE_EMULATORS=true pnpm dev
 """
 
-# === Production Development (hits live Firebase) ===
+# Start just Firebase emulators (useful when Docker services already running)
+"dev:emulators" = """
+echo '🔥 Starting Firebase Emulators...'
+(cd functions && npm run build)
+pnpm exec firebase emulators:start --only functions,firestore,auth,storage &
+sleep 8
+./scripts/seed-emulator.sh || true
+wait
+"""
+
+# Start frontend with emulators (assumes emulators already running)
+"dev:frontend" = "cd frontend && NUXT_PUBLIC_USE_EMULATORS=true pnpm dev"
+
+# ============================================
+# Production Development (Live Firebase)
+# ============================================
+
+# Frontend pointing to production Firebase
 dev = "cd frontend && pnpm dev"
 
-# === Just the Emulator Suite (for manual testing) ===
-emulators = "pnpm exec firebase emulators:start"
+# ============================================
+# Docker Services
+# ============================================
 
-# === Build ===
-build = "cd frontend && pnpm build && cd ../functions && npm run build"
+# Start all local services (Qdrant + Docling CPU)
+"services:start" = "docker compose up -d"
 
-# === Install ===
-install = "cd frontend && pnpm install && cd ../functions && npm install"
+# Start with GPU Docling (requires NVIDIA GPU)
+"services:start:gpu" = "docker compose --profile gpu up -d"
 
-# === Firebase ===
+# Stop all services
+"services:stop" = "docker compose down"
+
+# View service logs
+"services:logs" = "docker compose logs -f"
+
+# ============================================
+# Firebase
+# ============================================
 firebase = "pnpm exec firebase"
 "firebase:login" = "pnpm exec firebase login"
+emulators = "pnpm exec firebase emulators:start"
+"emulators:seed" = "./scripts/seed-emulator.sh"
 deploy = "pnpm exec firebase deploy"
 "deploy:hosting" = "pnpm exec firebase deploy --only hosting"
 "deploy:functions" = "pnpm exec firebase deploy --only functions"
+"deploy:rules" = "pnpm exec firebase deploy --only firestore:rules,storage"
 
-# === Local Qdrant (optional) ===
-"qdrant:start" = "docker compose --profile local up -d qdrant"
-"qdrant:stop" = "docker compose --profile local down"
+# ============================================
+# Build & Install
+# ============================================
+build = "cd frontend && pnpm build && cd ../functions && npm run build"
+"build:functions" = "cd functions && npm run build"
+"build:frontend" = "cd frontend && pnpm build"
+install = "cd frontend && pnpm install && cd ../functions && npm install"
 
-# === Testing ===
+# ============================================
+# Testing
+# ============================================
 test = "cd frontend && pnpm test"
 "test:functions" = "cd functions && npm test"
 
-# === Cleanup ===
+# ============================================
+# Cleanup
+# ============================================
 clean = "rm -rf frontend/.nuxt frontend/.output functions/lib"
+"clean:docker" = "docker compose down -v"

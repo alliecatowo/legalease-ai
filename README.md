@@ -207,33 +207,105 @@ Vector search operations with Qdrant Cloud.
 
 ---
 
-## Development
+## Local Development
 
-### Run functions locally
+LegalEase can run fully locally using Firebase emulators and Docker services. This is useful for development and testing without incurring cloud costs.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+- [mise](https://mise.jdx.dev) for task management
+- Node.js 22+ and pnpm
+
+### Quick Start (One Command)
 
 ```bash
-cd functions
-npm run build
-mise run firebase -- emulators:start --only functions
+# Start everything: Docker services + Firebase emulators + Frontend
+mise run dev:local
 ```
 
-### Run frontend with emulators
+This will:
+1. Start Docker services (Qdrant, Docling)
+2. Build and start Firebase Functions emulator
+3. Start Firestore, Auth, and Storage emulators
+4. Create a test user: `test@example.com` / `password123`
+5. Start the frontend at http://localhost:3000
+
+### Service URLs
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Firebase Emulator UI | http://localhost:4000 |
+| Docling UI | http://localhost:5050/ui |
+| Qdrant Dashboard | http://localhost:6333/dashboard |
+
+### Individual Commands
 
 ```bash
-cd frontend
-NUXT_PUBLIC_USE_EMULATORS=true pnpm dev
+# Start only Docker services
+mise run services:start
+
+# Start only Firebase emulators
+mise run dev:emulators
+
+# Start only frontend (assumes emulators running)
+mise run dev:frontend
+
+# Create test user in running emulator
+mise run emulators:seed
+```
+
+### Test User
+
+The emulator seeds a test user automatically:
+- **Email:** test@example.com
+- **Password:** password123
+
+### Configuration
+
+Local development uses environment variables to switch between local and cloud services:
+
+```bash
+# .mise.toml sets these by default for local dev
+QDRANT_LOCAL=true      # Use local Qdrant (no API key needed)
+QDRANT_URL=http://localhost:6333
+```
+
+You can mix local and cloud services:
+- Firebase emulators + Qdrant Cloud: Set `QDRANT_LOCAL=false` and configure secrets
+- Production Firebase + Local Qdrant: Run `mise run dev` with `QDRANT_LOCAL=true`
+
+### GPU Acceleration (Optional)
+
+If you have an NVIDIA GPU with nvidia-container-toolkit:
+
+```bash
+# Start Docling with GPU acceleration (~6x faster)
+mise run services:start:gpu
+```
+
+---
+
+## Production Development
+
+### Run frontend against production Firebase
+
+```bash
+mise run dev
 ```
 
 ### Deploy
 
 ```bash
 # Functions only
-mise run firebase -- deploy --only functions
+mise run deploy:functions
 
-# Frontend (Firebase App Hosting)
-cd frontend
-pnpm build
-# Deploys automatically via GitHub Actions
+# Security rules only
+mise run deploy:rules
+
+# Everything
+mise run deploy
 ```
 
 ---
