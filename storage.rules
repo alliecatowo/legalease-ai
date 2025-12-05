@@ -2,24 +2,54 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    // Helper function: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function: Check if user is a team member
+    function isTeamMember(teamId) {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/teams/$(teamId)/members/$(request.auth.uid));
+    }
+
+    // Helper function: Check if user owns a case or is team member
+    function canAccessCase(caseId) {
+      let caseDoc = firestore.get(/databases/(default)/documents/cases/$(caseId));
+      return isAuthenticated() && (
+        caseDoc.data.userId == request.auth.uid ||
+        (caseDoc.data.teamId != null && isTeamMember(caseDoc.data.teamId))
+      );
+    }
+
+    // Helper function: Check if user owns a transcription or is team member
+    function canAccessTranscription(transcriptionId) {
+      let transcriptionDoc = firestore.get(/databases/(default)/documents/transcriptions/$(transcriptionId));
+      return isAuthenticated() && (
+        transcriptionDoc.data.userId == request.auth.uid ||
+        (transcriptionDoc.data.teamId != null && isTeamMember(transcriptionDoc.data.teamId))
+      );
+    }
+
     // Allow authenticated users to read/write their own files
     match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Case files - accessible to authenticated users (TODO: add case-level permissions)
+    // Case files - only accessible to case owner or team members
     match /cases/{caseId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if canAccessCase(caseId);
     }
 
-    // Transcription audio/video files
+    // Transcription audio/video files - only accessible to owner or team members
     match /transcriptions/{transcriptionId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if canAccessTranscription(transcriptionId);
     }
 
-    // Temporary uploads (for processing)
-    match /temp/{allPaths=**} {
-      allow read, write: if request.auth != null;
+    // Temporary uploads - user can only write to their own temp folder
+    // Read allowed for processing services via service account
+    match /temp/{userId}/{allPaths=**} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
     // Deny all other access by default

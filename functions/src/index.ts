@@ -1,4 +1,4 @@
-import { onCallGenkit } from 'firebase-functions/https'
+import { onCallGenkit, isSignedIn } from 'firebase-functions/https'
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore'
 import { defineSecret } from 'firebase-functions/params'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
@@ -69,8 +69,7 @@ const qdrantApiKey = defineSecret('QDRANT_API_KEY')
 export const transcribeMedia = onCallGenkit(
   {
     secrets: [googleAIApiKey],
-    // TODO: Add auth policy once Firebase Auth is set up
-    // authPolicy: hasClaim('email_verified'),
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '1GiB',
     timeoutSeconds: 540 // 9 minutes for long transcriptions
@@ -81,6 +80,7 @@ export const transcribeMedia = onCallGenkit(
 export const summarizeTranscript = onCallGenkit(
   {
     secrets: [googleAIApiKey],
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '512MiB',
     timeoutSeconds: 120
@@ -91,6 +91,7 @@ export const summarizeTranscript = onCallGenkit(
 export const searchDocuments = onCallGenkit(
   {
     secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '512MiB',
     timeoutSeconds: 60
@@ -101,6 +102,7 @@ export const searchDocuments = onCallGenkit(
 export const indexDocumentChunks = onCallGenkit(
   {
     secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '1GiB',
     timeoutSeconds: 300 // 5 minutes for large documents
@@ -111,6 +113,7 @@ export const indexDocumentChunks = onCallGenkit(
 export const deleteDocumentChunks = onCallGenkit(
   {
     secrets: [qdrantUrl, qdrantApiKey],
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '512MiB',
     timeoutSeconds: 60
@@ -121,6 +124,7 @@ export const deleteDocumentChunks = onCallGenkit(
 export const extractDocument = onCallGenkit(
   {
     secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '2GiB',
     timeoutSeconds: 540 // 9 minutes for large documents
@@ -130,6 +134,7 @@ export const extractDocument = onCallGenkit(
 
 export const generateWaveform = onCallGenkit(
   {
+    authPolicy: isSignedIn(),
     cors: true,
     memory: '1GiB', // May need more memory for large audio files
     timeoutSeconds: 120
