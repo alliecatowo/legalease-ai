@@ -57,12 +57,8 @@ const editSpeakerName = ref('')
 const editSpeakerRole = ref('')
 const autoScrollEnabled = ref(true)
 const flashSegmentId = ref<string | null>(null)
-// Metadata sidebar state (two separate controls like working version)
-const metadataSidebarOpen = ref(true)
-const metadataSidebarCollapsed = ref(false)
-
-// Summary slideover state
-const summarySlideoverOpen = ref(false)
+// Right sidebar state - which panel is active (null = collapsed, 'info' = metadata, 'summary' = summary)
+const activeRightPanel = ref<'info' | 'summary' | null>(null)
 const summaryData = ref<{
   summary: string
   keyMoments: Array<{ timestamp?: string; description: string; importance: 'high' | 'medium' | 'low'; speakers?: string[] }>
@@ -689,7 +685,8 @@ async function loadTranscript() {
       speakers: transformedSpeakers,
       createdAt: doc.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       caseId: doc.caseId,
-      status: doc.status
+      status: doc.status,
+      waveformPeaks: doc.waveformPeaks || null
     } as any
 
     // Load stored summarization if available
@@ -775,14 +772,6 @@ onMounted(async () => {
             @click="copyTranscriptToClipboard"
           />
 
-          <UButton
-            icon="i-lucide-sparkles"
-            color="neutral"
-            variant="ghost"
-            label="Summary"
-            @click="summarySlideoverOpen = true"
-          />
-
           <UDropdownMenu
             :items="[
               [
@@ -821,13 +810,6 @@ onMounted(async () => {
               label="Export"
             />
           </UDropdownMenu>
-
-          <UButton
-            :icon="metadataSidebarOpen ? 'i-lucide-panel-right-close' : 'i-lucide-panel-right-open'"
-            color="neutral"
-            variant="ghost"
-            @click="metadataSidebarOpen = !metadataSidebarOpen"
-          />
         </div>
       </div>
     </template>
@@ -870,6 +852,7 @@ onMounted(async () => {
             v-if="transcript.audioUrl"
             :audio-url="transcript.audioUrl"
             :transcription-id="transcript.id"
+            :peaks="transcript.waveformPeaks"
             :current-time="currentTime"
             :segments="transcript.segments"
             :selected-segment-id="selectedSegment?.id"
@@ -1194,542 +1177,335 @@ onMounted(async () => {
         </div>
         </div>
 
-    <!-- Metadata Slideover -->
-    <USlideover v-model:open="metadataSidebarOpen" side="right" :ui="{ width: 'max-w-md' }">
-      <template #header>
-        <div class="flex items-center gap-2">
-          <UIcon name="i-lucide-info" class="size-5 text-primary" />
-          <h3 class="font-semibold text-lg">Metadata</h3>
-        </div>
-      </template>
+    </template>
+  </UDashboardPanel>
 
-      <template #body>
-        <div v-if="transcript" class="space-y-6">
-        <!-- Transcript Info -->
-        <UCard>
-          <template #header>
+  <!-- Right Side Panels with Vertical Icon Bar -->
+  <div v-if="transcript" class="flex h-full border-l border-default">
+    <!-- Vertical Icon Bar -->
+    <div class="flex flex-col items-center py-4 px-2 gap-2 border-r border-default bg-elevated/50">
+      <UTooltip text="Info & Speakers" :popper="{ placement: 'left' }">
+        <UButton
+          icon="i-lucide-info"
+          :color="activeRightPanel === 'info' ? 'primary' : 'neutral'"
+          :variant="activeRightPanel === 'info' ? 'soft' : 'ghost'"
+          size="sm"
+          @click="activeRightPanel = activeRightPanel === 'info' ? null : 'info'"
+        />
+      </UTooltip>
+      <UTooltip text="AI Summary" :popper="{ placement: 'left' }">
+        <UButton
+          icon="i-lucide-sparkles"
+          :color="activeRightPanel === 'summary' ? 'primary' : 'neutral'"
+          :variant="activeRightPanel === 'summary' ? 'soft' : 'ghost'"
+          size="sm"
+          @click="activeRightPanel = activeRightPanel === 'summary' ? null : 'summary'"
+        />
+      </UTooltip>
+    </div>
+
+    <!-- Content Panel (slides in from right) -->
+    <Transition name="slide-panel">
+      <div v-if="activeRightPanel" class="w-80 bg-elevated/25 overflow-y-auto">
+        <!-- Info Panel Content -->
+        <div v-if="activeRightPanel === 'info'" class="p-4 space-y-6">
+          <!-- Header -->
+          <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <UIcon name="i-lucide-info" class="size-5 text-primary" />
-              <h3 class="font-semibold text-lg">Information</h3>
+              <h3 class="font-semibold">Info</h3>
             </div>
-          </template>
-
-          <div class="space-y-3">
-            <div>
-              <p class="text-xs text-muted mb-1">Title</p>
-              <p class="font-medium">{{ transcript.title }}</p>
-            </div>
-
-            <div v-if="transcript.caseName">
-              <p class="text-xs text-muted mb-1">Case</p>
-              <NuxtLink
-                v-if="transcript.caseId"
-                :to="`/cases/${transcript.caseId}`"
-                class="font-medium text-primary hover:underline"
-              >
-                {{ transcript.caseName }}
-              </NuxtLink>
-              <p v-else class="font-medium">{{ transcript.caseName }}</p>
-            </div>
-
-            <div>
-              <p class="text-xs text-muted mb-1">Created</p>
-              <p class="font-medium">{{ formatDate(transcript.createdAt) }}</p>
-            </div>
-
-            <div>
-              <p class="text-xs text-muted mb-1">Status</p>
-              <UBadge
-                :label="transcript.status"
-                :color="transcript.status === 'completed' ? 'success' : transcript.status === 'processing' ? 'warning' : 'error'"
-                variant="soft"
-                class="capitalize"
-              />
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Statistics -->
-        <UCard v-if="transcriptStats">
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-bar-chart" class="size-5 text-primary" />
-              <h3 class="font-semibold text-lg">Statistics</h3>
-            </div>
-          </template>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div class="p-3 bg-muted/10 rounded-lg space-y-1">
-              <p class="text-2xl font-bold text-primary">{{ formatDuration(transcriptStats.duration) }}</p>
-              <p class="text-xs text-muted">Duration</p>
-            </div>
-
-            <div class="p-3 bg-muted/10 rounded-lg space-y-1">
-              <p class="text-2xl font-bold text-primary">{{ transcriptStats.totalWords }}</p>
-              <p class="text-xs text-muted">Words</p>
-            </div>
-
-            <div class="p-3 bg-muted/10 rounded-lg space-y-1">
-              <p class="text-2xl font-bold text-primary">{{ transcriptStats.totalSpeakers }}</p>
-              <p class="text-xs text-muted">Speakers</p>
-            </div>
-
-            <div class="p-3 bg-muted/10 rounded-lg space-y-1">
-              <p class="text-2xl font-bold text-primary">{{ transcriptStats.totalSegments }}</p>
-              <p class="text-xs text-muted">Segments</p>
-            </div>
-
-            <div v-if="transcriptStats.keyMoments > 0" class="col-span-2 p-3 bg-muted/10 rounded-lg space-y-1">
-              <p class="text-2xl font-bold text-warning">{{ transcriptStats.keyMoments }}</p>
-              <p class="text-xs text-muted">Key Moments</p>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Speakers -->
-        <UCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-users" class="size-5 text-primary" />
-              <h3 class="font-semibold text-lg">Speakers</h3>
-            </div>
-          </template>
-
-          <div class="space-y-3">
-            <div
-              v-for="speakerStat in transcriptStats?.speakerStats"
-              :key="speakerStat.speaker.id"
-              class="p-3 bg-muted/10 rounded-lg"
-            >
-              <!-- Editing Mode -->
-              <div v-if="editingSpeakerId === speakerStat.speaker.id" class="space-y-2" @click.stop>
-                <UInput
-                  v-model="editSpeakerName"
-                  placeholder="Speaker name"
-                  size="sm"
-                  autofocus
-                />
-                <UInput
-                  v-model="editSpeakerRole"
-                  placeholder="Role (optional)"
-                  size="sm"
-                  @keydown.enter="saveSpeakerEdit"
-                />
-                <div class="flex gap-2">
-                  <UButton
-                    label="Save"
-                    icon="i-lucide-check"
-                    color="primary"
-                    size="xs"
-                    @click="saveSpeakerEdit"
-                  />
-                  <UButton
-                    label="Cancel"
-                    icon="i-lucide-x"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    @click="cancelSpeakerEdit"
-                  />
-                </div>
-              </div>
-
-              <!-- Display Mode -->
-              <div v-else>
-                <div class="flex items-start justify-between mb-2">
-                  <div class="flex-1 min-w-0">
-                    <div
-                      class="px-2 py-1 rounded text-xs font-medium inline-block mb-1"
-                      :style="{
-                        backgroundColor: speakerStat.speaker.color + '20',
-                        color: speakerStat.speaker.color
-                      }"
-                    >
-                      {{ speakerStat.speaker.name }}
-                    </div>
-                    <p v-if="speakerStat.speaker.role" class="text-xs text-muted">
-                      {{ speakerStat.speaker.role }}
-                    </p>
-                  </div>
-                  <div class="flex items-center gap-1">
-                    <UTooltip text="Edit Speaker">
-                      <UButton
-                        icon="i-lucide-edit"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click.stop="startEditSpeaker(speakerStat.speaker)"
-                      />
-                    </UTooltip>
-                    <UTooltip text="Filter by Speaker">
-                      <UButton
-                        icon="i-lucide-filter"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click="selectedSpeaker = speakerStat.speaker.id"
-                      />
-                    </UTooltip>
-                  </div>
-                </div>
-
-                <div class="space-y-1 text-xs">
-                  <div class="flex justify-between">
-                    <span class="text-muted">Speaking time</span>
-                    <span class="font-medium">{{ formatDuration(speakerStat.speakingTime) }}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-muted">Segments</span>
-                    <span class="font-medium">{{ speakerStat.segmentCount }}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-muted">Words</span>
-                    <span class="font-medium">{{ speakerStat.wordCount }}</span>
-                  </div>
-
-                  <div class="mt-2">
-                    <div class="h-1.5 bg-muted/30 rounded-full overflow-hidden">
-                      <div
-                        class="h-full rounded-full"
-                        :style="{
-                          width: `${speakerStat.percentage}%`,
-                          backgroundColor: speakerStat.speaker.color
-                        }"
-                      />
-                    </div>
-                    <p class="text-xs text-muted mt-1">{{ speakerStat.percentage.toFixed(1) }}% of total</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Key Moments -->
-        <UCard v-if="keyMoments.length > 0">
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-star" class="size-5 text-warning" />
-              <h3 class="font-semibold text-lg">Key Moments ({{ keyMoments.length }})</h3>
-            </div>
-          </template>
-
-          <div class="space-y-2">
-            <div
-              v-for="moment in keyMoments"
-              :key="moment.id"
-              class="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg cursor-pointer hover:bg-yellow-500/10 transition-colors"
-              @click="seekToSegment(moment)"
-            >
-              <div class="flex items-center gap-2 mb-2">
-                <UBadge
-                  :label="formatTime(moment.start)"
-                  color="warning"
-                  size="xs"
-                  variant="soft"
-                />
-                <div
-                  v-if="getSpeaker(moment.speaker)"
-                  class="px-2 py-0.5 rounded text-xs font-medium"
-                  :style="{
-                    backgroundColor: getSpeaker(moment.speaker)!.color + '20',
-                    color: getSpeaker(moment.speaker)!.color
-                  }"
-                >
-                  {{ getSpeaker(moment.speaker)!.name }}
-                </div>
-              </div>
-              <p class="text-sm text-default line-clamp-2">{{ moment.text }}</p>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Metadata -->
-        <UCard v-if="transcript.metadata">
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-file-audio" class="size-5 text-primary" />
-              <h3 class="font-semibold text-lg">Audio Details</h3>
-            </div>
-          </template>
-
-          <div class="space-y-2 text-sm">
-            <div v-if="transcript.metadata.format" class="flex justify-between">
-              <span class="text-muted">Format</span>
-              <span class="font-medium">{{ transcript.metadata.format }}</span>
-            </div>
-            <div v-if="transcript.metadata.fileSize" class="flex justify-between">
-              <span class="text-muted">File Size</span>
-              <span class="font-medium">{{ (transcript.metadata.fileSize / 1024 / 1024).toFixed(2) }} MB</span>
-            </div>
-            <div v-if="transcript.metadata.sampleRate" class="flex justify-between">
-              <span class="text-muted">Sample Rate</span>
-              <span class="font-medium">{{ transcript.metadata.sampleRate }} Hz</span>
-            </div>
-            <div v-if="transcript.metadata.bitRate" class="flex justify-between">
-              <span class="text-muted">Bit Rate</span>
-              <span class="font-medium">{{ transcript.metadata.bitRate }} kbps</span>
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Keyboard Shortcuts -->
-        <UCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-keyboard" class="size-5 text-primary" />
-              <h3 class="font-semibold text-lg">Keyboard Shortcuts</h3>
-            </div>
-          </template>
-
-          <div class="space-y-2 text-sm">
-            <div class="flex items-center justify-between">
-              <span class="text-muted">Play/Pause</span>
-              <UKbd value="Space" />
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-muted">Search</span>
-              <UKbd value="⌘F" />
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-muted">Follow/Unfollow</span>
-              <UKbd value="A" />
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-muted">Clear Filters</span>
-              <UKbd value="Esc" />
-            </div>
-          </div>
-        </UCard>
-        </div>
-      </template>
-    </USlideover>
-
-    <!-- Summary Slideover -->
-    <USlideover v-model:open="summarySlideoverOpen" side="right" :ui="{ width: 'max-w-xl' }">
-      <template #header>
-        <div class="flex items-center gap-2">
-          <UIcon name="i-lucide-sparkles" class="size-5 text-primary" />
-          <h3 class="font-semibold text-lg">AI Summary</h3>
-        </div>
-      </template>
-
-      <template #body>
-        <div class="space-y-6">
-          <!-- No summary yet -->
-          <div v-if="!summaryData && !isGeneratingSummary" class="text-center py-12">
-            <UIcon name="i-lucide-file-text" class="size-16 text-muted mx-auto mb-4 opacity-30" />
-            <h3 class="text-lg font-semibold mb-2">No Summary Yet</h3>
-            <p class="text-muted mb-6">Generate an AI-powered summary of this transcript including key moments, action items, and topics.</p>
             <UButton
-              icon="i-lucide-sparkles"
-              label="Generate Summary"
-              color="primary"
-              @click="generateSummary"
+              icon="i-lucide-x"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              @click="activeRightPanel = null"
             />
           </div>
 
+          <!-- Overview -->
+          <div class="space-y-4">
+            <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Overview</h4>
+            <div class="space-y-3">
+              <div class="flex justify-between text-sm">
+                <span class="text-muted">Duration</span>
+                <span class="font-medium">{{ formatDuration(transcriptStats?.duration || 0) }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-muted">Segments</span>
+                <span class="font-medium">{{ transcriptStats?.totalSegments || 0 }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-muted">Words</span>
+                <span class="font-medium">{{ transcriptStats?.totalWords?.toLocaleString() || 0 }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-muted">Key Moments</span>
+                <span class="font-medium">{{ transcriptStats?.keyMoments || 0 }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-muted">Created</span>
+                <span class="font-medium text-xs">{{ formatDate(transcript.createdAt) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <USeparator />
+
+          <!-- Speakers -->
+          <div class="space-y-4">
+            <h4 class="text-sm font-semibold text-muted uppercase tracking-wide flex items-center gap-2">
+              <UIcon name="i-lucide-users" class="size-4" />
+              Speakers ({{ transcript.speakers.length }})
+            </h4>
+            <div class="space-y-3">
+              <div
+                v-for="stat in transcriptStats?.speakerStats"
+                :key="stat.speaker.id"
+                class="p-3 rounded-lg bg-muted/20"
+              >
+                <div v-if="editingSpeakerId === stat.speaker.id" class="space-y-2">
+                  <UInput v-model="editSpeakerName" placeholder="Speaker name" size="sm" autofocus />
+                  <UInput v-model="editSpeakerRole" placeholder="Role (optional)" size="sm" />
+                  <div class="flex gap-2">
+                    <UButton label="Save" icon="i-lucide-check" color="primary" size="xs" @click="saveSpeakerEdit" />
+                    <UButton label="Cancel" icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="cancelSpeakerEdit" />
+                  </div>
+                </div>
+                <template v-else>
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: stat.speaker.color }" />
+                      <span class="font-medium text-sm">{{ stat.speaker.name }}</span>
+                    </div>
+                    <UButton icon="i-lucide-edit" color="neutral" variant="ghost" size="xs" @click="startEditSpeaker(stat.speaker)" />
+                  </div>
+                  <div v-if="stat.speaker.role" class="text-xs text-muted mb-2">{{ stat.speaker.role }}</div>
+                  <div class="space-y-1 text-xs text-muted">
+                    <div class="flex justify-between">
+                      <span>Speaking time</span>
+                      <span>{{ formatDuration(stat.speakingTime) }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>Segments</span>
+                      <span>{{ stat.segmentCount }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>Words</span>
+                      <span>{{ stat.wordCount.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                  <UProgress :value="stat.percentage" size="xs" class="mt-2" :style="{ '--progress-color': stat.speaker.color }" />
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <USeparator />
+
+          <!-- Key Moments Quick Access -->
+          <div v-if="keyMoments.length > 0" class="space-y-4">
+            <h4 class="text-sm font-semibold text-muted uppercase tracking-wide flex items-center gap-2">
+              <UIcon name="i-lucide-star" class="size-4" />
+              Key Moments ({{ keyMoments.length }})
+            </h4>
+            <div class="space-y-2 max-h-48 overflow-y-auto">
+              <div
+                v-for="moment in keyMoments"
+                :key="moment.id"
+                class="p-2 rounded-lg bg-warning/10 cursor-pointer hover:bg-warning/20 transition-colors"
+                @click="seekToSegment(moment)"
+              >
+                <div class="flex items-center gap-2 mb-1">
+                  <UButton :label="formatTime(moment.start)" icon="i-lucide-clock" color="warning" variant="soft" size="xs" />
+                  <span v-if="getSpeaker(moment.speaker)" class="text-xs font-medium" :style="{ color: getSpeaker(moment.speaker)!.color }">
+                    {{ getSpeaker(moment.speaker)!.name }}
+                  </span>
+                </div>
+                <p class="text-xs text-default line-clamp-2">{{ moment.text }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Keyboard shortcuts -->
+          <USeparator />
+          <div class="space-y-3">
+            <h4 class="text-sm font-semibold text-muted uppercase tracking-wide flex items-center gap-2">
+              <UIcon name="i-lucide-keyboard" class="size-4" />
+              Shortcuts
+            </h4>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between"><span class="text-muted">Play/Pause</span><UKbd value="space" /></div>
+              <div class="flex justify-between"><span class="text-muted">Toggle Auto-scroll</span><UKbd value="A" /></div>
+              <div class="flex justify-between"><span class="text-muted">Search</span><div class="flex gap-1"><UKbd value="meta" /><UKbd value="F" /></div></div>
+              <div class="flex justify-between"><span class="text-muted">Clear filters</span><UKbd value="esc" /></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary Panel Content -->
+        <div v-else-if="activeRightPanel === 'summary'" class="p-4 space-y-6">
+          <!-- Header -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <UIcon name="i-lucide-sparkles" class="size-5 text-primary" />
+              <h3 class="font-semibold">AI Summary</h3>
+            </div>
+            <UButton
+              icon="i-lucide-x"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              @click="activeRightPanel = null"
+            />
+          </div>
+
+          <!-- No summary yet -->
+          <div v-if="!summaryData && !isGeneratingSummary" class="text-center py-8">
+            <UIcon name="i-lucide-file-text" class="size-12 text-muted mx-auto mb-3 opacity-30" />
+            <h4 class="text-base font-semibold mb-2">No Summary Yet</h4>
+            <p class="text-sm text-muted mb-4">Generate an AI-powered summary including key moments, action items, and topics.</p>
+            <UButton icon="i-lucide-sparkles" label="Generate Summary" color="primary" size="sm" @click="generateSummary" />
+          </div>
+
           <!-- Loading state -->
-          <div v-else-if="isGeneratingSummary" class="text-center py-12">
-            <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto mb-4" />
-            <h3 class="text-lg font-semibold mb-2">Generating Summary...</h3>
-            <p class="text-muted">AI is analyzing your transcript. This may take a moment.</p>
+          <div v-else-if="isGeneratingSummary" class="text-center py-8">
+            <UIcon name="i-lucide-loader-circle" class="size-10 text-primary animate-spin mx-auto mb-3" />
+            <h4 class="text-base font-semibold mb-2">Generating Summary...</h4>
+            <p class="text-sm text-muted">AI is analyzing your transcript.</p>
           </div>
 
           <!-- Summary content -->
           <template v-else-if="summaryData">
             <!-- Main Summary -->
-            <UCard>
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-file-text" class="size-5 text-primary" />
-                  <h4 class="font-semibold">Summary</h4>
-                </div>
-              </template>
-              <p class="text-default leading-relaxed whitespace-pre-wrap">{{ summaryData.summary }}</p>
-            </UCard>
+            <div class="space-y-2">
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Summary</h4>
+              <p class="text-sm text-default leading-relaxed whitespace-pre-wrap">{{ summaryData.summary }}</p>
+            </div>
+
+            <USeparator />
 
             <!-- Key Moments -->
-            <UCard v-if="summaryData.keyMoments?.length">
-              <template #header>
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-star" class="size-5 text-warning" />
-                    <h4 class="font-semibold">Key Moments ({{ summaryData.keyMoments.length }})</h4>
-                  </div>
-                  <UButton
-                    icon="i-lucide-check-check"
-                    label="Apply All"
-                    color="warning"
-                    variant="soft"
-                    size="xs"
-                    @click="applyAllKeyMoments"
-                  />
-                </div>
-              </template>
-              <div class="space-y-3">
+            <div v-if="summaryData.keyMoments?.length" class="space-y-3">
+              <div class="flex items-center justify-between">
+                <h4 class="text-sm font-semibold text-muted uppercase tracking-wide flex items-center gap-2">
+                  <UIcon name="i-lucide-star" class="size-4 text-warning" />
+                  Key Moments ({{ summaryData.keyMoments.length }})
+                </h4>
+                <UButton icon="i-lucide-check-check" label="Apply All" color="warning" variant="soft" size="xs" @click="applyAllKeyMoments" />
+              </div>
+              <div class="space-y-2 max-h-64 overflow-y-auto">
                 <div
                   v-for="(moment, idx) in summaryData.keyMoments"
                   :key="idx"
-                  class="p-3 rounded-lg"
+                  class="p-2 rounded-lg text-xs"
                   :class="{
                     'bg-red-500/10 border border-red-500/20': moment.importance === 'high',
                     'bg-yellow-500/10 border border-yellow-500/20': moment.importance === 'medium',
                     'bg-muted/10 border border-default': moment.importance === 'low'
                   }"
                 >
-                  <div class="flex items-start justify-between gap-2 mb-1">
-                    <div class="flex items-center gap-2">
-                      <UBadge
-                        :label="moment.importance"
-                        :color="moment.importance === 'high' ? 'error' : moment.importance === 'medium' ? 'warning' : 'neutral'"
-                        size="xs"
-                        variant="soft"
-                        class="capitalize"
-                      />
-                      <UButton
-                        v-if="moment.timestamp"
-                        :label="moment.timestamp"
-                        icon="i-lucide-clock"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        @click="() => {
-                          const time = parseTimestamp(moment.timestamp!)
-                          if (time !== null) currentTime = time
-                        }"
-                      />
+                  <div class="flex items-center justify-between gap-2 mb-1">
+                    <div class="flex items-center gap-1">
+                      <UBadge :label="moment.importance" :color="moment.importance === 'high' ? 'error' : moment.importance === 'medium' ? 'warning' : 'neutral'" size="xs" variant="soft" class="capitalize" />
+                      <UButton v-if="moment.timestamp" :label="moment.timestamp" icon="i-lucide-clock" color="neutral" variant="ghost" size="xs" @click="() => { const time = parseTimestamp(moment.timestamp!); if (time !== null) currentTime = time }" />
                     </div>
-                    <UTooltip text="Apply as key moment">
-                      <UButton
-                        icon="i-lucide-star"
-                        color="warning"
-                        variant="ghost"
-                        size="xs"
-                        @click="applyKeyMoment(moment)"
-                      />
-                    </UTooltip>
+                    <UButton icon="i-lucide-star" color="warning" variant="ghost" size="xs" @click="applyKeyMoment(moment)" />
                   </div>
-                  <p class="text-sm text-default">{{ moment.description }}</p>
-                  <div v-if="moment.speakers?.length" class="flex flex-wrap gap-1 mt-2">
-                    <UBadge
-                      v-for="speaker in moment.speakers"
-                      :key="speaker"
-                      :label="speaker"
-                      color="neutral"
-                      size="xs"
-                      variant="outline"
-                    />
-                  </div>
+                  <p class="text-default">{{ moment.description }}</p>
                 </div>
               </div>
-            </UCard>
+            </div>
+
+            <USeparator v-if="summaryData.actionItems?.length" />
 
             <!-- Action Items -->
-            <UCard v-if="summaryData.actionItems?.length">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-check-square" class="size-5 text-success" />
-                  <h4 class="font-semibold">Action Items ({{ summaryData.actionItems.length }})</h4>
-                </div>
-              </template>
-              <ul class="space-y-2">
-                <li
-                  v-for="(item, idx) in summaryData.actionItems"
-                  :key="idx"
-                  class="flex items-start gap-2"
-                >
-                  <UIcon name="i-lucide-circle" class="size-4 text-muted mt-0.5 shrink-0" />
-                  <span class="text-sm text-default">{{ item }}</span>
+            <div v-if="summaryData.actionItems?.length" class="space-y-2">
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide flex items-center gap-2">
+                <UIcon name="i-lucide-check-square" class="size-4 text-success" />
+                Action Items ({{ summaryData.actionItems.length }})
+              </h4>
+              <ul class="space-y-1">
+                <li v-for="(item, idx) in summaryData.actionItems" :key="idx" class="flex items-start gap-2 text-xs">
+                  <UIcon name="i-lucide-circle" class="size-3 text-muted mt-0.5 shrink-0" />
+                  <span class="text-default">{{ item }}</span>
                 </li>
               </ul>
-            </UCard>
+            </div>
+
+            <USeparator v-if="summaryData.topics?.length" />
 
             <!-- Topics -->
-            <UCard v-if="summaryData.topics?.length">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-tags" class="size-5 text-info" />
-                  <h4 class="font-semibold">Topics</h4>
-                </div>
-              </template>
-              <div class="flex flex-wrap gap-2">
-                <UBadge
-                  v-for="topic in summaryData.topics"
-                  :key="topic"
-                  :label="topic"
-                  color="primary"
-                  variant="soft"
-                />
+            <div v-if="summaryData.topics?.length" class="space-y-2">
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Topics</h4>
+              <div class="flex flex-wrap gap-1">
+                <UBadge v-for="topic in summaryData.topics" :key="topic" :label="topic" color="primary" variant="soft" size="xs" />
               </div>
-            </UCard>
+            </div>
+
+            <USeparator v-if="summaryData.entities && (summaryData.entities.people?.length || summaryData.entities.organizations?.length || summaryData.entities.locations?.length || summaryData.entities.dates?.length)" />
 
             <!-- Entities -->
-            <UCard v-if="summaryData.entities && (summaryData.entities.people?.length || summaryData.entities.organizations?.length || summaryData.entities.locations?.length || summaryData.entities.dates?.length)">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-users" class="size-5 text-primary" />
-                  <h4 class="font-semibold">Entities Mentioned</h4>
-                </div>
-              </template>
-              <div class="space-y-4">
-                <div v-if="summaryData.entities.people?.length">
-                  <p class="text-xs text-muted mb-2 flex items-center gap-1">
-                    <UIcon name="i-lucide-user" class="size-3" /> People
-                  </p>
-                  <div class="flex flex-wrap gap-1">
-                    <UBadge v-for="person in summaryData.entities.people" :key="person" :label="person" color="neutral" size="sm" variant="outline" />
-                  </div>
-                </div>
-                <div v-if="summaryData.entities.organizations?.length">
-                  <p class="text-xs text-muted mb-2 flex items-center gap-1">
-                    <UIcon name="i-lucide-building" class="size-3" /> Organizations
-                  </p>
-                  <div class="flex flex-wrap gap-1">
-                    <UBadge v-for="org in summaryData.entities.organizations" :key="org" :label="org" color="neutral" size="sm" variant="outline" />
-                  </div>
-                </div>
-                <div v-if="summaryData.entities.locations?.length">
-                  <p class="text-xs text-muted mb-2 flex items-center gap-1">
-                    <UIcon name="i-lucide-map-pin" class="size-3" /> Locations
-                  </p>
-                  <div class="flex flex-wrap gap-1">
-                    <UBadge v-for="loc in summaryData.entities.locations" :key="loc" :label="loc" color="neutral" size="sm" variant="outline" />
-                  </div>
-                </div>
-                <div v-if="summaryData.entities.dates?.length">
-                  <p class="text-xs text-muted mb-2 flex items-center gap-1">
-                    <UIcon name="i-lucide-calendar" class="size-3" /> Dates
-                  </p>
-                  <div class="flex flex-wrap gap-1">
-                    <UBadge v-for="date in summaryData.entities.dates" :key="date" :label="date" color="neutral" size="sm" variant="outline" />
-                  </div>
+            <div v-if="summaryData.entities && (summaryData.entities.people?.length || summaryData.entities.organizations?.length || summaryData.entities.locations?.length || summaryData.entities.dates?.length)" class="space-y-3">
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Entities</h4>
+              <div v-if="summaryData.entities.people?.length" class="space-y-1">
+                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-user" class="size-3" /> People</p>
+                <div class="flex flex-wrap gap-1">
+                  <UBadge v-for="person in summaryData.entities.people" :key="person" :label="person" color="neutral" size="xs" variant="outline" />
                 </div>
               </div>
-            </UCard>
+              <div v-if="summaryData.entities.organizations?.length" class="space-y-1">
+                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-building" class="size-3" /> Organizations</p>
+                <div class="flex flex-wrap gap-1">
+                  <UBadge v-for="org in summaryData.entities.organizations" :key="org" :label="org" color="neutral" size="xs" variant="outline" />
+                </div>
+              </div>
+              <div v-if="summaryData.entities.locations?.length" class="space-y-1">
+                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-map-pin" class="size-3" /> Locations</p>
+                <div class="flex flex-wrap gap-1">
+                  <UBadge v-for="loc in summaryData.entities.locations" :key="loc" :label="loc" color="neutral" size="xs" variant="outline" />
+                </div>
+              </div>
+              <div v-if="summaryData.entities.dates?.length" class="space-y-1">
+                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-calendar" class="size-3" /> Dates</p>
+                <div class="flex flex-wrap gap-1">
+                  <UBadge v-for="date in summaryData.entities.dates" :key="date" :label="date" color="neutral" size="xs" variant="outline" />
+                </div>
+              </div>
+            </div>
 
             <!-- Regenerate button -->
             <div class="pt-4 border-t border-default">
-              <UButton
-                icon="i-lucide-refresh-cw"
-                label="Regenerate Summary"
-                color="neutral"
-                variant="outline"
-                block
-                :loading="isGeneratingSummary"
-                @click="generateSummary"
-              />
+              <UButton icon="i-lucide-refresh-cw" label="Regenerate" color="neutral" variant="outline" size="sm" block :loading="isGeneratingSummary" @click="generateSummary" />
             </div>
           </template>
         </div>
-      </template>
-    </USlideover>
-    </template>
-  </UDashboardPanel>
+      </div>
+    </Transition>
+  </div>
 </template>
 
 <style scoped>
 [data-transcript-container] {
   -webkit-overflow-scrolling: touch;
+}
+
+/* Slide panel transition */
+.slide-panel-enter-active,
+.slide-panel-leave-active {
+  transition: all 0.2s ease-out;
+}
+
+.slide-panel-enter-from,
+.slide-panel-leave-to {
+  width: 0;
+  opacity: 0;
+}
+
+.slide-panel-enter-to,
+.slide-panel-leave-from {
+  width: 20rem; /* w-80 */
+  opacity: 1;
 }
 </style>

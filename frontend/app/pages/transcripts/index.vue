@@ -3,20 +3,33 @@ definePageMeta({ layout: 'default' })
 
 const { listTranscriptions, updateTranscription } = useFirestore()
 const { cases, listCases } = useCases()
-const { transcribeMedia, indexDocument } = useAI()
 const toast = useToast()
 
 // Transcriptions from Firestore
 const transcriptions = ref<any[]>([])
+const isLoading = ref(true)
 
 // Load transcriptions
 async function loadTranscriptions() {
-  transcriptions.value = await listTranscriptions()
+  try {
+    transcriptions.value = await listTranscriptions()
+  } catch (err) {
+    console.error('Failed to load transcriptions:', err)
+    transcriptions.value = []
+  }
 }
 
-await Promise.all([loadTranscriptions(), listCases()])
+// Load data on client-side only (Firestore SDK doesn't work during SSR)
+onMounted(async () => {
+  try {
+    await Promise.all([loadTranscriptions(), listCases()])
+  } catch (err) {
+    console.error('Failed to load data:', err)
+  } finally {
+    isLoading.value = false
+  }
+})
 
-const transcribingIds = ref<Set<string>>(new Set())
 const showUploadModal = ref(false)
 
 function handleUploadComplete(transcriptionId: string) {
@@ -34,12 +47,13 @@ function handleUploadComplete(transcriptionId: string) {
 const stats = computed(() => ({
   total: transcriptions.value.length,
   completed: transcriptions.value.filter(t => t.status === 'completed' || t.status === 'indexed').length,
-  processing: transcriptions.value.filter(t => t.status === 'processing').length
+  processing: transcriptions.value.filter(t => t.status === 'processing' || t.status === 'transcribing').length
 }))
 
 const statusColors: Record<string, string> = {
   uploading: 'warning',
   processing: 'info',
+  transcribing: 'info',
   indexed: 'success',
   completed: 'success',
   failed: 'error'
@@ -63,67 +77,28 @@ function getCaseName(caseId: string) {
   return c?.name || 'Unknown Case'
 }
 
-// Helper to construct GCS URI from storage path
-function getGcsUri(storagePath: string): string {
-  const config = useRuntimeConfig()
-  const bucket = config.public.storageBucket || 'legalease-420.firebasestorage.app'
-  return `gs://${bucket}/${storagePath}`
-}
-
 async function startTranscription(doc: any) {
   if (!doc.downloadUrl && !doc.storagePath) {
     toast.add({ title: 'Error', description: 'No media source available', color: 'error' })
     return
   }
 
-  transcribingIds.value.add(doc.id)
-
   try {
-    // Update status to processing
+    // Just update status to "processing" - Firestore trigger will handle the rest
+    // This is async and won't timeout for long videos
     await updateTranscription(doc.id, { status: 'processing' })
 
-    // Call transcription function - prefer GCS URI for Firebase Storage files (no size limit)
-    // Fall back to URL for external files
-    const transcriptionInput = doc.storagePath
-      ? { gcsUri: getGcsUri(doc.storagePath), enableDiarization: true, enableSummary: true }
-      : { url: doc.downloadUrl, enableDiarization: true, enableSummary: true }
-
-    const result = await transcribeMedia(transcriptionInput)
-
-    // Store transcription results in Firestore
-    await updateTranscription(doc.id, {
-      status: 'completed',
-      fullText: result.fullText,
-      summarization: result.summarization,
-      segments: result.segments,
-      speakers: result.speakers,
-      duration: result.duration,
-      language: result.language
+    toast.add({
+      title: 'Transcription Started',
+      description: 'Processing in background. Refresh to see progress.',
+      color: 'info'
     })
 
-    // Index transcript into Qdrant for search
-    if (result.fullText) {
-      try {
-        await indexDocument({
-          documentId: doc.id,
-          text: result.fullText,
-          caseId: doc.caseId,
-          filename: doc.filename,
-          documentType: 'transcript'
-        })
-      } catch (indexErr) {
-        console.warn('Failed to index transcript:', indexErr)
-      }
-    }
-
-    toast.add({ title: 'Success', description: 'Transcription complete', color: 'success' })
-    await loadTranscriptions()
+    // Refresh after a short delay to show the status change
+    setTimeout(() => loadTranscriptions(), 1000)
   } catch (err: any) {
-    console.error('Transcription failed:', err)
-    await updateTranscription(doc.id, { status: 'failed' })
-    toast.add({ title: 'Error', description: err?.message || 'Transcription failed', color: 'error' })
-  } finally {
-    transcribingIds.value.delete(doc.id)
+    console.error('Failed to start transcription:', err)
+    toast.add({ title: 'Error', description: err?.message || 'Failed to start transcription', color: 'error' })
   }
 }
 </script>
@@ -139,7 +114,15 @@ async function startTranscription(doc: any) {
     </template>
 
     <template #body>
-      <div class="max-w-7xl mx-auto space-y-6">
+      <!-- Loading State -->
+      <div v-if="isLoading" class="flex items-center justify-center py-20">
+        <div class="text-center space-y-4">
+          <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
+          <p class="text-muted">Loading transcriptions...</p>
+        </div>
+      </div>
+
+      <div v-else class="max-w-7xl mx-auto space-y-6">
         <!-- Stats -->
         <div class="grid grid-cols-3 gap-4">
           <UCard :ui="{ body: 'p-4' }">
@@ -193,13 +176,13 @@ async function startTranscription(doc: any) {
               class="flex items-center gap-4 p-4 rounded-lg hover:bg-muted/50 transition-colors"
             >
               <NuxtLink :to="`/transcripts/${t.id}`" class="flex items-center gap-4 flex-1 min-w-0">
-                <div class="p-2 rounded-lg" :class="t.status === 'completed' || t.status === 'indexed' ? 'bg-success/10' : t.status === 'processing' ? 'bg-info/10' : 'bg-warning/10'">
+                <div class="p-2 rounded-lg" :class="t.status === 'completed' || t.status === 'indexed' ? 'bg-success/10' : (t.status === 'processing' || t.status === 'transcribing') ? 'bg-info/10' : 'bg-warning/10'">
                   <UIcon
-                    :name="t.status === 'processing' || transcribingIds.has(t.id!) ? 'i-lucide-loader-circle' : 'i-lucide-mic'"
+                    :name="(t.status === 'processing' || t.status === 'transcribing') ? 'i-lucide-loader-circle' : 'i-lucide-mic'"
                     class="size-5"
                     :class="[
-                      t.status === 'completed' || t.status === 'indexed' ? 'text-success' : t.status === 'processing' ? 'text-info' : 'text-warning',
-                      t.status === 'processing' || transcribingIds.has(t.id!) ? 'animate-spin' : ''
+                      t.status === 'completed' || t.status === 'indexed' ? 'text-success' : (t.status === 'processing' || t.status === 'transcribing') ? 'text-info' : 'text-warning',
+                      (t.status === 'processing' || t.status === 'transcribing') ? 'animate-spin' : ''
                     ]"
                   />
                 </div>
@@ -211,12 +194,11 @@ async function startTranscription(doc: any) {
               <UBadge :label="t.status" :color="statusColors[t.status] || 'neutral'" variant="soft" class="capitalize" />
               <span class="text-sm text-muted hidden sm:block">{{ formatDate(t.createdAt) }}</span>
               <UButton
-                v-if="t.status !== 'completed' && t.status !== 'processing'"
-                label="Transcribe"
-                icon="i-lucide-sparkles"
+                v-if="t.status === 'failed'"
+                label="Retry"
+                icon="i-lucide-refresh-cw"
                 size="sm"
                 color="primary"
-                :loading="transcribingIds.has(t.id!)"
                 @click.stop="startTranscription(t)"
               />
               <UButton

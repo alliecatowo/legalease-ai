@@ -10,8 +10,7 @@ const emit = defineEmits<{
 
 const toast = useToast()
 const { uploadForTranscription, uploadProgress, isUploading, uploadError, resetUpload, cancelUpload } = useStorage()
-const { transcribeMedia } = useAI()
-const { createTranscription, completeTranscription, failTranscription } = useFirestore()
+const { createTranscription } = useFirestore()
 const { cases, listCases } = useCases()
 
 // Load cases when modal opens
@@ -25,9 +24,8 @@ watch(open, async (isOpen) => {
 const inputMode = ref<'file' | 'url'>('file')
 const selectedFile = ref<File | null>(null)
 const mediaUrl = ref('')
-const transcriptionStatus = ref<'idle' | 'uploading' | 'transcribing' | 'completed' | 'failed'>('idle')
-const transcriptionError = ref<string | null>(null)
-const transcriptionId = ref<string | null>(null)
+const uploadStatus = ref<'idle' | 'uploading' | 'completed' | 'failed'>('idle')
+const uploadErrorMsg = ref<string | null>(null)
 
 // Case selection - use prop or allow user to select
 const selectedCaseId = ref<string | undefined>(props.caseId)
@@ -36,10 +34,6 @@ const selectedCaseId = ref<string | undefined>(props.caseId)
 watch(() => props.caseId, (newCaseId) => {
   selectedCaseId.value = newCaseId
 })
-
-// Options
-const enableDiarization = ref(true)
-const enableSummary = ref(true)
 
 const acceptedTypes = 'audio/*,video/*,.mp3,.mp4,.wav,.m4a,.webm,.ogg,.flac'
 
@@ -59,101 +53,37 @@ const isYouTubeUrl = computed(() => {
   return youtubeRegex.test(mediaUrl.value)
 })
 
-const canSubmit = computed(() => {
-  if (inputMode.value === 'file') {
-    return !!selectedFile.value
-  }
-  return isValidUrl.value
-})
+const canSubmit = computed(() => !!selectedFile.value)
 
 async function handleUpload() {
-  if (inputMode.value === 'file' && !selectedFile.value) return
-  if (inputMode.value === 'url' && !isValidUrl.value) return
+  if (!selectedFile.value) return
 
-  transcriptionStatus.value = inputMode.value === 'file' ? 'uploading' : 'transcribing'
-  transcriptionError.value = null
+  uploadStatus.value = 'uploading'
+  uploadErrorMsg.value = null
 
   try {
-    let docId: string
+    // Upload file and immediately trigger transcription
+    const uploadResult = await uploadForTranscription(selectedFile.value, selectedCaseId.value)
 
-    if (inputMode.value === 'file' && selectedFile.value) {
-      // File upload flow
-      // Step 1: Upload to Firebase Storage
-      const uploadResult = await uploadForTranscription(selectedFile.value, selectedCaseId.value)
+    // Create transcription document with "processing" status
+    // This triggers the transcription function automatically
+    const docId = await createTranscription({
+      caseId: selectedCaseId.value,
+      userId: '', // Will be set by useFirestore
+      filename: selectedFile.value.name,
+      storagePath: uploadResult.path,
+      gsUri: uploadResult.gsUri,
+      downloadUrl: uploadResult.downloadUrl,
+      mimeType: selectedFile.value.type,
+      fileSize: selectedFile.value.size,
+      status: 'processing' // Triggers transcription automatically
+    })
 
-      // Step 2: Create transcription document in Firestore (transcriptions collection)
-      docId = await createTranscription({
-        caseId: selectedCaseId.value,
-        userId: '', // Will be set by useFirestore
-        filename: selectedFile.value.name,
-        storagePath: uploadResult.path,
-        gsUri: uploadResult.gsUri,
-        downloadUrl: uploadResult.downloadUrl,
-        mimeType: selectedFile.value.type,
-        fileSize: selectedFile.value.size,
-        status: 'processing'
-      })
-
-      transcriptionId.value = docId
-      transcriptionStatus.value = 'transcribing'
-
-      // Step 3: Call transcription function with GCS URI
-      const result = await transcribeMedia({
-        gcsUri: uploadResult.gsUri,
-        enableDiarization: enableDiarization.value,
-        enableSummary: enableSummary.value
-      })
-
-      // Step 4: Update transcription with results
-      await completeTranscription(docId, {
-        fullText: result.fullText,
-        segments: result.segments,
-        speakers: result.speakers,
-        duration: result.duration,
-        language: result.language,
-        summarization: result.summarization
-      })
-    } else {
-      // URL transcription flow
-      docId = await createTranscription({
-        caseId: selectedCaseId.value,
-        userId: '',
-        filename: isYouTubeUrl.value ? `YouTube: ${mediaUrl.value}` : mediaUrl.value.split('/').pop() || 'URL Media',
-        storagePath: '',
-        gsUri: '',
-        downloadUrl: mediaUrl.value,
-        mimeType: isYouTubeUrl.value ? 'video/youtube' : 'video/mp4',
-        fileSize: 0,
-        status: 'processing'
-      })
-
-      transcriptionId.value = docId
-
-      // Call transcription with URL
-      const result = await transcribeMedia({
-        url: mediaUrl.value,
-        enableDiarization: enableDiarization.value,
-        enableSummary: enableSummary.value
-      })
-
-      // Save results to Firestore
-      await completeTranscription(docId, {
-        fullText: result.fullText,
-        segments: result.segments,
-        speakers: result.speakers,
-        duration: result.duration,
-        language: result.language,
-        summarization: result.summarization
-      })
-    }
-
-    transcriptionStatus.value = 'completed'
+    uploadStatus.value = 'completed'
 
     toast.add({
-      title: 'Transcription Complete',
-      description: inputMode.value === 'file'
-        ? `${selectedFile.value?.name} has been transcribed successfully.`
-        : 'The media has been transcribed successfully.',
+      title: 'Transcription Started',
+      description: 'Your file is being transcribed. This may take a few minutes.',
       color: 'success'
     })
 
@@ -162,21 +92,16 @@ async function handleUpload() {
     // Close modal after short delay
     setTimeout(() => {
       resetAndClose()
-    }, 1500)
+    }, 1000)
 
   } catch (error: any) {
-    console.error('Transcription failed:', error)
-    transcriptionStatus.value = 'failed'
-    transcriptionError.value = error?.message || 'Failed to process transcription'
-
-    // Update Firestore document with error
-    if (transcriptionId.value && transcriptionError.value) {
-      await failTranscription(transcriptionId.value, transcriptionError.value)
-    }
+    console.error('Upload failed:', error)
+    uploadStatus.value = 'failed'
+    uploadErrorMsg.value = error?.message || 'Failed to upload file'
 
     toast.add({
-      title: 'Transcription Failed',
-      description: transcriptionError.value || 'Unknown error',
+      title: 'Upload Failed',
+      description: uploadErrorMsg.value || 'Unknown error',
       color: 'error'
     })
   }
@@ -193,9 +118,8 @@ function resetAndClose() {
   selectedFile.value = null
   mediaUrl.value = ''
   inputMode.value = 'file'
-  transcriptionStatus.value = 'idle'
-  transcriptionError.value = null
-  transcriptionId.value = null
+  uploadStatus.value = 'idle'
+  uploadErrorMsg.value = null
   selectedCaseId.value = props.caseId
   resetUpload()
   open.value = false
@@ -207,30 +131,26 @@ watch(open, (isOpen) => {
     selectedFile.value = null
     mediaUrl.value = ''
     inputMode.value = 'file'
-    transcriptionStatus.value = 'idle'
-    transcriptionError.value = null
+    uploadStatus.value = 'idle'
+    uploadErrorMsg.value = null
     resetUpload()
   }
 })
 
 const statusMessage = computed(() => {
-  switch (transcriptionStatus.value) {
+  switch (uploadStatus.value) {
     case 'uploading':
       return `Uploading... ${Math.round(uploadProgress.value?.progress || 0)}%`
-    case 'transcribing':
-      return 'Transcribing with AI... This may take a few minutes.'
     case 'completed':
-      return 'Transcription complete!'
+      return 'Upload complete! Ready for transcription.'
     case 'failed':
-      return transcriptionError.value || 'Transcription failed'
+      return uploadErrorMsg.value || 'Upload failed'
     default:
       return ''
   }
 })
 
-const isProcessing = computed(() =>
-  transcriptionStatus.value === 'uploading' || transcriptionStatus.value === 'transcribing'
-)
+const isProcessing = computed(() => uploadStatus.value === 'uploading')
 </script>
 
 <template>
@@ -247,26 +167,8 @@ const isProcessing = computed(() =>
 
     <template #body>
       <div class="space-y-4">
-        <!-- Input Mode Toggle -->
-        <div v-if="transcriptionStatus === 'idle'" class="flex gap-2">
-          <UButton
-            :label="'Upload File'"
-            :icon="'i-lucide-upload'"
-            :color="inputMode === 'file' ? 'primary' : 'neutral'"
-            :variant="inputMode === 'file' ? 'solid' : 'ghost'"
-            @click="inputMode = 'file'"
-          />
-          <UButton
-            :label="'From URL'"
-            :icon="'i-lucide-link'"
-            :color="inputMode === 'url' ? 'primary' : 'neutral'"
-            :variant="inputMode === 'url' ? 'solid' : 'ghost'"
-            @click="inputMode = 'url'"
-          />
-        </div>
-
         <!-- File Upload -->
-        <div v-if="transcriptionStatus === 'idle' && inputMode === 'file'">
+        <div v-if="uploadStatus === 'idle'">
           <UFileUpload
             v-model="selectedFile"
             :accept="acceptedTypes"
@@ -277,29 +179,8 @@ const isProcessing = computed(() =>
           />
         </div>
 
-        <!-- URL Input -->
-        <div v-if="transcriptionStatus === 'idle' && inputMode === 'url'" class="space-y-3">
-          <UFormField label="Media URL" hint="YouTube, direct media links">
-            <UInput
-              v-model="mediaUrl"
-              placeholder="https://youtube.com/watch?v=... or https://example.com/video.mp4"
-              icon="i-lucide-link"
-              size="lg"
-            />
-          </UFormField>
-
-          <div v-if="mediaUrl && isYouTubeUrl" class="flex items-center gap-2 p-3 bg-red-500/10 rounded-lg">
-            <UIcon name="i-lucide-youtube" class="size-5 text-red-500" />
-            <span class="text-sm">YouTube video detected</span>
-          </div>
-
-          <div v-if="mediaUrl && !isValidUrl" class="text-sm text-error">
-            Please enter a valid URL
-          </div>
-        </div>
-
         <!-- Selected File Info -->
-        <div v-if="selectedFile && transcriptionStatus === 'idle' && inputMode === 'file'" class="flex items-center gap-3 p-3 bg-muted/10 rounded-lg">
+        <div v-if="selectedFile && uploadStatus === 'idle'" class="flex items-center gap-3 p-3 bg-muted/10 rounded-lg">
           <UIcon name="i-lucide-file-audio" class="size-8 text-primary" />
           <div class="flex-1 min-w-0">
             <p class="font-medium truncate">{{ selectedFile.name }}</p>
@@ -315,7 +196,7 @@ const isProcessing = computed(() =>
         </div>
 
         <!-- Case Selection (only show if no caseId prop provided) -->
-        <div v-if="transcriptionStatus === 'idle' && !props.caseId" class="space-y-2">
+        <div v-if="uploadStatus === 'idle' && !props.caseId" class="space-y-2">
           <UFormField label="Associate with Case" hint="Optional">
             <USelectMenu
               v-model="selectedCaseId"
@@ -327,41 +208,34 @@ const isProcessing = computed(() =>
           </UFormField>
         </div>
 
-        <!-- Options -->
-        <div v-if="transcriptionStatus === 'idle' && canSubmit" class="space-y-3">
-          <h3 class="font-medium">Options</h3>
-
-          <UCheckbox
-            v-model="enableDiarization"
-            label="Speaker diarization"
-            description="Identify different speakers in the recording"
-          />
-
-          <UCheckbox
-            v-model="enableSummary"
-            label="Generate summary"
-            description="Create an AI summary of the transcript"
-          />
-        </div>
+        <!-- Info about async processing -->
+        <UAlert
+          v-if="uploadStatus === 'idle' && canSubmit"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-info"
+          title="AI Transcription"
+          description="Transcription starts automatically after upload. Long files may take several minutes."
+        />
 
         <!-- Processing Status -->
-        <div v-if="isProcessing || transcriptionStatus === 'completed' || transcriptionStatus === 'failed'" class="space-y-3">
+        <div v-if="isProcessing || uploadStatus === 'completed' || uploadStatus === 'failed'" class="space-y-3">
           <div class="flex items-center gap-3">
             <UIcon
-              :name="transcriptionStatus === 'completed' ? 'i-lucide-check-circle' :
-                     transcriptionStatus === 'failed' ? 'i-lucide-x-circle' :
+              :name="uploadStatus === 'completed' ? 'i-lucide-check-circle' :
+                     uploadStatus === 'failed' ? 'i-lucide-x-circle' :
                      'i-lucide-loader-circle'"
               :class="[
                 'size-6',
-                transcriptionStatus === 'completed' ? 'text-success' :
-                transcriptionStatus === 'failed' ? 'text-error' :
+                uploadStatus === 'completed' ? 'text-success' :
+                uploadStatus === 'failed' ? 'text-error' :
                 'text-primary animate-spin'
               ]"
             />
             <span :class="[
               'font-medium',
-              transcriptionStatus === 'completed' ? 'text-success' :
-              transcriptionStatus === 'failed' ? 'text-error' : ''
+              uploadStatus === 'completed' ? 'text-success' :
+              uploadStatus === 'failed' ? 'text-error' : ''
             ]">
               {{ statusMessage }}
             </span>
@@ -369,23 +243,18 @@ const isProcessing = computed(() =>
 
           <!-- Progress Bar -->
           <UProgress
-            v-if="transcriptionStatus === 'uploading'"
+            v-if="uploadStatus === 'uploading'"
             :model-value="uploadProgress?.progress || 0"
             color="primary"
           />
-
-          <!-- Indeterminate progress for transcription -->
-          <div v-if="transcriptionStatus === 'transcribing'" class="h-2 bg-muted/20 rounded-full overflow-hidden">
-            <div class="h-full bg-primary rounded-full animate-pulse w-full" />
-          </div>
         </div>
 
         <!-- Error Display -->
         <UAlert
-          v-if="transcriptionError"
+          v-if="uploadErrorMsg"
           color="error"
           variant="subtle"
-          :description="transcriptionError"
+          :description="uploadErrorMsg"
           icon="i-lucide-alert-circle"
         />
       </div>
@@ -400,8 +269,8 @@ const isProcessing = computed(() =>
           @click="handleCancel"
         />
         <UButton
-          v-if="transcriptionStatus === 'idle'"
-          label="Start Transcription"
+          v-if="uploadStatus === 'idle'"
+          label="Upload & Transcribe"
           icon="i-lucide-sparkles"
           color="primary"
           :disabled="!canSubmit"

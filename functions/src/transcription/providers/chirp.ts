@@ -54,6 +54,7 @@ export class ChirpProvider implements TranscriptionProvider {
 
   async transcribe(request: TranscriptionRequest): Promise<TranscriptionResult> {
     const startTime = Date.now()
+    const logTime = (msg: string) => console.log(`[Chirp] [${Date.now() - startTime}ms] ${msg}`)
     const opts = applyDefaults(request)
 
     // Validate GCS URI requirement
@@ -61,16 +62,20 @@ export class ChirpProvider implements TranscriptionProvider {
       throw new Error('Chirp provider only supports GCS URIs (gs://bucket/path). Upload the file to Firebase Storage first.')
     }
 
+    logTime('Importing Speech V2 client...')
     // Import Speech V2 client dynamically
     const { SpeechClient } = await import('@google-cloud/speech').then(m => m.v2)
+    logTime('Speech V2 client imported')
 
     // Chirp 3 is available in 'us' multi-region
     const location = 'us'
 
+    logTime('Creating SpeechClient...')
     // Create Speech-to-Text V2 client with regional endpoint
     const client = new SpeechClient({
       apiEndpoint: `${location}-speech.googleapis.com`
     })
+    logTime('SpeechClient created')
 
     // Get project ID from environment
     const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'legalease-420'
@@ -110,9 +115,12 @@ export class ChirpProvider implements TranscriptionProvider {
       }
     }
 
+    logTime('Calling batchRecognize...')
     // Call BatchRecognize and wait for completion
     const [operation] = await client.batchRecognize(batchRequest)
+    logTime('batchRecognize returned, waiting for operation to complete...')
     const [response] = await operation.promise()
+    logTime('Operation completed')
 
     // Process results
     const segments: Segment[] = []
