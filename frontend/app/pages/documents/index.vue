@@ -173,17 +173,59 @@ async function uploadDocuments() {
   }
 
   const caseId = selectedCaseId.value
+  const files = uploadingFiles.value
+  const total = files.length
   uploadProgress.value = 0
 
+  // Track progress per file for aggregate progress
+  const fileProgress = new Map<string, number>()
+  files.forEach((f, i) => fileProgress.set(`${i}`, 0))
+
+  const updateTotalProgress = () => {
+    const sum = Array.from(fileProgress.values()).reduce((a, b) => a + b, 0)
+    uploadProgress.value = Math.round(sum / total)
+  }
+
   try {
-    // Upload each file
-    for (const file of uploadingFiles.value) {
-      await uploadDocument(caseId, file, {
-        onProgress: (progress) => {
-          uploadProgress.value = progress.progress
-        }
-      })
+    // Upload files in parallel (up to 5 concurrent uploads)
+    const CONCURRENCY = 5
+    const results: Promise<void>[] = []
+    let activeCount = 0
+    let fileIndex = 0
+
+    const uploadNext = async (): Promise<void> => {
+      if (fileIndex >= files.length) return
+
+      const currentIndex = fileIndex++
+      const file = files[currentIndex]
+      activeCount++
+
+      try {
+        await uploadDocument(caseId, file, {
+          onProgress: (progress) => {
+            fileProgress.set(`${currentIndex}`, progress.progress)
+            updateTotalProgress()
+          }
+        })
+        fileProgress.set(`${currentIndex}`, 100)
+        updateTotalProgress()
+      } finally {
+        activeCount--
+      }
+
+      // Start next upload if more files remain
+      if (fileIndex < files.length) {
+        await uploadNext()
+      }
     }
+
+    // Start initial batch of concurrent uploads
+    const initialBatch = Math.min(CONCURRENCY, files.length)
+    for (let i = 0; i < initialBatch; i++) {
+      results.push(uploadNext())
+    }
+
+    await Promise.all(results)
 
     // Mark complete
     uploadProgress.value = 100
@@ -221,31 +263,84 @@ async function uploadDocuments() {
 // Bulk actions
 async function handleBulkAction(action: string) {
   const selectedIds = Array.from(selectedDocuments.value)
+  const toast = import.meta.client ? useToast() : null
 
   switch (action) {
     case 'delete':
       if (confirm(`Delete ${selectedIds.length} documents?`)) {
-        // TODO: Implement bulk delete
+        try {
+          // Delete documents in parallel (up to 5 concurrent)
+          const CONCURRENCY = 5
+          let deleteIndex = 0
+          const results: Promise<void>[] = []
+
+          const deleteNext = async (): Promise<void> => {
+            if (deleteIndex >= selectedIds.length) return
+            const docId = selectedIds[deleteIndex++]
+            await removeDocument(docId)
+            if (deleteIndex < selectedIds.length) {
+              await deleteNext()
+            }
+          }
+
+          const initialBatch = Math.min(CONCURRENCY, selectedIds.length)
+          for (let i = 0; i < initialBatch; i++) {
+            results.push(deleteNext())
+          }
+          await Promise.all(results)
+
+          toast?.add({
+            title: 'Documents Deleted',
+            description: `${selectedIds.length} document(s) deleted successfully`,
+            color: 'success'
+          })
+        } catch (err: any) {
+          toast?.add({
+            title: 'Delete Failed',
+            description: err?.message || 'Failed to delete some documents',
+            color: 'error'
+          })
+        }
         selectedDocuments.value.clear()
         refresh()
       }
       break
     case 'download':
-      // TODO: Implement bulk download
+      // Download documents in parallel
+      const docsToDownload = documents.value.filter(d => selectedIds.includes(String(d.id)))
+      await Promise.all(docsToDownload.map(doc => downloadDocument(String(doc.id))))
+      toast?.add({
+        title: 'Downloads Started',
+        description: `${docsToDownload.length} download(s) initiated`,
+        color: 'success'
+      })
       break
     case 'tag':
-      // TODO: Show tag modal
+      toast?.add({ title: 'Coming Soon', description: 'Tag functionality is not yet implemented', color: 'warning' })
       break
     case 'move-to-case':
-      // TODO: Show case selection modal
+      toast?.add({ title: 'Coming Soon', description: 'Move to case functionality is not yet implemented', color: 'warning' })
       break
   }
 }
 
 // Document actions
 async function downloadDocument(docId: string) {
-  // TODO: Implement download
-  console.log('Download document:', docId)
+  const doc = documents.value.find(d => String(d.id) === docId)
+  if (!doc?.downloadUrl) {
+    const toast = import.meta.client ? useToast() : null
+    toast?.add({ title: 'Download Failed', description: 'Document URL not available', color: 'error' })
+    return
+  }
+
+  // Trigger browser download
+  const link = document.createElement('a')
+  link.href = doc.downloadUrl
+  link.download = doc.filename || 'document'
+  link.target = '_blank'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 async function handleDeleteDocument(docId: string) {

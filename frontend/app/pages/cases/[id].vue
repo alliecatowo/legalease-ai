@@ -273,18 +273,59 @@ async function handleArchiveCase() {
 async function handleUploadDocuments() {
   if (!uploadingFiles.value?.length) return
 
-  uploadProgress.value = 0
   const files = uploadingFiles.value
   const total = files.length
+  uploadProgress.value = 0
+
+  // Track progress per file for aggregate progress
+  const fileProgress = new Map<string, number>()
+  files.forEach((_, i) => fileProgress.set(`${i}`, 0))
+
+  const updateTotalProgress = () => {
+    const sum = Array.from(fileProgress.values()).reduce((a, b) => a + b, 0)
+    uploadProgress.value = Math.round(sum / total)
+  }
 
   try {
-    for (let i = 0; i < total; i++) {
-      await uploadDocument(caseId.value, files[i], {
-        onProgress: (p) => {
-          uploadProgress.value = Math.round(((i + p.progress / 100) / total) * 100)
-        }
-      })
+    // Upload files in parallel (up to 5 concurrent uploads)
+    const CONCURRENCY = 5
+    const results: Promise<void>[] = []
+    let fileIndex = 0
+
+    const uploadNext = async (): Promise<void> => {
+      if (fileIndex >= files.length) return
+
+      const currentIndex = fileIndex++
+      const file = files[currentIndex]
+
+      try {
+        await uploadDocument(caseId.value, file, {
+          onProgress: (p) => {
+            fileProgress.set(`${currentIndex}`, p.progress)
+            updateTotalProgress()
+          }
+        })
+        fileProgress.set(`${currentIndex}`, 100)
+        updateTotalProgress()
+      } catch (err) {
+        // Continue with other uploads even if one fails
+        console.error(`Failed to upload ${file.name}:`, err)
+        throw err
+      }
+
+      // Start next upload if more files remain
+      if (fileIndex < files.length) {
+        await uploadNext()
+      }
     }
+
+    // Start initial batch of concurrent uploads
+    const initialBatch = Math.min(CONCURRENCY, files.length)
+    for (let i = 0; i < initialBatch; i++) {
+      results.push(uploadNext())
+    }
+
+    await Promise.all(results)
 
     toast.add({
       title: 'Success',
