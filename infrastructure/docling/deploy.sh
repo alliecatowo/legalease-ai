@@ -132,6 +132,7 @@ main() {
       --image "$IMAGE_TO_USE" \
       --region "$REGION" \
       --project "$PROJECT_ID" \
+      --port 5001 \
       --memory 16Gi \
       --cpu 4 \
       --gpu 1 \
@@ -152,6 +153,7 @@ main() {
       --image "$IMAGE_TO_USE" \
       --region "$REGION" \
       --project "$PROJECT_ID" \
+      --port 5001 \
       --memory 8Gi \
       --cpu 4 \
       --min-instances 0 \
