@@ -227,7 +227,7 @@ const ChunkSchema = z.object({
 // Index document chunks input
 export const IndexDocumentChunksInput = z.object({
   documentId: z.string().describe('Firestore document ID'),
-  caseId: z.string().describe('Associated case ID'),
+  caseId: z.string().nullable().describe('Associated case ID (null for transcriptions)'),
   filename: z.string().optional().describe('Original filename'),
   documentType: z.string().optional().describe('Document type'),
   chunks: z.array(ChunkSchema).describe('Chunks to index')

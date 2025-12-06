@@ -374,8 +374,12 @@ export const onTranscriptionComplete = onObjectFinalized(
       return
     }
 
-    // Extract transcription ID from filename
-    const transcriptionId = filePath.replace('transcription-results/', '').replace('.json', '')
+    // Extract transcription ID from path
+    // Chirp outputs to: transcription-results/{transcriptionId}/{auto-generated-filename}.json
+    // OR flat format: transcription-results/{transcriptionId}.json
+    const pathAfterPrefix = filePath.replace('transcription-results/', '')
+    const pathParts = pathAfterPrefix.split('/')
+    const transcriptionId = pathParts[0].replace('.json', '')
     console.log(`[onTranscriptionComplete] Processing results for ${transcriptionId}`)
 
     const startTime = Date.now()
