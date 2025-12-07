@@ -41,7 +41,7 @@ export class ChirpProvider implements TranscriptionProvider {
   readonly capabilities: ProviderCapabilities = {
     diarization: true,           // Chirp 3 supports speaker diarization
     streaming: false,            // BatchRecognize only, no streaming
-    languageDetection: true,     // Can detect language automatically
+    languageDetection: false,    // V2 BatchRecognize API doesn't support auto-detection
     languageCount: 100,          // 100+ languages supported
     directUrlInput: false,       // Requires GCS URI (gs://)
     maxDurationSeconds: 28800,   // 8 hours max for batch
@@ -66,13 +66,22 @@ export class ChirpProvider implements TranscriptionProvider {
       throw new Error('Chirp provider only supports GCS URIs (gs://bucket/path). Upload the file to Firebase Storage first.')
     }
 
+    // Validate language - Chirp V2 BatchRecognize doesn't support auto-detection
+    if (opts.language === 'auto') {
+      throw new Error(
+        'Chirp provider does not support automatic language detection. ' +
+        'Please specify a language code (e.g., "en-US") or use the Gemini provider which supports auto-detection.'
+      )
+    }
+
     logTime('Importing Speech V2 client...')
     // Import Speech V2 client dynamically
     const { SpeechClient } = await import('@google-cloud/speech').then(m => m.v2)
     logTime('Speech V2 client imported')
 
-    // Chirp 3 is available in 'us' multi-region
-    const location = 'us'
+    // Get location and model from config (Chirp 3 is only available in 'us' multi-region)
+    const location = appConfig.speech.location
+    const model = appConfig.speech.model
 
     logTime('Creating SpeechClient...')
     // Create Speech-to-Text V2 client with regional endpoint
@@ -87,14 +96,11 @@ export class ChirpProvider implements TranscriptionProvider {
     // Build the recognizer path - use "_" for default recognizer
     const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
 
-    // V2 BatchRecognize API doesn't support "auto" - default to en-US
-    const effectiveLanguage = opts.language === 'auto' ? 'en-US' : opts.language
-
     // Build recognition config
     const config: any = {
       autoDecodingConfig: {},
-      languageCodes: [effectiveLanguage],
-      model: 'chirp_3',
+      languageCodes: [opts.language],
+      model,
       features: {
         enableAutomaticPunctuation: true,
         enableWordTimeOffsets: true // Provides timestamps for words (used with diarization)
@@ -121,10 +127,36 @@ export class ChirpProvider implements TranscriptionProvider {
 
     logTime('Calling batchRecognize...')
     // Call BatchRecognize and wait for completion
-    const [operation] = await client.batchRecognize(batchRequest)
-    logTime('batchRecognize returned, waiting for operation to complete...')
-    const [response] = await operation.promise()
-    logTime('Operation completed')
+    let response: any
+    try {
+      const [operation] = await client.batchRecognize(batchRequest)
+      logTime('batchRecognize returned, waiting for operation to complete...')
+      const [result] = await operation.promise()
+      response = result
+      logTime('Operation completed')
+    } catch (error: any) {
+      const message = error?.message || String(error)
+      // Provide helpful error messages for common issues
+      if (message.includes('PERMISSION_DENIED')) {
+        throw new Error(
+          `Speech API permission denied. Ensure the service account has 'Speech-to-Text API User' role. ` +
+          `Original error: ${message}`
+        )
+      }
+      if (message.includes('NOT_FOUND') && message.includes('recognizer')) {
+        throw new Error(
+          `Speech API recognizer not found. This may indicate the Speech-to-Text V2 API is not enabled ` +
+          `or the region '${location}' is not supported. Original error: ${message}`
+        )
+      }
+      if (message.includes('INVALID_ARGUMENT')) {
+        throw new Error(
+          `Invalid argument to Speech API. Check the media URI format and language code. ` +
+          `Original error: ${message}`
+        )
+      }
+      throw new Error(`Speech API batch recognize failed: ${message}`)
+    }
 
     // Process results
     const segments: Segment[] = []

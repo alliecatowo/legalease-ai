@@ -139,13 +139,17 @@ export const config = {
     }
   },
 
-  /** Speech-to-Text configuration (legacy - used by Chirp provider) */
+  /** Speech-to-Text configuration (used by Chirp provider) */
   speech: {
-    /** Default location for Speech API */
-    location: 'us',
+    /** Location for Speech API (Chirp 3 is only available in 'us' multi-region) */
+    get location() {
+      return process.env.SPEECH_LOCATION || 'us'
+    },
 
-    /** Default model */
-    model: 'chirp_3'
+    /** Speech model to use */
+    get model() {
+      return process.env.SPEECH_MODEL || 'chirp_3'
+    }
   },
 
   /** Transcription provider configuration */

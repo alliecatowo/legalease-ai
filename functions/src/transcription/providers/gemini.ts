@@ -14,17 +14,19 @@ import { applyDefaults } from '../types.js'
 import config from '../../config.js'
 import { getMetadata, download } from '../../storage/index.js'
 
-// Lazy-loaded SDK client
-let aiClient: any = null
+// Lazy-loaded SDK client with Promise-based initialization to prevent race conditions
+let clientPromise: Promise<any> | null = null
 
 async function getClient() {
-  if (!aiClient) {
-    const { GoogleGenAI } = await import('@google/genai')
-    aiClient = new GoogleGenAI({
-      apiKey: process.env.GOOGLE_GENAI_API_KEY
-    })
+  if (!clientPromise) {
+    clientPromise = (async () => {
+      const { GoogleGenAI } = await import('@google/genai')
+      return new GoogleGenAI({
+        apiKey: process.env.GOOGLE_GENAI_API_KEY
+      })
+    })()
   }
-  return aiClient
+  return clientPromise
 }
 
 /**
@@ -149,18 +151,29 @@ Output the transcription as structured JSON with segments, speakers, language, a
  */
 function inferMimeType(url: string): string {
   const lower = url.toLowerCase()
+  // YouTube URLs
   if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
     return 'video/mp4'
   }
+  // Audio formats
   if (lower.endsWith('.mp3')) return 'audio/mp3'
   if (lower.endsWith('.wav')) return 'audio/wav'
   if (lower.endsWith('.flac')) return 'audio/flac'
   if (lower.endsWith('.ogg')) return 'audio/ogg'
   if (lower.endsWith('.aac')) return 'audio/aac'
   if (lower.endsWith('.m4a')) return 'audio/mp4'
+  if (lower.endsWith('.wma')) return 'audio/x-ms-wma'
+  if (lower.endsWith('.opus')) return 'audio/opus'
+  // Video formats
   if (lower.endsWith('.mp4')) return 'video/mp4'
   if (lower.endsWith('.webm')) return 'video/webm'
-  return 'audio/mpeg' // Default
+  if (lower.endsWith('.mov')) return 'video/quicktime'
+  if (lower.endsWith('.avi')) return 'video/x-msvideo'
+  if (lower.endsWith('.mkv')) return 'video/x-matroska'
+  if (lower.endsWith('.wmv')) return 'video/x-ms-wmv'
+  if (lower.endsWith('.flv')) return 'video/x-flv'
+  if (lower.endsWith('.3gp')) return 'video/3gpp'
+  return 'audio/mpeg' // Default for unknown extensions
 }
 
 export class GeminiProvider implements TranscriptionProvider {
@@ -247,8 +260,9 @@ export class GeminiProvider implements TranscriptionProvider {
             }
           }
         }
-      } catch (error) {
-        throw new Error(`Failed to fetch audio from URL: ${error}`)
+      } catch (error: any) {
+        const message = error?.message || String(error)
+        throw new Error(`Failed to fetch audio from URL '${opts.mediaUri}': ${message}`)
       }
     }
 
