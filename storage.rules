@@ -46,6 +46,12 @@ service firebase.storage {
       allow read, write: if canAccessTranscription(transcriptionId);
     }
 
+    // Document files - accessible to file owner
+    // Note: Case access is enforced at the Firestore level, not Storage
+    match /documents/{userId}/{caseId}/{allPaths=**} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
     // Temporary uploads - user can only write to their own temp folder
     // Read allowed for processing services via service account
     match /temp/{userId}/{allPaths=**} {
