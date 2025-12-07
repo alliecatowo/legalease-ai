@@ -1,0 +1,17 @@
+{
+  "kind": "identitytoolkit#DownloadAccountResponse",
+  "users": [
+    {
+      "localId": "test-user-uid-12345",
+      "email": "test@example.com",
+      "emailVerified": true,
+      "displayName": "Test User",
+      "passwordHash": "ZmFrZWhhc2hmb3JlbXVsYXRvcg==",
+      "salt": "ZmFrZXNhbHQ=",
+      "lastSignedInAt": "1700000000000",
+      "createdAt": "1700000000000",
+      "providerUserInfo": [],
+      "validSince": "1700000000"
+    }
+  ]
+}

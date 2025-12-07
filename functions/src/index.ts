@@ -1,5 +1,5 @@
 import { onCallGenkit, isSignedIn } from 'firebase-functions/https'
-import { onDocumentUpdated } from 'firebase-functions/v2/firestore'
+import { onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore'
 import { defineSecret } from 'firebase-functions/params'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { initializeApp, getApps } from 'firebase-admin/app'
@@ -154,112 +154,177 @@ export {
 }
 
 /**
- * Firestore trigger: Start transcription job (non-blocking)
+ * Firestore trigger: Start transcription job
  *
- * When status changes to "processing":
- * 1. Calls Chirp batchRecognize with output to GCS
- * 2. Saves the operation name to Firestore
- * 3. Returns immediately (doesn't wait for transcription to complete)
- *
- * The completion is handled by onTranscriptionComplete trigger
+ * When status is set to "processing" (on create or update):
+ * 1. Calls the configured transcription provider (Gemini by default)
+ * 2. Generates AI summary if transcript is long enough
+ * 3. Generates waveform peaks for audio visualization
+ * 4. Updates Firestore with results
  */
-export const startTranscriptionJob = onDocumentUpdated(
+export const startTranscriptionJob = onDocumentWritten(
   {
     document: 'transcriptions/{transcriptionId}',
     secrets: [googleAIApiKey],
-    memory: '512MiB',
-    timeoutSeconds: 60 // Just starting the job, should be fast
+    memory: '2GiB',
+    timeoutSeconds: 540, // 9 minutes for long transcriptions
+    cpu: 2
   },
   async (event) => {
-    const beforeData = event.data?.before.data()
-    const afterData = event.data?.after.data()
+    const beforeData = event.data?.before?.data()
+    const afterData = event.data?.after?.data()
     const transcriptionId = event.params.transcriptionId
 
-    // Only process when status changes to "processing"
-    if (!afterData || beforeData?.status === afterData.status) {
+    // Skip if document was deleted
+    if (!afterData) {
       return
     }
 
+    // Only process when status is "processing" and wasn't before
+    // This handles both new documents and status updates
     if (afterData.status !== 'processing') {
       return
     }
+    if (beforeData?.status === 'processing') {
+      return // Already processing, don't restart
+    }
 
-    console.log(`[startTranscriptionJob] Starting job for ${transcriptionId}`)
+    console.log(`[startTranscriptionJob] Starting transcription for ${transcriptionId}`)
+    const startTime = Date.now()
+    const logTime = (msg: string) => console.log(`[startTranscriptionJob] [${Date.now() - startTime}ms] ${msg}`)
 
     const db = getFirestore()
     const docRef = db.collection('transcriptions').doc(transcriptionId)
 
     try {
+      // Update status to transcribing
+      await docRef.update({
+        status: 'transcribing',
+        transcriptionStartedAt: FieldValue.serverTimestamp()
+      })
+
       const mediaUri = afterData.gsUri || afterData.downloadUrl
       if (!mediaUri) {
         throw new Error('No media URI available for transcription')
       }
 
-      if (!mediaUri.startsWith('gs://')) {
-        throw new Error('Chirp requires GCS URI (gs://...). Upload the file first.')
-      }
+      logTime(`Transcribing: ${mediaUri}`)
 
-      // Import Speech V2 client
-      const { SpeechClient } = await import('@google-cloud/speech').then(m => m.v2)
-      const location = 'us'
-      const client = new SpeechClient({
-        apiEndpoint: `${location}-speech.googleapis.com`
+      // Use the transcription provider abstraction (Gemini by default)
+      const result = await transcribe({
+        mediaUri,
+        language: afterData.language || 'auto',
+        enableDiarization: true,
+        maxSpeakers: 6
       })
 
-      const projectId = config.projectId
-      const recognizer = `projects/${projectId}/locations/${location}/recognizers/_`
+      logTime(`Transcription complete: ${result.segments.length} segments, ${result.speakers.length} speakers`)
 
-      // Output location for results (GCS)
-      const outputBucket = config.storageBucket
-      const outputPath = `${config.storage.transcriptionResultsPath}/${transcriptionId}.json`
-      const outputUri = `gs://${outputBucket}/${outputPath}`
+      // Convert to Firestore format (legacy field names)
+      const segments = result.segments.map(seg => ({
+        id: seg.id,
+        start: seg.startTime,
+        end: seg.endTime,
+        text: seg.text,
+        speaker: seg.speakerId || null,
+        confidence: seg.confidence || null
+      }))
 
-      // Build recognition config
-      const recognitionConfig: any = {
-        autoDecodingConfig: {},
-        languageCodes: ['en-US'],
-        model: config.speech.model,
-        features: {
-          enableAutomaticPunctuation: true,
-          enableWordTimeOffsets: true,
-          diarizationConfig: {
-            minSpeakerCount: 1,
-            maxSpeakerCount: 6
-          }
+      const speakers = result.speakers.map(spk => ({
+        id: spk.id,
+        inferredName: spk.name || null
+      }))
+
+      // Generate summary if transcript is substantial
+      let summarization = null
+      if (result.text.length > 100) {
+        try {
+          logTime('Generating summary...')
+
+          const timestampedTranscript = result.segments.slice(0, 500).map(seg => {
+            const mins = Math.floor(seg.startTime / 60)
+            const secs = Math.floor(seg.startTime % 60)
+            const timestamp = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+            const speaker = seg.speakerId || 'Unknown'
+            return `[${timestamp}] ${speaker}: ${seg.text}`
+          }).join('\n')
+
+          const summaryResponse = await ai.generate({
+            model: getModel('standard'),
+            prompt: `
+You are a legal document analyst. Analyze this transcript and provide a structured summary.
+
+Transcript (with timestamps):
+${timestampedTranscript.substring(0, 30000)}
+
+Provide your analysis as JSON with this structure:
+{
+  "summary": "1-2 paragraph executive summary of the transcript",
+  "keyMoments": [
+    {
+      "timestamp": "MM:SS format from transcript",
+      "description": "what happened",
+      "importance": "high|medium|low",
+      "speakers": ["who was involved"]
+    }
+  ],
+  "actionItems": ["any follow-up actions mentioned or implied"],
+  "topics": ["main topics discussed"],
+  "entities": {
+    "people": ["names mentioned"],
+    "organizations": ["companies, firms, agencies"],
+    "locations": ["places mentioned"],
+    "dates": ["dates, times, deadlines mentioned"]
+  }
+}
+
+IMPORTANT: For keyMoments, use the actual timestamps from the transcript (e.g., "00:15", "01:30").
+`,
+            output: { format: 'json', schema: SummarizationOutput }
+          })
+          summarization = summaryResponse.output
+          logTime(`Summary generated: ${summarization?.keyMoments?.length || 0} key moments`)
+        } catch (error) {
+          logTime(`Summary generation failed: ${error}`)
         }
       }
 
-      // Start batch recognition with GCS output (async - doesn't wait)
-      const batchRequest = {
-        recognizer,
-        config: recognitionConfig,
-        files: [{ uri: mediaUri }],
-        recognitionOutputConfig: {
-          gcsOutputConfig: {
-            uri: outputUri
-          }
+      // Generate waveform peaks if we have a GCS URI
+      let waveformPeaks: number[] | null = null
+      if (mediaUri.startsWith('gs://')) {
+        try {
+          logTime('Generating waveform peaks...')
+          const audioBuffer = await download(mediaUri)
+          logTime(`Downloaded ${audioBuffer.length} bytes for waveform`)
+          waveformPeaks = generateWaveformPeaks(audioBuffer, 800)
+          logTime(`Generated ${waveformPeaks.length} waveform peaks`)
+        } catch (error) {
+          logTime(`Waveform generation failed: ${error}`)
         }
       }
 
-      console.log(`[startTranscriptionJob] Calling batchRecognize, output: ${outputUri}`)
-      const [operation] = await client.batchRecognize(batchRequest)
-
-      // Save operation info to Firestore - we're done here!
-      // The GCS trigger will handle the completion
+      // Update Firestore with final results
       await docRef.update({
-        status: 'transcribing',
-        operationName: operation.name,
-        outputUri: outputUri,
-        transcriptionStartedAt: FieldValue.serverTimestamp()
+        status: 'completed',
+        fullText: result.text,
+        segments,
+        speakers,
+        duration: result.duration ?? null,
+        language: result.language ?? null,
+        provider: result.provider,
+        summarization: summarization || null,
+        waveformPeaks,
+        processingTimeMs: result.processingTimeMs,
+        completedAt: FieldValue.serverTimestamp()
       })
 
-      console.log(`[startTranscriptionJob] Job started: ${operation.name}`)
+      logTime(`Successfully completed transcription for ${transcriptionId}`)
 
     } catch (error: any) {
       console.error(`[startTranscriptionJob] Failed for ${transcriptionId}:`, error)
       await docRef.update({
         status: 'failed',
-        error: error.message || 'Failed to start transcription',
+        error: error.message || 'Failed to transcribe',
         failedAt: FieldValue.serverTimestamp()
       })
     }

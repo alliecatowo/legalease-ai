@@ -1,6 +1,17 @@
 import type { TranscriptionRequest, TranscriptionResult } from './types.js'
 
 /**
+ * Services that must use production (cannot use emulators)
+ */
+export interface ProductionRequirements {
+  /**
+   * Storage must be production GCS (not emulator)
+   * Example: Chirp/Speech API requires real GCS URIs
+   */
+  storage: boolean
+}
+
+/**
  * Describes what features a provider supports
  */
 export interface ProviderCapabilities {
@@ -24,6 +35,12 @@ export interface ProviderCapabilities {
 
   /** Supports multimodal input (video with visual context) */
   multimodal: boolean
+
+  /**
+   * Services that MUST use production (cannot use emulators)
+   * Used for routing decisions in development
+   */
+  requiresProduction: ProductionRequirements
 }
 
 /**

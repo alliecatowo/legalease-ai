@@ -45,7 +45,10 @@ export class ChirpProvider implements TranscriptionProvider {
     languageCount: 100,          // 100+ languages supported
     directUrlInput: false,       // Requires GCS URI (gs://)
     maxDurationSeconds: 28800,   // 8 hours max for batch
-    multimodal: false            // Audio only, no video context
+    multimodal: false,           // Audio only, no video context
+    requiresProduction: {
+      storage: true              // Speech API requires real GCS URIs (not emulator)
+    }
   }
 
   canHandle(request: TranscriptionRequest): boolean {

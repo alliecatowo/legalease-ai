@@ -4,6 +4,15 @@ import { getStorage, type FirebaseStorage } from 'firebase/storage'
 import { getAuth, type Auth } from 'firebase/auth'
 import { getFunctions, type Functions } from 'firebase/functions'
 
+/**
+ * Provider storage requirements (must match backend provider capabilities)
+ * Each transcription provider declares whether it needs production GCS or can use emulator
+ */
+const PROVIDER_REQUIRES_PRODUCTION_STORAGE: Record<string, boolean> = {
+  chirp: true,   // Speech API requires real GCS URIs
+  gemini: false  // Gemini can download from emulator, no GCS dependency
+}
+
 export default defineNuxtPlugin(async () => {
   const config = useRuntimeConfig()
   const firebaseConfig = config.public.firebase
@@ -29,7 +38,6 @@ export default defineNuxtPlugin(async () => {
   const functions = getFunctions(app, 'us-central1')
 
   // Connect services to emulators when enabled
-  // Note: Storage uses production (Speech API needs real GCS access)
   // Set NUXT_PUBLIC_USE_EMULATORS=true to use emulators
   const useEmulators = import.meta.dev && config.public.useEmulators
   if (useEmulators) {
@@ -37,13 +45,26 @@ export default defineNuxtPlugin(async () => {
     const { connectAuthEmulator } = await import('firebase/auth')
     const { connectFunctionsEmulator } = await import('firebase/functions')
 
+    // Check if current transcription provider requires production storage
+    const provider = config.public.transcriptionProvider as string
+    const requiresProductionStorage = PROVIDER_REQUIRES_PRODUCTION_STORAGE[provider] ?? false
+
     console.log('🔧 Connecting to Firebase Emulator Suite...')
-    console.log('⚠️  Storage uses production (Speech API needs real GCS)')
+    console.log(`📝 Transcription provider: ${provider}`)
+
     try {
       connectFirestoreEmulator(firestore, 'localhost', 8080)
       connectAuthEmulator(auth, 'http://localhost:9099')
       connectFunctionsEmulator(functions, 'localhost', 5001)
-      console.log('✅ Connected to emulators (Firestore, Auth, Functions)')
+
+      if (requiresProductionStorage) {
+        console.log('⚠️  Storage uses production (provider requires real GCS)')
+        console.log('✅ Connected to emulators (Firestore, Auth, Functions)')
+      } else {
+        const { connectStorageEmulator } = await import('firebase/storage')
+        connectStorageEmulator(storage, 'localhost', 9199)
+        console.log('✅ Connected to emulators (Firestore, Auth, Functions, Storage)')
+      }
     } catch (error) {
       console.warn('⚠️ Emulator connection failed:', error)
     }

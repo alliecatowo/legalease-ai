@@ -1,36 +1,34 @@
 import type { TranscriptionProvider } from './provider.js'
+import config from '../config.js'
 
 const providers = new Map<string, TranscriptionProvider>()
-let defaultProvider: TranscriptionProvider | null = null
 
 /**
  * Register a transcription provider
- * The first registered provider becomes the default
  */
 export function registerProvider(provider: TranscriptionProvider): void {
   providers.set(provider.name, provider)
-  if (!defaultProvider) {
-    defaultProvider = provider
-  }
 }
 
 /**
- * Get a provider by name, or the default if no name specified
+ * Get a provider by name, or the configured default
+ *
+ * Default provider is determined by TRANSCRIPTION_PROVIDER env var.
+ * Throws an error if the configured provider is not available.
  */
 export function getProvider(name?: string): TranscriptionProvider {
-  if (name) {
-    const provider = providers.get(name)
-    if (!provider) {
-      throw new Error(`Transcription provider '${name}' not found. Available: ${Array.from(providers.keys()).join(', ')}`)
-    }
-    return provider
+  const providerName = name || config.transcription.defaultProvider
+
+  const provider = providers.get(providerName)
+  if (!provider) {
+    const available = Array.from(providers.keys()).join(', ')
+    throw new Error(
+      `Transcription provider '${providerName}' not found. ` +
+      `Available providers: ${available || 'none registered'}`
+    )
   }
 
-  if (!defaultProvider) {
-    throw new Error('No transcription providers registered')
-  }
-
-  return defaultProvider
+  return provider
 }
 
 /**
@@ -41,8 +39,8 @@ export function listProviders(): string[] {
 }
 
 /**
- * Get the default provider name
+ * Get the default provider name (from environment config)
  */
-export function getDefaultProviderName(): string | null {
-  return defaultProvider?.name ?? null
+export function getDefaultProviderName(): string {
+  return config.transcription.defaultProvider
 }

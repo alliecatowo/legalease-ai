@@ -139,13 +139,29 @@ export const config = {
     }
   },
 
-  /** Speech-to-Text configuration */
+  /** Speech-to-Text configuration (legacy - used by Chirp provider) */
   speech: {
     /** Default location for Speech API */
     location: 'us',
 
     /** Default model */
     model: 'chirp_3'
+  },
+
+  /** Transcription provider configuration */
+  transcription: {
+    /** Default transcription provider (gemini, chirp) */
+    get defaultProvider() {
+      return process.env.TRANSCRIPTION_PROVIDER || 'gemini'
+    },
+
+    /** Gemini model for transcription */
+    get geminiModel() {
+      return process.env.TRANSCRIPTION_GEMINI_MODEL || 'gemini-2.5-flash'
+    },
+
+    /** File size threshold for Gemini Files API (20MB) */
+    fileSizeThresholdBytes: 20 * 1024 * 1024
   }
 } as const
 

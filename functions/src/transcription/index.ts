@@ -25,7 +25,8 @@ export type {
 
 export type {
   TranscriptionProvider,
-  ProviderCapabilities
+  ProviderCapabilities,
+  ProductionRequirements
 } from './provider.js'
 
 export { applyDefaults } from './types.js'
@@ -41,17 +42,18 @@ export {
 // Import and register providers
 import { registerProvider } from './registry.js'
 import { ChirpProvider } from './providers/chirp.js'
+import { GeminiProvider } from './providers/gemini.js'
 
-// Register default providers
+// Register all available providers
+// Default is controlled by TRANSCRIPTION_PROVIDER env var (see config.ts)
 registerProvider(new ChirpProvider())
+registerProvider(new GeminiProvider())
 
 // Future providers:
 // import { WhisperProvider } from './providers/whisper.js'
 // import { DeepgramProvider } from './providers/deepgram.js'
-// import { GeminiProvider } from './providers/gemini.js'  // Multimodal!
 // registerProvider(new WhisperProvider())
 // registerProvider(new DeepgramProvider())
-// registerProvider(new GeminiProvider())
 
 /**
  * Transcribe media using the specified provider (or default)
