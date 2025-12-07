@@ -63,8 +63,8 @@ const filteredMembers = computed(() => {
   if (!q.value) return formattedMembers.value
   const search = q.value.toLowerCase()
   return formattedMembers.value.filter(member =>
-    member.name.toLowerCase().includes(search) ||
-    member.email.toLowerCase().includes(search)
+    member.name.toLowerCase().includes(search)
+    || member.email.toLowerCase().includes(search)
   )
 })
 
@@ -203,8 +203,12 @@ async function handleCancelInvitation(invitationId: string) {
     <!-- No team state -->
     <div v-if="!isLoading && teams.length === 0" class="text-center py-12">
       <UIcon name="i-lucide-users" class="size-16 mx-auto mb-4 text-muted opacity-50" />
-      <h3 class="text-lg font-semibold mb-2">No team yet</h3>
-      <p class="text-muted mb-6">Create a team to collaborate with others</p>
+      <h3 class="text-lg font-semibold mb-2">
+        No team yet
+      </h3>
+      <p class="text-muted mb-6">
+        Create a team to collaborate with others
+      </p>
       <UButton
         label="Create Team"
         icon="i-lucide-plus"
@@ -276,8 +280,12 @@ async function handleCancelInvitation(invitationId: string) {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-mail" class="size-5 text-muted" />
               <div>
-                <p class="font-medium">{{ invitation.email }}</p>
-                <p class="text-sm text-muted capitalize">{{ invitation.role }} role</p>
+                <p class="font-medium">
+                  {{ invitation.email }}
+                </p>
+                <p class="text-sm text-muted capitalize">
+                  {{ invitation.role }} role
+                </p>
               </div>
             </div>
             <UButton
@@ -298,12 +306,19 @@ async function handleCancelInvitation(invitationId: string) {
       <template #header>
         <div class="flex items-center gap-3">
           <UIcon name="i-lucide-users" class="size-6 text-primary" />
-          <h2 class="text-xl font-semibold">Create Team</h2>
+          <h2 class="text-xl font-semibold">
+            Create Team
+          </h2>
         </div>
       </template>
 
       <template #body>
-        <UForm :schema="teamSchema" :state="teamForm" class="space-y-4" @submit="handleCreateTeam">
+        <UForm
+          :schema="teamSchema"
+          :state="teamForm"
+          class="space-y-4"
+          @submit="handleCreateTeam"
+        >
           <UFormField label="Team Name" name="name" required>
             <UInput v-model="teamForm.name" placeholder="e.g., Smith & Associates" />
           </UFormField>
@@ -335,12 +350,19 @@ async function handleCancelInvitation(invitationId: string) {
       <template #header>
         <div class="flex items-center gap-3">
           <UIcon name="i-lucide-user-plus" class="size-6 text-primary" />
-          <h2 class="text-xl font-semibold">Invite Team Member</h2>
+          <h2 class="text-xl font-semibold">
+            Invite Team Member
+          </h2>
         </div>
       </template>
 
       <template #body>
-        <UForm :schema="inviteSchema" :state="inviteForm" class="space-y-4" @submit="handleInvite">
+        <UForm
+          :schema="inviteSchema"
+          :state="inviteForm"
+          class="space-y-4"
+          @submit="handleInvite"
+        >
           <UFormField label="Email Address" name="email" required>
             <UInput
               v-model="inviteForm.email"

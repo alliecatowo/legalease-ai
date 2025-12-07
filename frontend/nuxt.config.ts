@@ -6,6 +6,10 @@ export default defineNuxtConfig({
     '@vueuse/nuxt'
   ],
 
+  devtools: {
+    enabled: true
+  },
+
   app: {
     head: {
       link: [
@@ -14,11 +18,12 @@ export default defineNuxtConfig({
     }
   },
 
-  devtools: {
-    enabled: true
-  },
-
   css: ['~/assets/css/main.css'],
+
+  colorMode: {
+    preference: 'dark',
+    fallback: 'dark'
+  },
 
   runtimeConfig: {
     public: {
@@ -50,16 +55,6 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2024-07-11',
 
-  icon: {
-    serverBundle: {
-      collections: ['lucide', 'simple-icons']
-    },
-    clientBundle: {
-      scan: true,
-      includeCustomCollections: true
-    }
-  },
-
   eslint: {
     config: {
       stylistic: {
@@ -69,8 +64,13 @@ export default defineNuxtConfig({
     }
   },
 
-  colorMode: {
-    preference: 'dark',
-    fallback: 'dark'
+  icon: {
+    serverBundle: {
+      collections: ['lucide', 'simple-icons']
+    },
+    clientBundle: {
+      scan: true,
+      includeCustomCollections: true
+    }
   }
 })

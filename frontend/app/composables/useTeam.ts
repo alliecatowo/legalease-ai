@@ -1,3 +1,6 @@
+import type {
+  Timestamp
+} from 'firebase/firestore'
 import {
   collection,
   doc,
@@ -11,8 +14,7 @@ import {
   where,
   orderBy,
   onSnapshot,
-  serverTimestamp,
-  Timestamp
+  serverTimestamp
 } from 'firebase/firestore'
 
 export interface Team {

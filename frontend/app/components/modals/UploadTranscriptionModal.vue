@@ -5,7 +5,7 @@ const props = defineProps<{
 
 const open = defineModel<boolean>('open')
 const emit = defineEmits<{
-  'uploaded': [transcriptionId: string]
+  uploaded: [transcriptionId: string]
 }>()
 
 const toast = useToast()
@@ -93,7 +93,6 @@ async function handleUpload() {
     setTimeout(() => {
       resetAndClose()
     }, 1000)
-
   } catch (error: any) {
     console.error('Upload failed:', error)
     uploadStatus.value = 'failed'
@@ -159,8 +158,12 @@ const isProcessing = computed(() => uploadStatus.value === 'uploading')
       <div class="flex items-center gap-3">
         <UIcon name="i-lucide-mic" class="size-6 text-primary" />
         <div>
-          <h2 class="text-xl font-semibold">Upload for Transcription</h2>
-          <p class="text-sm text-muted mt-0.5">Upload audio/video or paste a URL to transcribe with AI</p>
+          <h2 class="text-xl font-semibold">
+            Upload for Transcription
+          </h2>
+          <p class="text-sm text-muted mt-0.5">
+            Upload audio/video or paste a URL to transcribe with AI
+          </p>
         </div>
       </div>
     </template>
@@ -183,8 +186,12 @@ const isProcessing = computed(() => uploadStatus.value === 'uploading')
         <div v-if="selectedFile && uploadStatus === 'idle'" class="flex items-center gap-3 p-3 bg-muted/10 rounded-lg">
           <UIcon name="i-lucide-file-audio" class="size-8 text-primary" />
           <div class="flex-1 min-w-0">
-            <p class="font-medium truncate">{{ selectedFile.name }}</p>
-            <p class="text-sm text-muted">{{ (selectedFile.size / 1024 / 1024).toFixed(2) }} MB</p>
+            <p class="font-medium truncate">
+              {{ selectedFile.name }}
+            </p>
+            <p class="text-sm text-muted">
+              {{ (selectedFile.size / 1024 / 1024).toFixed(2) }} MB
+            </p>
           </div>
           <UButton
             icon="i-lucide-x"
@@ -222,21 +229,23 @@ const isProcessing = computed(() => uploadStatus.value === 'uploading')
         <div v-if="isProcessing || uploadStatus === 'completed' || uploadStatus === 'failed'" class="space-y-3">
           <div class="flex items-center gap-3">
             <UIcon
-              :name="uploadStatus === 'completed' ? 'i-lucide-check-circle' :
-                     uploadStatus === 'failed' ? 'i-lucide-x-circle' :
-                     'i-lucide-loader-circle'"
+              :name="uploadStatus === 'completed' ? 'i-lucide-check-circle'
+                : uploadStatus === 'failed' ? 'i-lucide-x-circle'
+                  : 'i-lucide-loader-circle'"
               :class="[
                 'size-6',
-                uploadStatus === 'completed' ? 'text-success' :
-                uploadStatus === 'failed' ? 'text-error' :
-                'text-primary animate-spin'
+                uploadStatus === 'completed' ? 'text-success'
+                : uploadStatus === 'failed' ? 'text-error'
+                  : 'text-primary animate-spin'
               ]"
             />
-            <span :class="[
-              'font-medium',
-              uploadStatus === 'completed' ? 'text-success' :
-              uploadStatus === 'failed' ? 'text-error' : ''
-            ]">
+            <span
+              :class="[
+                'font-medium',
+                uploadStatus === 'completed' ? 'text-success'
+                : uploadStatus === 'failed' ? 'text-error' : ''
+              ]"
+            >
               {{ statusMessage }}
             </span>
           </div>

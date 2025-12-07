@@ -54,8 +54,12 @@ const statusColors: Record<string, string> = {
       <div class="p-6 space-y-6 max-w-7xl mx-auto">
         <!-- Welcome -->
         <div>
-          <h1 class="text-2xl font-bold">Welcome to LegalEase</h1>
-          <p class="text-muted mt-1">AI-powered legal document management</p>
+          <h1 class="text-2xl font-bold">
+            Welcome to LegalEase
+          </h1>
+          <p class="text-muted mt-1">
+            AI-powered legal document management
+          </p>
         </div>
 
         <!-- Stats -->
@@ -64,8 +68,12 @@ const statusColors: Record<string, string> = {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-folder" class="size-8 text-primary" />
               <div>
-                <p class="text-2xl font-bold">{{ stats.totalCases }}</p>
-                <p class="text-sm text-muted">Cases</p>
+                <p class="text-2xl font-bold">
+                  {{ stats.totalCases }}
+                </p>
+                <p class="text-sm text-muted">
+                  Cases
+                </p>
               </div>
             </div>
           </UCard>
@@ -74,8 +82,12 @@ const statusColors: Record<string, string> = {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-briefcase" class="size-8 text-success" />
               <div>
-                <p class="text-2xl font-bold">{{ stats.activeCases }}</p>
-                <p class="text-sm text-muted">Active</p>
+                <p class="text-2xl font-bold">
+                  {{ stats.activeCases }}
+                </p>
+                <p class="text-sm text-muted">
+                  Active
+                </p>
               </div>
             </div>
           </UCard>
@@ -84,8 +96,12 @@ const statusColors: Record<string, string> = {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-file-text" class="size-8 text-info" />
               <div>
-                <p class="text-2xl font-bold">{{ stats.totalDocs }}</p>
-                <p class="text-sm text-muted">Documents</p>
+                <p class="text-2xl font-bold">
+                  {{ stats.totalDocs }}
+                </p>
+                <p class="text-sm text-muted">
+                  Documents
+                </p>
               </div>
             </div>
           </UCard>
@@ -94,8 +110,12 @@ const statusColors: Record<string, string> = {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-hard-drive" class="size-8 text-warning" />
               <div>
-                <p class="text-2xl font-bold">{{ formatBytes(stats.totalStorage) }}</p>
-                <p class="text-sm text-muted">Storage</p>
+                <p class="text-2xl font-bold">
+                  {{ formatBytes(stats.totalStorage) }}
+                </p>
+                <p class="text-sm text-muted">
+                  Storage
+                </p>
               </div>
             </div>
           </UCard>
@@ -108,8 +128,17 @@ const statusColors: Record<string, string> = {
             <UCard>
               <template #header>
                 <div class="flex items-center justify-between">
-                  <h3 class="font-semibold">Recent Documents</h3>
-                  <UButton variant="ghost" color="neutral" size="sm" to="/documents">View All</UButton>
+                  <h3 class="font-semibold">
+                    Recent Documents
+                  </h3>
+                  <UButton
+                    variant="ghost"
+                    color="neutral"
+                    size="sm"
+                    to="/documents"
+                  >
+                    View All
+                  </UButton>
                 </div>
               </template>
 
@@ -131,7 +160,9 @@ const statusColors: Record<string, string> = {
 
               <div v-else class="text-center py-8">
                 <UIcon name="i-lucide-file-text" class="size-12 text-muted mx-auto mb-3 opacity-50" />
-                <p class="text-sm text-muted">No documents yet</p>
+                <p class="text-sm text-muted">
+                  No documents yet
+                </p>
               </div>
             </UCard>
           </div>
@@ -141,8 +172,17 @@ const statusColors: Record<string, string> = {
             <UCard>
               <template #header>
                 <div class="flex items-center justify-between">
-                  <h3 class="font-semibold">Recent Cases</h3>
-                  <UButton variant="ghost" color="neutral" size="sm" to="/cases">View All</UButton>
+                  <h3 class="font-semibold">
+                    Recent Cases
+                  </h3>
+                  <UButton
+                    variant="ghost"
+                    color="neutral"
+                    size="sm"
+                    to="/cases"
+                  >
+                    View All
+                  </UButton>
                 </div>
               </template>
 
@@ -171,15 +211,21 @@ const statusColors: Record<string, string> = {
 
               <div v-else class="text-center py-8">
                 <UIcon name="i-lucide-folder" class="size-12 text-muted mx-auto mb-3 opacity-50" />
-                <p class="text-sm text-muted mb-3">No cases yet</p>
-                <UButton size="sm" @click="showCreateCaseModal = true">Create Case</UButton>
+                <p class="text-sm text-muted mb-3">
+                  No cases yet
+                </p>
+                <UButton size="sm" @click="showCreateCaseModal = true">
+                  Create Case
+                </UButton>
               </div>
             </UCard>
 
             <!-- Quick Links -->
             <UCard class="mt-4">
               <template #header>
-                <h3 class="font-semibold">Quick Links</h3>
+                <h3 class="font-semibold">
+                  Quick Links
+                </h3>
               </template>
 
               <div class="space-y-2">

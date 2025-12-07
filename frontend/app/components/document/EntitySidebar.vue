@@ -18,9 +18,9 @@ const sortBy = ref<'type' | 'confidence' | 'alphabetical'>('type')
 
 // Group entities by type
 const entityGroups = computed(() => {
-  const filtered = props.entities.filter(entity => {
-    const matchesSearch = !searchQuery.value ||
-      entity.text.toLowerCase().includes(searchQuery.value.toLowerCase())
+  const filtered = props.entities.filter((entity) => {
+    const matchesSearch = !searchQuery.value
+      || entity.text.toLowerCase().includes(searchQuery.value.toLowerCase())
     const matchesType = !selectedType.value || entity.type === selectedType.value
     return matchesSearch && matchesType
   })
@@ -38,7 +38,7 @@ const entityGroups = computed(() => {
 
   // Group by type
   const groups: Record<string, Entity[]> = {}
-  sorted.forEach(entity => {
+  sorted.forEach((entity) => {
     if (!groups[entity.type]) {
       groups[entity.type] = []
     }
@@ -183,7 +183,9 @@ function navigateToBox(boxId: string) {
 
             <!-- Bounding Box Links -->
             <div v-if="selectedEntity?.id === entity.id && entity.boundingBoxes.length > 0" class="mt-2 pt-2 border-t border-default">
-              <p class="text-xs text-muted mb-2">Mentions in document:</p>
+              <p class="text-xs text-muted mb-2">
+                Mentions in document:
+              </p>
               <div class="space-y-1">
                 <button
                   v-for="(box, idx) in entity.boundingBoxes"
@@ -213,18 +215,28 @@ function navigateToBox(boxId: string) {
     <div class="p-4 border-t border-default bg-muted/10">
       <div class="grid grid-cols-3 gap-4 text-center">
         <div>
-          <p class="text-2xl font-bold text-highlighted">{{ entities.length }}</p>
-          <p class="text-xs text-muted">Total Entities</p>
+          <p class="text-2xl font-bold text-highlighted">
+            {{ entities.length }}
+          </p>
+          <p class="text-xs text-muted">
+            Total Entities
+          </p>
         </div>
         <div>
-          <p class="text-2xl font-bold text-highlighted">{{ entityTypes.length }}</p>
-          <p class="text-xs text-muted">Entity Types</p>
+          <p class="text-2xl font-bold text-highlighted">
+            {{ entityTypes.length }}
+          </p>
+          <p class="text-xs text-muted">
+            Entity Types
+          </p>
         </div>
         <div>
           <p class="text-2xl font-bold text-highlighted">
             {{ Math.round(entities.reduce((sum, e) => sum + e.confidence, 0) / entities.length * 100) || 0 }}%
           </p>
-          <p class="text-xs text-muted">Avg Confidence</p>
+          <p class="text-xs text-muted">
+            Avg Confidence
+          </p>
         </div>
       </div>
     </div>

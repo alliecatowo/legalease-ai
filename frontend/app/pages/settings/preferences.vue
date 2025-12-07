@@ -282,7 +282,7 @@ function resetToDefaults() {
             max="8192"
             step="256"
             class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-          />
+          >
           <div class="flex justify-between text-xs text-muted">
             <span>512</span>
             <span class="font-medium text-highlighted">{{ preferences.maxTokens }}</span>
@@ -306,7 +306,7 @@ function resetToDefaults() {
             max="1"
             step="0.1"
             class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-          />
+          >
           <div class="flex justify-between text-xs text-muted">
             <span>0.0 (Focused)</span>
             <span class="font-medium text-highlighted">{{ preferences.temperature.toFixed(1) }}</span>

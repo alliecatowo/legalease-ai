@@ -208,7 +208,9 @@ defineShortcuts({
 
             <!-- Quick Examples -->
             <div class="pt-4">
-              <p class="text-sm text-muted mb-3">Try searching for:</p>
+              <p class="text-sm text-muted mb-3">
+                Try searching for:
+              </p>
               <div class="flex flex-wrap justify-center gap-2">
                 <UButton
                   v-for="example in ['indemnification', 'force majeure', 'non-compete', 'intellectual property']"
@@ -226,18 +228,30 @@ defineShortcuts({
             <div class="grid grid-cols-3 gap-4 pt-8 max-w-lg mx-auto">
               <UCard :ui="{ body: 'p-4' }">
                 <UIcon name="i-lucide-zap" class="size-6 text-primary mb-2" />
-                <p class="text-sm font-medium">Semantic</p>
-                <p class="text-xs text-muted">Find by meaning</p>
+                <p class="text-sm font-medium">
+                  Semantic
+                </p>
+                <p class="text-xs text-muted">
+                  Find by meaning
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
                 <UIcon name="i-lucide-layers" class="size-6 text-primary mb-2" />
-                <p class="text-sm font-medium">Vector</p>
-                <p class="text-xs text-muted">AI embeddings</p>
+                <p class="text-sm font-medium">
+                  Vector
+                </p>
+                <p class="text-xs text-muted">
+                  AI embeddings
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
                 <UIcon name="i-lucide-filter" class="size-6 text-primary mb-2" />
-                <p class="text-sm font-medium">Filtered</p>
-                <p class="text-xs text-muted">By case & type</p>
+                <p class="text-sm font-medium">
+                  Filtered
+                </p>
+                <p class="text-xs text-muted">
+                  By case & type
+                </p>
               </UCard>
             </div>
           </div>
@@ -284,7 +298,12 @@ defineShortcuts({
           </div>
 
           <!-- Error -->
-          <UAlert v-if="error" color="error" variant="subtle" icon="i-lucide-alert-circle">
+          <UAlert
+            v-if="error"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-alert-circle"
+          >
             <template #description>
               {{ error }}
               <span class="block mt-2 text-sm">Make sure Qdrant is configured and documents are indexed.</span>
@@ -295,13 +314,17 @@ defineShortcuts({
           <div v-if="isSearching" class="flex items-center justify-center py-12">
             <div class="text-center space-y-4">
               <UIcon name="i-lucide-loader-circle" class="size-10 text-primary animate-spin mx-auto" />
-              <p class="text-muted">Searching...</p>
+              <p class="text-muted">
+                Searching...
+              </p>
             </div>
           </div>
 
           <!-- Results -->
           <div v-else-if="results.length > 0" class="space-y-3">
-            <p class="text-sm text-muted">{{ totalFound }} results found</p>
+            <p class="text-sm text-muted">
+              {{ totalFound }} results found
+            </p>
 
             <UCard
               v-for="result in results"
@@ -326,7 +349,9 @@ defineShortcuts({
                   />
                 </div>
 
-                <p class="text-sm text-muted line-clamp-3">{{ result.text }}</p>
+                <p class="text-sm text-muted line-clamp-3">
+                  {{ result.text }}
+                </p>
 
                 <div class="flex items-center gap-3 text-xs text-muted">
                   <span v-if="result.metadata?.pageNumber" class="flex items-center gap-1">
@@ -351,8 +376,12 @@ defineShortcuts({
           <!-- Empty State -->
           <div v-else-if="hasSearched" class="text-center py-16">
             <UIcon name="i-lucide-search-x" class="size-16 text-muted mx-auto mb-4 opacity-30" />
-            <h3 class="text-xl font-semibold mb-2">No results found</h3>
-            <p class="text-muted mb-4">Try adjusting your search terms or filters</p>
+            <h3 class="text-xl font-semibold mb-2">
+              No results found
+            </h3>
+            <p class="text-muted mb-4">
+              Try adjusting your search terms or filters
+            </p>
             <UButton label="Clear Search" variant="outline" @click="clearSearch" />
           </div>
         </div>

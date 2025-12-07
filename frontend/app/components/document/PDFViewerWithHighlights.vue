@@ -55,7 +55,7 @@ watch(() => props.zoom, (newZoom) => {
 
 // Page dimensions tracking
 const pageElements = ref<HTMLElement[]>([])
-const pageDimensions = ref<Map<number, { width: number; height: number; offsetTop: number; pdfWidth?: number; pdfHeight?: number }>>(new Map())
+const pageDimensions = ref<Map<number, { width: number, height: number, offsetTop: number, pdfWidth?: number, pdfHeight?: number }>>(new Map())
 
 // Computed values
 const totalPages = computed(() => {
@@ -172,9 +172,9 @@ function transformBBox(box: BoundingBox) {
 // Get color for bounding box type
 function getBoxColor(type?: string): string {
   const colors: Record<string, string> = {
-    BM25_MATCH: '#3B82F6',        // Blue for BM25 keyword matches
-    SEMANTIC_MATCH: '#FBBF24',    // Yellow for semantic matches
-    TEXT_MATCH: '#FBBF24',        // Yellow for exact text matches
+    BM25_MATCH: '#3B82F6', // Blue for BM25 keyword matches
+    SEMANTIC_MATCH: '#FBBF24', // Yellow for semantic matches
+    TEXT_MATCH: '#FBBF24', // Yellow for exact text matches
     PERSON: '#3B82F6',
     ORGANIZATION: '#8B5CF6',
     LOCATION: '#10B981',
@@ -337,12 +337,16 @@ defineExpose({
       >
         <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
           <UIcon name="i-lucide-loader" class="size-12 text-primary animate-spin mb-4" />
-          <p class="text-muted">Loading document...</p>
+          <p class="text-muted">
+            Loading document...
+          </p>
         </div>
 
         <div v-else-if="error" class="flex flex-col items-center justify-center py-20">
           <UIcon name="i-lucide-file-x" class="size-12 text-error mb-4" />
-          <p class="text-error font-medium mb-2">{{ error }}</p>
+          <p class="text-error font-medium mb-2">
+            {{ error }}
+          </p>
         </div>
 
         <div v-else class="relative flex items-center justify-center min-h-full p-4">
@@ -363,47 +367,47 @@ defineExpose({
                 :width="currentPageData.width"
                 :height="currentPageData.height"
               >
-              <g
-                v-for="box in currentPageBoxes"
-                :key="box.original.id || `${box.original.x}-${box.original.y}`"
-                class="pointer-events-auto cursor-pointer"
-                @click="handleBoxClick(box.original)"
-                @mouseenter="handleBoxHover(box.original)"
-                @mouseleave="handleBoxHover(null)"
-              >
-                <!-- Background Rectangle -->
-                <rect
-                  :x="box.coords.x"
-                  :y="box.coords.y"
-                  :width="box.coords.width"
-                  :height="box.coords.height"
-                  :fill="getBoxColor(box.original.entityType || box.original.type)"
-                  fill-opacity="0.15"
-                />
-                <!-- Border Rectangle -->
-                <rect
-                  :x="box.coords.x"
-                  :y="box.coords.y"
-                  :width="box.coords.width"
-                  :height="box.coords.height"
-                  :stroke="getBoxColor(box.original.entityType || box.original.type)"
-                  :stroke-width="box.original.id === selectedBoxId ? 3 : 2"
-                  :stroke-dasharray="box.original.id === selectedBoxId ? '0' : '5,5'"
-                  fill="none"
-                />
-                <!-- Label for selected box -->
-                <text
-                  v-if="box.original.id === selectedBoxId && box.original.entityType"
-                  :x="box.coords.x"
-                  :y="box.coords.y - 5"
-                  :fill="getBoxColor(box.original.entityType)"
-                  font-size="12"
-                  font-weight="bold"
+                <g
+                  v-for="box in currentPageBoxes"
+                  :key="box.original.id || `${box.original.x}-${box.original.y}`"
+                  class="pointer-events-auto cursor-pointer"
+                  @click="handleBoxClick(box.original)"
+                  @mouseenter="handleBoxHover(box.original)"
+                  @mouseleave="handleBoxHover(null)"
                 >
-                  {{ box.original.entityType }}
-                </text>
-              </g>
-            </svg>
+                  <!-- Background Rectangle -->
+                  <rect
+                    :x="box.coords.x"
+                    :y="box.coords.y"
+                    :width="box.coords.width"
+                    :height="box.coords.height"
+                    :fill="getBoxColor(box.original.entityType || box.original.type)"
+                    fill-opacity="0.15"
+                  />
+                  <!-- Border Rectangle -->
+                  <rect
+                    :x="box.coords.x"
+                    :y="box.coords.y"
+                    :width="box.coords.width"
+                    :height="box.coords.height"
+                    :stroke="getBoxColor(box.original.entityType || box.original.type)"
+                    :stroke-width="box.original.id === selectedBoxId ? 3 : 2"
+                    :stroke-dasharray="box.original.id === selectedBoxId ? '0' : '5,5'"
+                    fill="none"
+                  />
+                  <!-- Label for selected box -->
+                  <text
+                    v-if="box.original.id === selectedBoxId && box.original.entityType"
+                    :x="box.coords.x"
+                    :y="box.coords.y - 5"
+                    :fill="getBoxColor(box.original.entityType)"
+                    font-size="12"
+                    font-weight="bold"
+                  >
+                    {{ box.original.entityType }}
+                  </text>
+                </g>
+              </svg>
             </div>
           </div>
         </div>

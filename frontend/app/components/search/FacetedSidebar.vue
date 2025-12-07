@@ -18,7 +18,7 @@ const emit = defineEmits<{
 
 const filters = computed({
   get: () => props.modelValue || {},
-  set: (value) => emit('update:modelValue', value)
+  set: value => emit('update:modelValue', value)
 })
 
 // Document Types

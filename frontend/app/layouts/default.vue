@@ -177,7 +177,9 @@ onMounted(async () => {
             <div class="flex items-start gap-4">
               <UIcon name="i-lucide-alert-triangle" class="size-12 text-red-500 flex-shrink-0" />
               <div class="flex-1">
-                <h2 class="text-2xl font-bold text-red-600 dark:text-red-400 mb-2">Something went wrong</h2>
+                <h2 class="text-2xl font-bold text-red-600 dark:text-red-400 mb-2">
+                  Something went wrong
+                </h2>
                 <p class="text-gray-600 dark:text-gray-400 mb-4">
                   An error occurred while rendering this page. You can navigate to another page using the sidebar.
                 </p>
@@ -187,21 +189,27 @@ onMounted(async () => {
             <UCard class="bg-gray-50 dark:bg-gray-900">
               <div class="space-y-2">
                 <div>
-                  <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Error Message:</p>
+                  <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Error Message:
+                  </p>
                   <code class="text-sm text-red-600 dark:text-red-400 block bg-white dark:bg-gray-800 p-2 rounded">
                     {{ error.message }}
                   </code>
                 </div>
 
                 <div v-if="errorInfo">
-                  <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Component:</p>
+                  <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Component:
+                  </p>
                   <code class="text-sm text-gray-600 dark:text-gray-400 block bg-white dark:bg-gray-800 p-2 rounded">
                     {{ errorInfo }}
                   </code>
                 </div>
 
                 <div v-if="error.stack">
-                  <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Stack Trace:</p>
+                  <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Stack Trace:
+                  </p>
                   <pre class="text-xs text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 p-2 rounded overflow-auto max-h-40">{{ error.stack }}</pre>
                 </div>
               </div>

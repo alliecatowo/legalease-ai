@@ -84,8 +84,12 @@ function highlightText(text: string): string {
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="p-4 border-b border-default bg-default">
-      <h3 class="font-semibold text-highlighted">Transcript</h3>
-      <p class="text-sm text-muted">{{ segments.length }} segments</p>
+      <h3 class="font-semibold text-highlighted">
+        Transcript
+      </h3>
+      <p class="text-sm text-muted">
+        {{ segments.length }} segments
+      </p>
     </div>
 
     <!-- Segments -->
@@ -118,7 +122,13 @@ function highlightText(text: string): string {
             >
               {{ getSpeaker(segment.speaker)!.name }}
             </div>
-            <UBadge v-else label="Unknown Speaker" color="neutral" size="xs" variant="soft" />
+            <UBadge
+              v-else
+              label="Unknown Speaker"
+              color="neutral"
+              size="xs"
+              variant="soft"
+            />
 
             <!-- Time -->
             <span class="text-xs text-muted">
@@ -126,7 +136,12 @@ function highlightText(text: string): string {
             </span>
 
             <!-- Key Moment Badge -->
-            <UBadge v-if="segment.isKeyMoment" label="Key Moment" color="warning" size="xs" />
+            <UBadge
+              v-if="segment.isKeyMoment"
+              label="Key Moment"
+              color="warning"
+              size="xs"
+            />
 
             <!-- Confidence -->
             <UTooltip v-if="segment.confidence" :text="`Confidence: ${Math.round(segment.confidence * 100)}%`">
@@ -238,7 +253,9 @@ function highlightText(text: string): string {
       <!-- Empty State -->
       <div v-if="segments.length === 0" class="text-center py-12">
         <UIcon name="i-lucide-file-text" class="size-12 text-muted mx-auto mb-4 opacity-30" />
-        <p class="text-muted">No transcript segments found</p>
+        <p class="text-muted">
+          No transcript segments found
+        </p>
       </div>
     </div>
   </div>

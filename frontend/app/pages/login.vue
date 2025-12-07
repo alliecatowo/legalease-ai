@@ -70,12 +70,21 @@ const onGoogleSignIn = async () => {
     <UCard class="w-full max-w-md">
       <template #header>
         <div class="text-center">
-          <h1 class="text-2xl font-bold">Welcome back</h1>
-          <p class="text-muted mt-1">Sign in to your LegalEase account</p>
+          <h1 class="text-2xl font-bold">
+            Welcome back
+          </h1>
+          <p class="text-muted mt-1">
+            Sign in to your LegalEase account
+          </p>
         </div>
       </template>
 
-      <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
+      <UForm
+        :schema="schema"
+        :state="state"
+        class="space-y-4"
+        @submit="onSubmit"
+      >
         <UFormField label="Email" name="email">
           <UInput
             v-model="state.email"
@@ -141,7 +150,12 @@ const onGoogleSignIn = async () => {
       <template #footer>
         <p class="text-center text-muted text-sm">
           Don't have an account?
-          <UButton variant="link" color="primary" to="/signup" :padded="false">
+          <UButton
+            variant="link"
+            color="primary"
+            to="/signup"
+            :padded="false"
+          >
             Sign up
           </UButton>
         </p>

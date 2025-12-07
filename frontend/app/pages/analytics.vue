@@ -46,175 +46,219 @@ const topSearchTerms = [
     <div class="overflow-y-auto h-[calc(100vh-64px)]">
       <div class="max-w-7xl mx-auto p-6 space-y-6">
         <!-- Overview Stats -->
-      <UPageGrid>
-        <UPageCard
-          title="Total Searches"
-          :description="(searchStats?.total_searches || 247).toString()"
-        >
-          <template #icon>
-            <UIcon name="i-lucide-search" class="size-5" />
-          </template>
-          <template #footer>
-            <div class="text-xs text-green-500">
-              +23% from last period
-            </div>
-          </template>
-        </UPageCard>
+        <UPageGrid>
+          <UPageCard
+            title="Total Searches"
+            :description="(searchStats?.total_searches || 247).toString()"
+          >
+            <template #icon>
+              <UIcon name="i-lucide-search" class="size-5" />
+            </template>
+            <template #footer>
+              <div class="text-xs text-green-500">
+                +23% from last period
+              </div>
+            </template>
+          </UPageCard>
 
-        <UPageCard
-          title="Avg. Response Time"
-          description="1.2s"
-        >
-          <template #icon>
-            <UIcon name="i-lucide-zap" class="size-5" />
-          </template>
-          <template #footer>
-            <div class="text-xs text-green-500">
-              -15% faster
-            </div>
-          </template>
-        </UPageCard>
+          <UPageCard
+            title="Avg. Response Time"
+            description="1.2s"
+          >
+            <template #icon>
+              <UIcon name="i-lucide-zap" class="size-5" />
+            </template>
+            <template #footer>
+              <div class="text-xs text-green-500">
+                -15% faster
+              </div>
+            </template>
+          </UPageCard>
 
-        <UPageCard
-          title="Documents Processed"
-          :description="(stats?.total_documents || 360).toString()"
-        >
-          <template #icon>
-            <UIcon name="i-lucide-file-check" class="size-5" />
-          </template>
-          <template #footer>
-            <div class="text-xs text-muted">
-              {{ stats?.documents_this_month || 18 }} this month
-            </div>
-          </template>
-        </UPageCard>
+          <UPageCard
+            title="Documents Processed"
+            :description="(stats?.total_documents || 360).toString()"
+          >
+            <template #icon>
+              <UIcon name="i-lucide-file-check" class="size-5" />
+            </template>
+            <template #footer>
+              <div class="text-xs text-muted">
+                {{ stats?.documents_this_month || 18 }} this month
+              </div>
+            </template>
+          </UPageCard>
 
-        <UPageCard
-          title="Processing Queue"
-          :description="((stats?.queue_documents || 0) + (stats?.queue_transcriptions || 0) + (stats?.queue_ai || 0)).toString()"
-        >
-          <template #icon>
-            <UIcon name="i-lucide-loader" class="size-5" />
-          </template>
-          <template #footer>
-            <div class="text-xs text-muted">
-              Across all queues
-            </div>
-          </template>
-        </UPageCard>
-      </UPageGrid>
+          <UPageCard
+            title="Processing Queue"
+            :description="((stats?.queue_documents || 0) + (stats?.queue_transcriptions || 0) + (stats?.queue_ai || 0)).toString()"
+          >
+            <template #icon>
+              <UIcon name="i-lucide-loader" class="size-5" />
+            </template>
+            <template #footer>
+              <div class="text-xs text-muted">
+                Across all queues
+              </div>
+            </template>
+          </UPageCard>
+        </UPageGrid>
 
-      <!-- Search Volume Chart -->
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold">Search Volume</h3>
-        </template>
-
-        <div class="h-64 flex items-center justify-center bg-muted/10 rounded-lg">
-          <div class="text-center">
-            <UIcon name="i-lucide-bar-chart-3" class="size-12 text-muted mx-auto mb-2" />
-            <p class="text-sm text-muted">Chart visualization coming soon</p>
-          </div>
-        </div>
-      </UCard>
-
-      <!-- Document Types & Top Searches -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Document Types -->
+        <!-- Search Volume Chart -->
         <UCard>
           <template #header>
-            <h3 class="font-semibold">Documents by Type</h3>
+            <h3 class="font-semibold">
+              Search Volume
+            </h3>
           </template>
 
-          <div class="space-y-4">
-            <div v-for="item in documentTypeData" :key="item.type" class="space-y-2">
-              <div class="flex items-center justify-between text-sm">
-                <span>{{ item.type }}</span>
-                <span class="font-medium">{{ item.count }}</span>
-              </div>
-              <UProgress :model-value="item.percentage" />
+          <div class="h-64 flex items-center justify-center bg-muted/10 rounded-lg">
+            <div class="text-center">
+              <UIcon name="i-lucide-bar-chart-3" class="size-12 text-muted mx-auto mb-2" />
+              <p class="text-sm text-muted">
+                Chart visualization coming soon
+              </p>
             </div>
           </div>
         </UCard>
 
-        <!-- Top Search Terms -->
-        <UCard>
-          <template #header>
-            <h3 class="font-semibold">Top Search Terms</h3>
-          </template>
+        <!-- Document Types & Top Searches -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Document Types -->
+          <UCard>
+            <template #header>
+              <h3 class="font-semibold">
+                Documents by Type
+              </h3>
+            </template>
 
-          <div class="space-y-3">
-            <div
-              v-for="(item, index) in topSearchTerms"
-              :key="item.term"
-              class="flex items-center justify-between p-3 rounded-lg hover:bg-elevated/50 transition-colors"
-            >
-              <div class="flex items-center gap-3">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-                  {{ index + 1 }}
+            <div class="space-y-4">
+              <div v-for="item in documentTypeData" :key="item.type" class="space-y-2">
+                <div class="flex items-center justify-between text-sm">
+                  <span>{{ item.type }}</span>
+                  <span class="font-medium">{{ item.count }}</span>
                 </div>
-                <span class="font-medium">{{ item.term }}</span>
+                <UProgress :model-value="item.percentage" />
               </div>
-              <UBadge variant="subtle" color="neutral">
-                {{ item.count }} searches
-              </UBadge>
+            </div>
+          </UCard>
+
+          <!-- Top Search Terms -->
+          <UCard>
+            <template #header>
+              <h3 class="font-semibold">
+                Top Search Terms
+              </h3>
+            </template>
+
+            <div class="space-y-3">
+              <div
+                v-for="(item, index) in topSearchTerms"
+                :key="item.term"
+                class="flex items-center justify-between p-3 rounded-lg hover:bg-elevated/50 transition-colors"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
+                    {{ index + 1 }}
+                  </div>
+                  <span class="font-medium">{{ item.term }}</span>
+                </div>
+                <UBadge variant="subtle" color="neutral">
+                  {{ item.count }} searches
+                </UBadge>
+              </div>
+            </div>
+          </UCard>
+        </div>
+
+        <!-- Entity Statistics -->
+        <UCard>
+          <template #header>
+            <h3 class="font-semibold">
+              Entity Extraction Stats
+            </h3>
+          </template>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="text-center p-4 rounded-lg bg-blue-500/10">
+              <div class="text-2xl font-bold text-blue-500">
+                {{ stats?.total_entities?.toLocaleString() || '1,247' }}
+              </div>
+              <div class="text-sm text-muted mt-1">
+                Total Entities
+              </div>
+            </div>
+            <div class="text-center p-4 rounded-lg bg-purple-500/10">
+              <div class="text-2xl font-bold text-purple-500">
+                456
+              </div>
+              <div class="text-sm text-muted mt-1">
+                Organizations
+              </div>
+            </div>
+            <div class="text-center p-4 rounded-lg bg-amber-500/10">
+              <div class="text-2xl font-bold text-amber-500">
+                {{ stats?.graph_nodes || 234 }}
+              </div>
+              <div class="text-sm text-muted mt-1">
+                Graph Nodes
+              </div>
+            </div>
+            <div class="text-center p-4 rounded-lg bg-green-500/10">
+              <div class="text-2xl font-bold text-green-500">
+                89
+              </div>
+              <div class="text-sm text-muted mt-1">
+                Citations
+              </div>
             </div>
           </div>
         </UCard>
-      </div>
 
-      <!-- Entity Statistics -->
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold">Entity Extraction Stats</h3>
-        </template>
+        <!-- System Performance -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <UCard>
+            <template #header>
+              <h4 class="text-sm font-semibold">
+                Indexing Performance
+              </h4>
+            </template>
+            <div class="text-2xl font-bold">
+              {{ stats?.indexed_chunks?.toLocaleString() || '12,453' }}
+            </div>
+            <p class="text-sm text-muted mt-1">
+              Indexed chunks
+            </p>
+          </UCard>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="text-center p-4 rounded-lg bg-blue-500/10">
-            <div class="text-2xl font-bold text-blue-500">{{ stats?.total_entities?.toLocaleString() || '1,247' }}</div>
-            <div class="text-sm text-muted mt-1">Total Entities</div>
-          </div>
-          <div class="text-center p-4 rounded-lg bg-purple-500/10">
-            <div class="text-2xl font-bold text-purple-500">456</div>
-            <div class="text-sm text-muted mt-1">Organizations</div>
-          </div>
-          <div class="text-center p-4 rounded-lg bg-amber-500/10">
-            <div class="text-2xl font-bold text-amber-500">{{ stats?.graph_nodes || 234 }}</div>
-            <div class="text-sm text-muted mt-1">Graph Nodes</div>
-          </div>
-          <div class="text-center p-4 rounded-lg bg-green-500/10">
-            <div class="text-2xl font-bold text-green-500">89</div>
-            <div class="text-sm text-muted mt-1">Citations</div>
-          </div>
+          <UCard>
+            <template #header>
+              <h4 class="text-sm font-semibold">
+                Storage Usage
+              </h4>
+            </template>
+            <div class="text-2xl font-bold">
+              3.2 GB
+            </div>
+            <p class="text-sm text-muted mt-1">
+              Of 100 GB available
+            </p>
+          </UCard>
+
+          <UCard>
+            <template #header>
+              <h4 class="text-sm font-semibold">
+                API Performance
+              </h4>
+            </template>
+            <div class="text-2xl font-bold">
+              99.8%
+            </div>
+            <p class="text-sm text-muted mt-1">
+              Uptime
+            </p>
+          </UCard>
         </div>
-      </UCard>
-
-      <!-- System Performance -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <UCard>
-          <template #header>
-            <h4 class="text-sm font-semibold">Indexing Performance</h4>
-          </template>
-          <div class="text-2xl font-bold">{{ stats?.indexed_chunks?.toLocaleString() || '12,453' }}</div>
-          <p class="text-sm text-muted mt-1">Indexed chunks</p>
-        </UCard>
-
-        <UCard>
-          <template #header>
-            <h4 class="text-sm font-semibold">Storage Usage</h4>
-          </template>
-          <div class="text-2xl font-bold">3.2 GB</div>
-          <p class="text-sm text-muted mt-1">Of 100 GB available</p>
-        </UCard>
-
-        <UCard>
-          <template #header>
-            <h4 class="text-sm font-semibold">API Performance</h4>
-          </template>
-          <div class="text-2xl font-bold">99.8%</div>
-          <p class="text-sm text-muted mt-1">Uptime</p>
-        </UCard>
-      </div>
       </div>
     </div>
   </UDashboardPanel>

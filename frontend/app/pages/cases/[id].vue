@@ -486,8 +486,12 @@ function getStatusColor(status: string): string {
         <!-- Error State -->
         <div v-else-if="error || !case_" class="text-center py-20">
           <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto mb-4 opacity-50" />
-          <h3 class="text-xl font-semibold mb-2">Error Loading Case</h3>
-          <p class="text-muted mb-6">{{ error || 'Case not found' }}</p>
+          <h3 class="text-xl font-semibold mb-2">
+            Error Loading Case
+          </h3>
+          <p class="text-muted mb-6">
+            {{ error || 'Case not found' }}
+          </p>
           <UButton
             label="Back to Cases"
             icon="i-lucide-arrow-left"
@@ -507,7 +511,9 @@ function getStatusColor(status: string): string {
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-3 flex-wrap mb-2">
-                    <h1 class="text-3xl font-bold text-highlighted">{{ case_.name }}</h1>
+                    <h1 class="text-3xl font-bold text-highlighted">
+                      {{ case_.name }}
+                    </h1>
                     <UBadge
                       :label="statusLabels[case_.status]"
                       :color="statusColors[case_.status]"
@@ -526,7 +532,9 @@ function getStatusColor(status: string): string {
                       <span>{{ case_.type }}</span>
                     </div>
                   </div>
-                  <p class="text-base text-muted max-w-3xl">{{ case_.description }}</p>
+                  <p class="text-base text-muted max-w-3xl">
+                    {{ case_.description }}
+                  </p>
                 </div>
               </div>
 
@@ -557,22 +565,40 @@ function getStatusColor(status: string): string {
             <UCard :ui="{ body: 'space-y-2' }">
               <div class="flex items-center justify-between">
                 <UIcon name="i-lucide-files" class="size-8 text-primary" />
-                <UBadge :label="String(stats.documents)" size="lg" variant="soft" color="primary" />
+                <UBadge
+                  :label="String(stats.documents)"
+                  size="lg"
+                  variant="soft"
+                  color="primary"
+                />
               </div>
               <div>
-                <p class="text-sm text-muted">Total Documents</p>
-                <p class="text-2xl font-bold">{{ stats.documents }}</p>
+                <p class="text-sm text-muted">
+                  Total Documents
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.documents }}
+                </p>
               </div>
             </UCard>
 
             <UCard :ui="{ body: 'space-y-2' }">
               <div class="flex items-center justify-between">
                 <UIcon name="i-lucide-clock" class="size-8 text-info" />
-                <UBadge :label="`+${stats.recentDocs}`" size="lg" variant="soft" color="info" />
+                <UBadge
+                  :label="`+${stats.recentDocs}`"
+                  size="lg"
+                  variant="soft"
+                  color="info"
+                />
               </div>
               <div>
-                <p class="text-sm text-muted">Added Last 30 Days</p>
-                <p class="text-2xl font-bold">{{ stats.recentDocs }}</p>
+                <p class="text-sm text-muted">
+                  Added Last 30 Days
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.recentDocs }}
+                </p>
               </div>
             </UCard>
 
@@ -581,8 +607,12 @@ function getStatusColor(status: string): string {
                 <UIcon name="i-lucide-hard-drive" class="size-8 text-success" />
               </div>
               <div>
-                <p class="text-sm text-muted">Total Storage</p>
-                <p class="text-2xl font-bold">{{ formatBytes(stats.totalSize) }}</p>
+                <p class="text-sm text-muted">
+                  Total Storage
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ formatBytes(stats.totalSize) }}
+                </p>
               </div>
             </UCard>
 
@@ -591,8 +621,12 @@ function getStatusColor(status: string): string {
                 <UIcon name="i-lucide-calendar" class="size-8 text-warning" />
               </div>
               <div>
-                <p class="text-sm text-muted">Last Activity</p>
-                <p class="text-lg font-bold">{{ getRelativeTime(case_.lastActivity) }}</p>
+                <p class="text-sm text-muted">
+                  Last Activity
+                </p>
+                <p class="text-lg font-bold">
+                  {{ getRelativeTime(case_.lastActivity) }}
+                </p>
               </div>
             </UCard>
           </div>
@@ -625,7 +659,9 @@ function getStatusColor(status: string): string {
                       <UIcon name="i-lucide-user" class="size-4" />
                       <span>Client</span>
                     </div>
-                    <p class="font-medium text-highlighted">{{ case_.client }}</p>
+                    <p class="font-medium text-highlighted">
+                      {{ case_.client }}
+                    </p>
                   </div>
 
                   <div class="space-y-1">
@@ -633,7 +669,9 @@ function getStatusColor(status: string): string {
                       <UIcon name="i-lucide-users" class="size-4" />
                       <span>Opposing Party</span>
                     </div>
-                    <p class="font-medium text-highlighted">{{ case_.opposingParty }}</p>
+                    <p class="font-medium text-highlighted">
+                      {{ case_.opposingParty }}
+                    </p>
                   </div>
 
                   <div class="space-y-1">
@@ -641,7 +679,9 @@ function getStatusColor(status: string): string {
                       <UIcon name="i-lucide-landmark" class="size-4" />
                       <span>Court</span>
                     </div>
-                    <p class="font-medium text-highlighted">{{ case_.court }}</p>
+                    <p class="font-medium text-highlighted">
+                      {{ case_.court }}
+                    </p>
                   </div>
 
                   <div class="space-y-1">
@@ -649,7 +689,9 @@ function getStatusColor(status: string): string {
                       <UIcon name="i-lucide-map-pin" class="size-4" />
                       <span>Jurisdiction</span>
                     </div>
-                    <p class="font-medium text-highlighted">{{ case_.jurisdiction }}</p>
+                    <p class="font-medium text-highlighted">
+                      {{ case_.jurisdiction }}
+                    </p>
                   </div>
 
                   <div class="space-y-1">
@@ -657,7 +699,9 @@ function getStatusColor(status: string): string {
                       <UIcon name="i-lucide-calendar-plus" class="size-4" />
                       <span>Opened Date</span>
                     </div>
-                    <p class="font-medium text-highlighted">{{ formatDate(case_.openedDate) }}</p>
+                    <p class="font-medium text-highlighted">
+                      {{ formatDate(case_.openedDate) }}
+                    </p>
                   </div>
 
                   <div class="space-y-1">
@@ -665,7 +709,9 @@ function getStatusColor(status: string): string {
                       <UIcon name="i-lucide-activity" class="size-4" />
                       <span>Last Updated</span>
                     </div>
-                    <p class="font-medium text-highlighted">{{ formatDate(case_.lastActivity) }}</p>
+                    <p class="font-medium text-highlighted">
+                      {{ formatDate(case_.lastActivity) }}
+                    </p>
                   </div>
                 </div>
 
@@ -674,7 +720,9 @@ function getStatusColor(status: string): string {
                     <UIcon name="i-lucide-sticky-note" class="size-4" />
                     <span>Notes</span>
                   </div>
-                  <p class="text-muted whitespace-pre-wrap">{{ case_.notes }}</p>
+                  <p class="text-muted whitespace-pre-wrap">
+                    {{ case_.notes }}
+                  </p>
                 </div>
               </UCard>
 
@@ -715,7 +763,9 @@ function getStatusColor(status: string): string {
                     <div class="flex-1 min-w-0">
                       <div class="flex items-start justify-between gap-2">
                         <div class="flex-1 min-w-0">
-                          <h3 class="font-medium text-highlighted truncate">{{ doc.title }}</h3>
+                          <h3 class="font-medium text-highlighted truncate">
+                            {{ doc.title }}
+                          </h3>
                           <div class="flex items-center gap-3 mt-1 text-sm text-muted flex-wrap">
                             <UBadge
                               :label="documentTypeLabels[doc.type] || 'Document'"
@@ -783,8 +833,12 @@ function getStatusColor(status: string): string {
                 <!-- Empty State -->
                 <div v-else class="text-center py-12">
                   <UIcon name="i-lucide-folder-open" class="size-12 text-muted mx-auto mb-4 opacity-30" />
-                  <h3 class="text-lg font-semibold mb-2">No documents yet</h3>
-                  <p class="text-sm text-muted mb-4">Upload documents to get started</p>
+                  <h3 class="text-lg font-semibold mb-2">
+                    No documents yet
+                  </h3>
+                  <p class="text-sm text-muted mb-4">
+                    Upload documents to get started
+                  </p>
                   <UButton
                     label="Add Document"
                     icon="i-lucide-plus"
@@ -828,7 +882,9 @@ function getStatusColor(status: string): string {
                     <div class="flex-1 min-w-0">
                       <div class="flex items-start justify-between gap-2">
                         <div class="flex-1 min-w-0">
-                          <h3 class="font-medium text-highlighted truncate">{{ trans.filename }}</h3>
+                          <h3 class="font-medium text-highlighted truncate">
+                            {{ trans.filename }}
+                          </h3>
                           <div class="flex items-center gap-3 mt-1 text-sm text-muted flex-wrap">
                             <span>{{ formatBytes(trans.size) }}</span>
                             <span>•</span>
@@ -852,8 +908,12 @@ function getStatusColor(status: string): string {
 
                 <div v-else class="text-center py-12">
                   <UIcon name="i-lucide-mic" class="size-12 text-muted mx-auto mb-4 opacity-30" />
-                  <h3 class="text-lg font-semibold mb-2">No transcriptions yet</h3>
-                  <p class="text-sm text-muted mb-4">Upload audio or video files to transcribe</p>
+                  <h3 class="text-lg font-semibold mb-2">
+                    No transcriptions yet
+                  </h3>
+                  <p class="text-sm text-muted mb-4">
+                    Upload audio or video files to transcribe
+                  </p>
                   <UButton
                     label="Upload Audio"
                     icon="i-lucide-plus"
@@ -885,7 +945,9 @@ function getStatusColor(status: string): string {
 
                 <div v-else class="text-center py-8">
                   <UIcon name="i-lucide-activity" class="size-10 text-muted mx-auto mb-3 opacity-30" />
-                  <p class="text-sm text-muted">No recent activity</p>
+                  <p class="text-sm text-muted">
+                    No recent activity
+                  </p>
                 </div>
               </UCard>
 
@@ -959,12 +1021,12 @@ function getStatusColor(status: string): string {
   </UDashboardPanel>
 
   <!-- Add Document Modal -->
-    <ClientOnly>
-      <UModal
-        v-model:open="showAddDocumentModal"
-        title="Add Documents to Case"
-        :ui="{ content: 'max-w-2xl' }"
-      >
+  <ClientOnly>
+    <UModal
+      v-model:open="showAddDocumentModal"
+      title="Add Documents to Case"
+      :ui="{ content: 'max-w-2xl' }"
+    >
       <template #body>
         <div class="space-y-4">
           <!-- File Upload Component -->
@@ -1009,18 +1071,18 @@ function getStatusColor(status: string): string {
     </UModal>
   </ClientOnly>
 
-    <!-- Upload Transcription Modal -->
-    <ClientOnly>
-      <UploadTranscriptionModal
-        v-model:open="showUploadTranscriptionModal"
-        :case-id="caseId"
-        @uploaded="refreshDocuments"
-      />
-    </ClientOnly>
+  <!-- Upload Transcription Modal -->
+  <ClientOnly>
+    <UploadTranscriptionModal
+      v-model:open="showUploadTranscriptionModal"
+      :case-id="caseId"
+      @uploaded="refreshDocuments"
+    />
+  </ClientOnly>
 
-    <!-- Archive Confirmation Modal -->
-    <ClientOnly>
-      <UModal
+  <!-- Archive Confirmation Modal -->
+  <ClientOnly>
+    <UModal
       v-model:open="showArchiveConfirm"
       title="Archive Case"
       icon="i-lucide-archive"

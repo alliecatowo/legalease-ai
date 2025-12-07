@@ -9,8 +9,8 @@ import { getFunctions, type Functions } from 'firebase/functions'
  * Each transcription provider declares whether it needs production GCS or can use emulator
  */
 const PROVIDER_REQUIRES_PRODUCTION_STORAGE: Record<string, boolean> = {
-  chirp: true,   // Speech API requires real GCS URIs
-  gemini: false  // Gemini can download from emulator, no GCS dependency
+  chirp: true, // Speech API requires real GCS URIs
+  gemini: false // Gemini can download from emulator, no GCS dependency
 }
 
 export default defineNuxtPlugin(async () => {

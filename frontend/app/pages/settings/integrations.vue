@@ -233,7 +233,9 @@ function copyToClipboard(text: string) {
             <div class="flex items-start justify-between gap-4">
               <div class="flex-1 space-y-2">
                 <div class="flex items-center gap-2">
-                  <h4 class="font-semibold text-highlighted">{{ key.name }}</h4>
+                  <h4 class="font-semibold text-highlighted">
+                    {{ key.name }}
+                  </h4>
                   <UBadge
                     v-for="perm in key.permissions"
                     :key="perm"
@@ -289,14 +291,18 @@ function copyToClipboard(text: string) {
               </div>
               <div class="flex-1 space-y-2">
                 <div class="flex items-center justify-between">
-                  <h4 class="font-semibold text-highlighted">{{ integration.name }}</h4>
+                  <h4 class="font-semibold text-highlighted">
+                    {{ integration.name }}
+                  </h4>
                   <UToggle
                     :model-value="integration.enabled"
                     :disabled="!integration.configured"
                     @update:model-value="toggleIntegration(integration.id)"
                   />
                 </div>
-                <p class="text-sm text-muted">{{ integration.description }}</p>
+                <p class="text-sm text-muted">
+                  {{ integration.description }}
+                </p>
                 <div class="flex items-center gap-2">
                   <UButton
                     :label="integration.configured ? 'Reconfigure' : 'Configure'"

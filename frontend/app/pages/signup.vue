@@ -37,7 +37,7 @@ const schema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   confirmPassword: z.string()
-}).refine((data) => data.password === data.confirmPassword, {
+}).refine(data => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
   path: ['confirmPassword']
 })
@@ -75,12 +75,21 @@ const onGoogleSignUp = async () => {
     <UCard class="w-full max-w-md">
       <template #header>
         <div class="text-center">
-          <h1 class="text-2xl font-bold">Create an account</h1>
-          <p class="text-muted mt-1">Start using LegalEase today</p>
+          <h1 class="text-2xl font-bold">
+            Create an account
+          </h1>
+          <p class="text-muted mt-1">
+            Start using LegalEase today
+          </p>
         </div>
       </template>
 
-      <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
+      <UForm
+        :schema="schema"
+        :state="state"
+        class="space-y-4"
+        @submit="onSubmit"
+      >
         <UFormField label="Full name" name="name">
           <UInput
             v-model="state.name"
@@ -153,7 +162,12 @@ const onGoogleSignUp = async () => {
       <template #footer>
         <p class="text-center text-muted text-sm">
           Already have an account?
-          <UButton variant="link" color="primary" to="/login" :padded="false">
+          <UButton
+            variant="link"
+            color="primary"
+            to="/login"
+            :padded="false"
+          >
             Sign in
           </UButton>
         </p>

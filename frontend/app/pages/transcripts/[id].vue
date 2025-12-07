@@ -61,7 +61,7 @@ const flashSegmentId = ref<string | null>(null)
 const activeRightPanel = ref<'info' | 'summary' | null>(null)
 const summaryData = ref<{
   summary: string
-  keyMoments: Array<{ timestamp?: string; description: string; importance: 'high' | 'medium' | 'low'; speakers?: string[] }>
+  keyMoments: Array<{ timestamp?: string, description: string, importance: 'high' | 'medium' | 'low', speakers?: string[] }>
   actionItems: string[]
   topics: string[]
   entities?: {
@@ -91,7 +91,7 @@ function findSegmentAtTime(timeSeconds: number): TranscriptSegment | null {
 }
 
 // Apply a single key moment from summary to transcript
-async function applyKeyMoment(moment: { timestamp?: string; description: string }) {
+async function applyKeyMoment(moment: { timestamp?: string, description: string }) {
   if (!transcript.value || !moment.timestamp) {
     toast.add({
       title: 'Cannot apply key moment',
@@ -193,7 +193,7 @@ async function performSmartSearch() {
   // TODO: Implement smart search with Qdrant/backend
   searchResults.value = new Set()
   isSearching.value = false
-  
+
   toast.add({
     title: 'Smart search unavailable',
     description: 'Smart search requires backend support',
@@ -213,7 +213,7 @@ async function generateSummary() {
   try {
     // Build timestamped transcript text from segments
     const fullText = transcript.value.segments
-      .map(seg => {
+      .map((seg) => {
         const speaker = getSpeaker(seg.speaker)
         const speakerName = speaker?.name || 'Unknown'
         const timestamp = formatTime(seg.start)
@@ -307,8 +307,8 @@ const filteredSegments = computed(() => {
     } else {
       const query = searchQuery.value.toLowerCase()
       segments = segments.filter(s =>
-        s.text.toLowerCase().includes(query) ||
-        (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
+        s.text.toLowerCase().includes(query)
+        || (getSpeaker(s.speaker)?.name?.toLowerCase() || '').includes(query)
       )
     }
   }
@@ -332,7 +332,7 @@ const rowVirtualizerOptions = computed(() => {
     count: filteredSegments.value.length,
     getScrollElement: () => scrollContainerRef.value,
     estimateSize: () => 128,
-    overscan: 8,
+    overscan: 8
   }
 })
 
@@ -359,7 +359,7 @@ const transcriptStats = computed(() => {
     return acc + seg.text.split(/\s+/).length
   }, 0)
 
-  const speakerStats = transcript.value.speakers.map(speaker => {
+  const speakerStats = transcript.value.speakers.map((speaker) => {
     const speakerSegments = transcript.value!.segments.filter(s => s.speaker === speaker.id)
     const speakingTime = speakerSegments.reduce((acc, seg) => acc + (seg.end - seg.start), 0)
     const wordCount = speakerSegments.reduce((acc, seg) => {
@@ -501,7 +501,7 @@ async function copyTranscriptToClipboard() {
 
   let text = `${transcript.value.title}\n\n`
 
-  transcript.value.segments.forEach(segment => {
+  transcript.value.segments.forEach((segment) => {
     const speaker = getSpeaker(segment.speaker)
     const speakerName = speaker?.name || 'Unknown'
     const timestamp = formatTime(segment.start)
@@ -712,19 +712,19 @@ async function loadTranscript() {
 
 // Keyboard shortcuts
 defineShortcuts({
-  'space': {
+  space: {
     usingInput: false,
     handler: () => {
       isPlaying.value = !isPlaying.value
     }
   },
-  'meta_f': {
+  meta_f: {
     handler: () => {
       const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement
       searchInput?.focus()
     }
   },
-  'escape': {
+  escape: {
     handler: () => {
       if (editingSegmentId.value) {
         cancelEdit()
@@ -736,7 +736,7 @@ defineShortcuts({
       }
     }
   },
-  'a': {
+  a: {
     usingInput: false,
     handler: () => {
       autoScrollEnabled.value = !autoScrollEnabled.value
@@ -760,7 +760,9 @@ onMounted(async () => {
             variant="ghost"
             @click="router.push('/transcripts')"
           />
-          <h1 class="text-xl font-semibold truncate">{{ transcript?.title || 'Transcript' }}</h1>
+          <h1 class="text-xl font-semibold truncate">
+            {{ transcript?.title || 'Transcript' }}
+          </h1>
         </div>
 
         <div v-if="transcript" class="flex items-center gap-2 shrink-0">
@@ -785,7 +787,8 @@ onMounted(async () => {
                       link.href = audioUrl
                       link.download = `${transcript.title}.mp3`
                       link.click()
-                    } else {
+                    }
+                    else {
                       toast.add({
                         title: 'Audio not available',
                         description: 'No audio file found for this transcript',
@@ -815,207 +818,215 @@ onMounted(async () => {
     </template>
 
     <template #body>
-          <!-- Loading State -->
-          <div v-if="isLoading" class="flex items-center justify-center min-h-full p-6">
-          <div class="text-center space-y-4">
-            <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
-            <div>
-              <h3 class="text-lg font-semibold">Loading transcript...</h3>
-              <p class="text-sm text-muted">Please wait while we fetch your transcript</p>
-            </div>
+      <!-- Loading State -->
+      <div v-if="isLoading" class="flex items-center justify-center min-h-full p-6">
+        <div class="text-center space-y-4">
+          <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
+          <div>
+            <h3 class="text-lg font-semibold">
+              Loading transcript...
+            </h3>
+            <p class="text-sm text-muted">
+              Please wait while we fetch your transcript
+            </p>
           </div>
         </div>
+      </div>
 
-        <!-- Error State -->
-        <div v-else-if="error" class="flex items-center justify-center min-h-full p-6">
-          <UCard class="max-w-md">
-            <div class="text-center space-y-4">
-              <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto" />
-              <div>
-                <h3 class="text-xl font-bold text-highlighted mb-2">Error Loading Transcript</h3>
-                <p class="text-muted">{{ error }}</p>
-              </div>
-              <UButton
-                label="Try Again"
-                icon="i-lucide-refresh-cw"
-                color="primary"
-                @click="loadTranscript"
-              />
+      <!-- Error State -->
+      <div v-else-if="error" class="flex items-center justify-center min-h-full p-6">
+        <UCard class="max-w-md">
+          <div class="text-center space-y-4">
+            <UIcon name="i-lucide-alert-circle" class="size-16 text-error mx-auto" />
+            <div>
+              <h3 class="text-xl font-bold text-highlighted mb-2">
+                Error Loading Transcript
+              </h3>
+              <p class="text-muted">
+                {{ error }}
+              </p>
             </div>
-          </UCard>
-        </div>
+            <UButton
+              label="Try Again"
+              icon="i-lucide-refresh-cw"
+              color="primary"
+              @click="loadTranscript"
+            />
+          </div>
+        </UCard>
+      </div>
 
-        <!-- Main Content -->
-        <div v-else-if="transcript" class="space-y-6">
-          <!-- Audio Player -->
-          <LazyWaveformPlayer
-            v-if="transcript.audioUrl"
-            :audio-url="transcript.audioUrl"
-            :transcription-id="transcript.id"
-            :peaks="transcript.waveformPeaks"
-            :current-time="currentTime"
-            :segments="transcript.segments"
-            :selected-segment-id="selectedSegment?.id"
-            :key-moments="keyMoments"
-            @update:current-time="currentTime = $event"
-            @update:is-playing="isPlaying = $event"
-            @segment-click="seekToSegment"
-            @waveform-click="handleWaveformClick"
-          />
+      <!-- Main Content -->
+      <div v-else-if="transcript" class="space-y-6">
+        <!-- Audio Player -->
+        <LazyWaveformPlayer
+          v-if="transcript.audioUrl"
+          :audio-url="transcript.audioUrl"
+          :transcription-id="transcript.id"
+          :peaks="transcript.waveformPeaks"
+          :current-time="currentTime"
+          :segments="transcript.segments"
+          :selected-segment-id="selectedSegment?.id"
+          :key-moments="keyMoments"
+          @update:current-time="currentTime = $event"
+          @update:is-playing="isPlaying = $event"
+          @segment-click="seekToSegment"
+          @waveform-click="handleWaveformClick"
+        />
 
-          <!-- Search and Filters -->
-          <div class="space-y-3">
-            <div class="flex items-center gap-3">
-              <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
+        <!-- Search and Filters -->
+        <div class="space-y-3">
+          <div class="flex items-center gap-3">
+            <UTooltip :text="autoScrollEnabled ? 'Click to stop following (or press A)' : 'Click to follow along (or press A)'">
+              <UButton
+                :icon="autoScrollEnabled ? 'i-lucide-radio' : 'i-lucide-circle'"
+                :label="autoScrollEnabled ? 'Following' : 'Paused'"
+                :color="autoScrollEnabled ? 'primary' : 'neutral'"
+                :variant="autoScrollEnabled ? 'solid' : 'outline'"
+                size="sm"
+                @click="autoScrollEnabled = !autoScrollEnabled"
+              />
+            </UTooltip>
+
+            <UInput
+              v-model="searchQuery"
+              icon="i-lucide-search"
+              placeholder="Search in transcript... (Cmd+F)"
+              class="flex-1"
+              size="md"
+            >
+              <template #trailing>
                 <UButton
-                  :icon="autoScrollEnabled ? 'i-lucide-radio' : 'i-lucide-circle'"
-                  :label="autoScrollEnabled ? 'Following' : 'Paused'"
-                  :color="autoScrollEnabled ? 'primary' : 'neutral'"
-                  :variant="autoScrollEnabled ? 'solid' : 'outline'"
+                  v-if="searchQuery"
+                  icon="i-lucide-x"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  @click="searchQuery = ''"
+                />
+              </template>
+            </UInput>
+
+            <UFieldGroup v-if="searchQuery">
+              <UTooltip text="Smart Search (AI-powered semantic + keyword matching)">
+                <UButton
+                  icon="i-lucide-sparkles"
+                  :color="searchMode === 'smart' ? 'primary' : 'neutral'"
+                  :variant="searchMode === 'smart' ? 'soft' : 'ghost'"
+                  label="Smart"
                   size="sm"
-                  @click="autoScrollEnabled = !autoScrollEnabled"
+                  @click="searchMode = 'smart'"
                 />
               </UTooltip>
-
-              <UInput
-                v-model="searchQuery"
-                icon="i-lucide-search"
-                placeholder="Search in transcript... (Cmd+F)"
-                class="flex-1"
-                size="md"
-              >
-                <template #trailing>
-                  <UButton
-                    v-if="searchQuery"
-                    icon="i-lucide-x"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    @click="searchQuery = ''"
-                  />
-                </template>
-              </UInput>
-
-              <UFieldGroup v-if="searchQuery">
-                <UTooltip text="Smart Search (AI-powered semantic + keyword matching)">
-                  <UButton
-                    icon="i-lucide-sparkles"
-                    :color="searchMode === 'smart' ? 'primary' : 'neutral'"
-                    :variant="searchMode === 'smart' ? 'soft' : 'ghost'"
-                    label="Smart"
-                    size="sm"
-                    @click="searchMode = 'smart'"
-                  />
-                </UTooltip>
-                <UTooltip text="Keyword Search (Exact BM25 text matching)">
-                  <UButton
-                    icon="i-lucide-search"
-                    :color="searchMode === 'keyword' ? 'warning' : 'neutral'"
-                    :variant="searchMode === 'keyword' ? 'soft' : 'ghost'"
-                    label="Keyword"
-                    size="sm"
-                    @click="searchMode = 'keyword'"
-                  />
-                </UTooltip>
-              </UFieldGroup>
-
-              <USelectMenu
-                v-model="selectedSpeaker"
-                :items="[
-                  { label: 'All Speakers', value: null },
-                  ...transcript.speakers.map(s => ({ label: s.name, value: s.id }))
-                ]"
-                placeholder="Filter by speaker"
-                class="min-w-[200px]"
-              >
-                <template #label>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-users" class="size-4" />
-                    <span>{{ selectedSpeaker ? getSpeaker(selectedSpeaker)?.name : 'All Speakers' }}</span>
-                  </div>
-                </template>
-              </USelectMenu>
-
-              <UCheckbox v-model="showOnlyKeyMoments" label="Key Moments Only">
-                <template #label>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-star" class="size-4" />
-                    <span>Key Moments</span>
-                  </div>
-                </template>
-              </UCheckbox>
-            </div>
-
-            <!-- Active Filters -->
-            <div v-if="searchQuery || selectedSpeaker || showOnlyKeyMoments" class="flex items-center gap-2">
-              <span class="text-xs text-muted">Active filters:</span>
-              <div class="flex flex-wrap gap-1.5">
-                <UBadge
-                  v-if="searchQuery"
-                  :label="`Search: ${searchQuery}`"
-                  :color="searchMode === 'keyword' ? 'warning' : 'primary'"
-                  variant="soft"
+              <UTooltip text="Keyword Search (Exact BM25 text matching)">
+                <UButton
+                  icon="i-lucide-search"
+                  :color="searchMode === 'keyword' ? 'warning' : 'neutral'"
+                  :variant="searchMode === 'keyword' ? 'soft' : 'ghost'"
+                  label="Keyword"
                   size="sm"
-                >
-                  <template #leading>
-                    <UIcon :name="searchMode === 'smart' ? 'i-lucide-sparkles' : 'i-lucide-search'" class="size-3" />
-                  </template>
-                  <template #trailing>
-                    <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="searchQuery = ''" />
-                  </template>
-                </UBadge>
-                <UBadge
-                  v-if="selectedSpeaker"
-                  :label="`Speaker: ${getSpeaker(selectedSpeaker)?.name}`"
-                  color="info"
-                  variant="soft"
-                  size="sm"
-                >
-                  <template #trailing>
-                    <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="selectedSpeaker = null" />
-                  </template>
-                </UBadge>
-                <UBadge
-                  v-if="showOnlyKeyMoments"
-                  label="Key Moments"
-                  color="warning"
-                  variant="soft"
-                  size="sm"
-                >
-                  <template #trailing>
-                    <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="showOnlyKeyMoments = false" />
-                  </template>
-                </UBadge>
-              </div>
-              <UButton
-                label="Clear All"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false; searchMode = 'smart'"
-              />
-            </div>
+                  @click="searchMode = 'keyword'"
+                />
+              </UTooltip>
+            </UFieldGroup>
 
-            <!-- Results count -->
-            <div v-if="filteredSegments.length !== transcript.segments.length" class="text-xs text-muted">
-              Showing {{ filteredSegments.length }} of {{ transcript.segments.length }} segments
-            </div>
+            <USelectMenu
+              v-model="selectedSpeaker"
+              :items="[
+                { label: 'All Speakers', value: null },
+                ...transcript.speakers.map(s => ({ label: s.name, value: s.id }))
+              ]"
+              placeholder="Filter by speaker"
+              class="min-w-[200px]"
+            >
+              <template #label>
+                <div class="flex items-center gap-2">
+                  <UIcon name="i-lucide-users" class="size-4" />
+                  <span>{{ selectedSpeaker ? getSpeaker(selectedSpeaker)?.name : 'All Speakers' }}</span>
+                </div>
+              </template>
+            </USelectMenu>
+
+            <UCheckbox v-model="showOnlyKeyMoments" label="Key Moments Only">
+              <template #label>
+                <div class="flex items-center gap-2">
+                  <UIcon name="i-lucide-star" class="size-4" />
+                  <span>Key Moments</span>
+                </div>
+              </template>
+            </UCheckbox>
           </div>
 
-          <!-- Transcript Segments Container -->
-          <div>
-            <div
-              ref="scrollContainerRef"
-              class="overflow-y-auto max-h-[60vh]"
-              data-transcript-container
-            >
+          <!-- Active Filters -->
+          <div v-if="searchQuery || selectedSpeaker || showOnlyKeyMoments" class="flex items-center gap-2">
+            <span class="text-xs text-muted">Active filters:</span>
+            <div class="flex flex-wrap gap-1.5">
+              <UBadge
+                v-if="searchQuery"
+                :label="`Search: ${searchQuery}`"
+                :color="searchMode === 'keyword' ? 'warning' : 'primary'"
+                variant="soft"
+                size="sm"
+              >
+                <template #leading>
+                  <UIcon :name="searchMode === 'smart' ? 'i-lucide-sparkles' : 'i-lucide-search'" class="size-3" />
+                </template>
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="searchQuery = ''" />
+                </template>
+              </UBadge>
+              <UBadge
+                v-if="selectedSpeaker"
+                :label="`Speaker: ${getSpeaker(selectedSpeaker)?.name}`"
+                color="info"
+                variant="soft"
+                size="sm"
+              >
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="selectedSpeaker = null" />
+                </template>
+              </UBadge>
+              <UBadge
+                v-if="showOnlyKeyMoments"
+                label="Key Moments"
+                color="warning"
+                variant="soft"
+                size="sm"
+              >
+                <template #trailing>
+                  <UIcon name="i-lucide-x" class="size-3 cursor-pointer" @click="showOnlyKeyMoments = false" />
+                </template>
+              </UBadge>
+            </div>
+            <UButton
+              label="Clear All"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              @click="searchQuery = ''; selectedSpeaker = null; showOnlyKeyMoments = false; searchMode = 'smart'"
+            />
+          </div>
+
+          <!-- Results count -->
+          <div v-if="filteredSegments.length !== transcript.segments.length" class="text-xs text-muted">
+            Showing {{ filteredSegments.length }} of {{ transcript.segments.length }} segments
+          </div>
+        </div>
+
+        <!-- Transcript Segments Container -->
+        <div>
+          <div
+            ref="scrollContainerRef"
+            class="overflow-y-auto max-h-[60vh]"
+            data-transcript-container
+          >
             <!-- Virtual list -->
             <div
               v-if="filteredSegments.length > 0"
               :style="{
                 height: `${totalSize}px`,
                 width: '100%',
-                position: 'relative',
+                position: 'relative'
               }"
             >
               <div
@@ -1029,7 +1040,7 @@ onMounted(async () => {
                   transform: `translateY(${virtualRow.start}px)`,
                   width: '100%',
                   height: '120px',
-                  marginBottom: '8px',
+                  marginBottom: '8px'
                 }"
                 :class="[
                   'p-4 rounded-lg cursor-pointer overflow-hidden transition-colors duration-200',
@@ -1063,9 +1074,21 @@ onMounted(async () => {
                     >
                       {{ getSpeaker(filteredSegments[virtualRow.index].speaker)!.name }}
                     </div>
-                    <UBadge v-else label="Unknown Speaker" color="neutral" size="xs" variant="soft" />
+                    <UBadge
+                      v-else
+                      label="Unknown Speaker"
+                      color="neutral"
+                      size="xs"
+                      variant="soft"
+                    />
 
-                    <UBadge v-if="filteredSegments[virtualRow.index].isKeyMoment" label="Key Moment" icon="i-lucide-star" color="warning" size="xs" />
+                    <UBadge
+                      v-if="filteredSegments[virtualRow.index].isKeyMoment"
+                      label="Key Moment"
+                      icon="i-lucide-star"
+                      color="warning"
+                      size="xs"
+                    />
 
                     <UTooltip v-if="filteredSegments[virtualRow.index].confidence" :text="`Confidence: ${Math.round(filteredSegments[virtualRow.index].confidence * 100)}%`">
                       <UBadge
@@ -1164,8 +1187,12 @@ onMounted(async () => {
             <!-- Empty State -->
             <div v-else class="text-center py-20 px-6">
               <UIcon name="i-lucide-search-x" class="size-16 text-muted mx-auto mb-4 opacity-30" />
-              <h3 class="text-xl font-semibold mb-2">No segments found</h3>
-              <p class="text-muted mb-4">Try adjusting your filters or search query</p>
+              <h3 class="text-xl font-semibold mb-2">
+                No segments found
+              </h3>
+              <p class="text-muted mb-4">
+                Try adjusting your filters or search query
+              </p>
               <UButton
                 label="Clear Filters"
                 icon="i-lucide-x"
@@ -1175,8 +1202,7 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        </div>
-
+      </div>
     </template>
   </UDashboardPanel>
 
@@ -1213,7 +1239,9 @@ onMounted(async () => {
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <UIcon name="i-lucide-info" class="size-5 text-primary" />
-              <h3 class="font-semibold">Info</h3>
+              <h3 class="font-semibold">
+                Info
+              </h3>
             </div>
             <UButton
               icon="i-lucide-x"
@@ -1226,7 +1254,9 @@ onMounted(async () => {
 
           <!-- Overview -->
           <div class="space-y-4">
-            <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Overview</h4>
+            <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">
+              Overview
+            </h4>
             <div class="space-y-3">
               <div class="flex justify-between text-sm">
                 <span class="text-muted">Duration</span>
@@ -1266,11 +1296,29 @@ onMounted(async () => {
                 class="p-3 rounded-lg bg-muted/20"
               >
                 <div v-if="editingSpeakerId === stat.speaker.id" class="space-y-2">
-                  <UInput v-model="editSpeakerName" placeholder="Speaker name" size="sm" autofocus />
+                  <UInput
+                    v-model="editSpeakerName"
+                    placeholder="Speaker name"
+                    size="sm"
+                    autofocus
+                  />
                   <UInput v-model="editSpeakerRole" placeholder="Role (optional)" size="sm" />
                   <div class="flex gap-2">
-                    <UButton label="Save" icon="i-lucide-check" color="primary" size="xs" @click="saveSpeakerEdit" />
-                    <UButton label="Cancel" icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="cancelSpeakerEdit" />
+                    <UButton
+                      label="Save"
+                      icon="i-lucide-check"
+                      color="primary"
+                      size="xs"
+                      @click="saveSpeakerEdit"
+                    />
+                    <UButton
+                      label="Cancel"
+                      icon="i-lucide-x"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="cancelSpeakerEdit"
+                    />
                   </div>
                 </div>
                 <template v-else>
@@ -1279,9 +1327,17 @@ onMounted(async () => {
                       <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: stat.speaker.color }" />
                       <span class="font-medium text-sm">{{ stat.speaker.name }}</span>
                     </div>
-                    <UButton icon="i-lucide-edit" color="neutral" variant="ghost" size="xs" @click="startEditSpeaker(stat.speaker)" />
+                    <UButton
+                      icon="i-lucide-edit"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="startEditSpeaker(stat.speaker)"
+                    />
                   </div>
-                  <div v-if="stat.speaker.role" class="text-xs text-muted mb-2">{{ stat.speaker.role }}</div>
+                  <div v-if="stat.speaker.role" class="text-xs text-muted mb-2">
+                    {{ stat.speaker.role }}
+                  </div>
                   <div class="space-y-1 text-xs text-muted">
                     <div class="flex justify-between">
                       <span>Speaking time</span>
@@ -1296,7 +1352,12 @@ onMounted(async () => {
                       <span>{{ stat.wordCount.toLocaleString() }}</span>
                     </div>
                   </div>
-                  <UProgress :value="stat.percentage" size="xs" class="mt-2" :style="{ '--progress-color': stat.speaker.color }" />
+                  <UProgress
+                    :value="stat.percentage"
+                    size="xs"
+                    class="mt-2"
+                    :style="{ '--progress-color': stat.speaker.color }"
+                  />
                 </template>
               </div>
             </div>
@@ -1318,12 +1379,20 @@ onMounted(async () => {
                 @click="seekToSegment(moment)"
               >
                 <div class="flex items-center gap-2 mb-1">
-                  <UButton :label="formatTime(moment.start)" icon="i-lucide-clock" color="warning" variant="soft" size="xs" />
+                  <UButton
+                    :label="formatTime(moment.start)"
+                    icon="i-lucide-clock"
+                    color="warning"
+                    variant="soft"
+                    size="xs"
+                  />
                   <span v-if="getSpeaker(moment.speaker)" class="text-xs font-medium" :style="{ color: getSpeaker(moment.speaker)!.color }">
                     {{ getSpeaker(moment.speaker)!.name }}
                   </span>
                 </div>
-                <p class="text-xs text-default line-clamp-2">{{ moment.text }}</p>
+                <p class="text-xs text-default line-clamp-2">
+                  {{ moment.text }}
+                </p>
               </div>
             </div>
           </div>
@@ -1336,10 +1405,20 @@ onMounted(async () => {
               Shortcuts
             </h4>
             <div class="space-y-2 text-xs">
-              <div class="flex justify-between"><span class="text-muted">Play/Pause</span><UKbd value="space" /></div>
-              <div class="flex justify-between"><span class="text-muted">Toggle Auto-scroll</span><UKbd value="A" /></div>
-              <div class="flex justify-between"><span class="text-muted">Search</span><div class="flex gap-1"><UKbd value="meta" /><UKbd value="F" /></div></div>
-              <div class="flex justify-between"><span class="text-muted">Clear filters</span><UKbd value="esc" /></div>
+              <div class="flex justify-between">
+                <span class="text-muted">Play/Pause</span><UKbd value="space" />
+              </div>
+              <div class="flex justify-between">
+                <span class="text-muted">Toggle Auto-scroll</span><UKbd value="A" />
+              </div>
+              <div class="flex justify-between">
+                <span class="text-muted">Search</span><div class="flex gap-1">
+                  <UKbd value="meta" /><UKbd value="F" />
+                </div>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-muted">Clear filters</span><UKbd value="esc" />
+              </div>
             </div>
           </div>
         </div>
@@ -1350,7 +1429,9 @@ onMounted(async () => {
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <UIcon name="i-lucide-sparkles" class="size-5 text-primary" />
-              <h3 class="font-semibold">AI Summary</h3>
+              <h3 class="font-semibold">
+                AI Summary
+              </h3>
             </div>
             <UButton
               icon="i-lucide-x"
@@ -1364,24 +1445,42 @@ onMounted(async () => {
           <!-- No summary yet -->
           <div v-if="!summaryData && !isGeneratingSummary" class="text-center py-8">
             <UIcon name="i-lucide-file-text" class="size-12 text-muted mx-auto mb-3 opacity-30" />
-            <h4 class="text-base font-semibold mb-2">No Summary Yet</h4>
-            <p class="text-sm text-muted mb-4">Generate an AI-powered summary including key moments, action items, and topics.</p>
-            <UButton icon="i-lucide-sparkles" label="Generate Summary" color="primary" size="sm" @click="generateSummary" />
+            <h4 class="text-base font-semibold mb-2">
+              No Summary Yet
+            </h4>
+            <p class="text-sm text-muted mb-4">
+              Generate an AI-powered summary including key moments, action items, and topics.
+            </p>
+            <UButton
+              icon="i-lucide-sparkles"
+              label="Generate Summary"
+              color="primary"
+              size="sm"
+              @click="generateSummary"
+            />
           </div>
 
           <!-- Loading state -->
           <div v-else-if="isGeneratingSummary" class="text-center py-8">
             <UIcon name="i-lucide-loader-circle" class="size-10 text-primary animate-spin mx-auto mb-3" />
-            <h4 class="text-base font-semibold mb-2">Generating Summary...</h4>
-            <p class="text-sm text-muted">AI is analyzing your transcript.</p>
+            <h4 class="text-base font-semibold mb-2">
+              Generating Summary...
+            </h4>
+            <p class="text-sm text-muted">
+              AI is analyzing your transcript.
+            </p>
           </div>
 
           <!-- Summary content -->
           <template v-else-if="summaryData">
             <!-- Main Summary -->
             <div class="space-y-2">
-              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Summary</h4>
-              <p class="text-sm text-default leading-relaxed whitespace-pre-wrap">{{ summaryData.summary }}</p>
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">
+                Summary
+              </h4>
+              <p class="text-sm text-default leading-relaxed whitespace-pre-wrap">
+                {{ summaryData.summary }}
+              </p>
             </div>
 
             <USeparator />
@@ -1393,7 +1492,14 @@ onMounted(async () => {
                   <UIcon name="i-lucide-star" class="size-4 text-warning" />
                   Key Moments ({{ summaryData.keyMoments.length }})
                 </h4>
-                <UButton icon="i-lucide-check-check" label="Apply All" color="warning" variant="soft" size="xs" @click="applyAllKeyMoments" />
+                <UButton
+                  icon="i-lucide-check-check"
+                  label="Apply All"
+                  color="warning"
+                  variant="soft"
+                  size="xs"
+                  @click="applyAllKeyMoments"
+                />
               </div>
               <div class="space-y-2 max-h-64 overflow-y-auto">
                 <div
@@ -1408,12 +1514,34 @@ onMounted(async () => {
                 >
                   <div class="flex items-center justify-between gap-2 mb-1">
                     <div class="flex items-center gap-1">
-                      <UBadge :label="moment.importance" :color="moment.importance === 'high' ? 'error' : moment.importance === 'medium' ? 'warning' : 'neutral'" size="xs" variant="soft" class="capitalize" />
-                      <UButton v-if="moment.timestamp" :label="moment.timestamp" icon="i-lucide-clock" color="neutral" variant="ghost" size="xs" @click="() => { const time = parseTimestamp(moment.timestamp!); if (time !== null) currentTime = time }" />
+                      <UBadge
+                        :label="moment.importance"
+                        :color="moment.importance === 'high' ? 'error' : moment.importance === 'medium' ? 'warning' : 'neutral'"
+                        size="xs"
+                        variant="soft"
+                        class="capitalize"
+                      />
+                      <UButton
+                        v-if="moment.timestamp"
+                        :label="moment.timestamp"
+                        icon="i-lucide-clock"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        @click="() => { const time = parseTimestamp(moment.timestamp!); if (time !== null) currentTime = time }"
+                      />
                     </div>
-                    <UButton icon="i-lucide-star" color="warning" variant="ghost" size="xs" @click="applyKeyMoment(moment)" />
+                    <UButton
+                      icon="i-lucide-star"
+                      color="warning"
+                      variant="ghost"
+                      size="xs"
+                      @click="applyKeyMoment(moment)"
+                    />
                   </div>
-                  <p class="text-default">{{ moment.description }}</p>
+                  <p class="text-default">
+                    {{ moment.description }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1438,9 +1566,18 @@ onMounted(async () => {
 
             <!-- Topics -->
             <div v-if="summaryData.topics?.length" class="space-y-2">
-              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Topics</h4>
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">
+                Topics
+              </h4>
               <div class="flex flex-wrap gap-1">
-                <UBadge v-for="topic in summaryData.topics" :key="topic" :label="topic" color="primary" variant="soft" size="xs" />
+                <UBadge
+                  v-for="topic in summaryData.topics"
+                  :key="topic"
+                  :label="topic"
+                  color="primary"
+                  variant="soft"
+                  size="xs"
+                />
               </div>
             </div>
 
@@ -1448,36 +1585,83 @@ onMounted(async () => {
 
             <!-- Entities -->
             <div v-if="summaryData.entities && (summaryData.entities.people?.length || summaryData.entities.organizations?.length || summaryData.entities.locations?.length || summaryData.entities.dates?.length)" class="space-y-3">
-              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">Entities</h4>
+              <h4 class="text-sm font-semibold text-muted uppercase tracking-wide">
+                Entities
+              </h4>
               <div v-if="summaryData.entities.people?.length" class="space-y-1">
-                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-user" class="size-3" /> People</p>
+                <p class="text-xs text-muted flex items-center gap-1">
+                  <UIcon name="i-lucide-user" class="size-3" /> People
+                </p>
                 <div class="flex flex-wrap gap-1">
-                  <UBadge v-for="person in summaryData.entities.people" :key="person" :label="person" color="neutral" size="xs" variant="outline" />
+                  <UBadge
+                    v-for="person in summaryData.entities.people"
+                    :key="person"
+                    :label="person"
+                    color="neutral"
+                    size="xs"
+                    variant="outline"
+                  />
                 </div>
               </div>
               <div v-if="summaryData.entities.organizations?.length" class="space-y-1">
-                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-building" class="size-3" /> Organizations</p>
+                <p class="text-xs text-muted flex items-center gap-1">
+                  <UIcon name="i-lucide-building" class="size-3" /> Organizations
+                </p>
                 <div class="flex flex-wrap gap-1">
-                  <UBadge v-for="org in summaryData.entities.organizations" :key="org" :label="org" color="neutral" size="xs" variant="outline" />
+                  <UBadge
+                    v-for="org in summaryData.entities.organizations"
+                    :key="org"
+                    :label="org"
+                    color="neutral"
+                    size="xs"
+                    variant="outline"
+                  />
                 </div>
               </div>
               <div v-if="summaryData.entities.locations?.length" class="space-y-1">
-                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-map-pin" class="size-3" /> Locations</p>
+                <p class="text-xs text-muted flex items-center gap-1">
+                  <UIcon name="i-lucide-map-pin" class="size-3" /> Locations
+                </p>
                 <div class="flex flex-wrap gap-1">
-                  <UBadge v-for="loc in summaryData.entities.locations" :key="loc" :label="loc" color="neutral" size="xs" variant="outline" />
+                  <UBadge
+                    v-for="loc in summaryData.entities.locations"
+                    :key="loc"
+                    :label="loc"
+                    color="neutral"
+                    size="xs"
+                    variant="outline"
+                  />
                 </div>
               </div>
               <div v-if="summaryData.entities.dates?.length" class="space-y-1">
-                <p class="text-xs text-muted flex items-center gap-1"><UIcon name="i-lucide-calendar" class="size-3" /> Dates</p>
+                <p class="text-xs text-muted flex items-center gap-1">
+                  <UIcon name="i-lucide-calendar" class="size-3" /> Dates
+                </p>
                 <div class="flex flex-wrap gap-1">
-                  <UBadge v-for="date in summaryData.entities.dates" :key="date" :label="date" color="neutral" size="xs" variant="outline" />
+                  <UBadge
+                    v-for="date in summaryData.entities.dates"
+                    :key="date"
+                    :label="date"
+                    color="neutral"
+                    size="xs"
+                    variant="outline"
+                  />
                 </div>
               </div>
             </div>
 
             <!-- Regenerate button -->
             <div class="pt-4 border-t border-default">
-              <UButton icon="i-lucide-refresh-cw" label="Regenerate" color="neutral" variant="outline" size="sm" block :loading="isGeneratingSummary" @click="generateSummary" />
+              <UButton
+                icon="i-lucide-refresh-cw"
+                label="Regenerate"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                block
+                :loading="isGeneratingSummary"
+                @click="generateSummary"
+              />
             </div>
           </template>
         </div>

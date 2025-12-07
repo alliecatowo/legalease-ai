@@ -6,9 +6,9 @@ import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps<{
   audioUrl: string
-  transcriptionId?: string  // Optional transcription ID for fetching pre-computed waveform
-  gcsUri?: string  // GCS URI for generating waveform peaks server-side
-  peaks?: number[]  // Pre-computed peaks array
+  transcriptionId?: string // Optional transcription ID for fetching pre-computed waveform
+  gcsUri?: string // GCS URI for generating waveform peaks server-side
+  peaks?: number[] // Pre-computed peaks array
   currentTime?: number
   segments?: TranscriptSegment[]
   selectedSegmentId?: string | null
@@ -389,21 +389,30 @@ onBeforeUnmount(() => {
       <div class="text-center space-y-4">
         <UIcon name="i-lucide-loader-circle" class="size-8 text-primary animate-spin mx-auto" />
         <div class="space-y-2">
-          <p class="text-sm text-muted">Loading waveform... {{ loadingProgress }}%</p>
-          <p class="text-xs text-muted">Audio playback available while loading</p>
+          <p class="text-sm text-muted">
+            Loading waveform... {{ loadingProgress }}%
+          </p>
+          <p class="text-xs text-muted">
+            Audio playback available while loading
+          </p>
         </div>
       </div>
     </div>
 
     <!-- Waveform Container -->
     <div class="relative w-full">
-      <div ref="waveformRef" class="w-full bg-muted/20 rounded-lg cursor-pointer" :class="{ 'hidden': !isReady }" @click="handleWaveformClick" />
+      <div
+        ref="waveformRef"
+        class="w-full bg-muted/20 rounded-lg cursor-pointer"
+        :class="{ hidden: !isReady }"
+        @click="handleWaveformClick"
+      />
       <!-- Key Moments Overlay Canvas -->
       <canvas
         v-if="keyMoments && keyMoments.length > 0 && isReady"
         ref="keyMomentsCanvasRef"
         class="absolute top-0 left-0 w-full h-full pointer-events-none"
-        :class="{ 'hidden': !isReady }"
+        :class="{ hidden: !isReady }"
       />
     </div>
 
@@ -456,8 +465,8 @@ onBeforeUnmount(() => {
         <USelectMenu
           :model-value="playbackRate"
           :items="playbackRates.map(rate => ({ label: `${rate}x`, value: rate }))"
-          @update:model-value="setPlaybackRate"
           size="sm"
+          @update:model-value="setPlaybackRate"
         >
           <template #label>
             <div class="flex items-center gap-2">
@@ -481,7 +490,7 @@ onBeforeUnmount(() => {
             step="0.1"
             class="w-24 h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
             @input="(e) => setVolume(parseFloat((e.target as HTMLInputElement).value))"
-          />
+          >
         </div>
       </div>
     </div>

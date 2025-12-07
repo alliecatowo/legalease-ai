@@ -19,7 +19,7 @@ await listCases()
 
 // Transform Firestore data to frontend format
 const cases = computed(() => {
-  return (casesData.value || []).map((c) => ({
+  return (casesData.value || []).map(c => ({
     id: c.id || '',
     name: c.name,
     caseNumber: c.caseNumber,
@@ -56,9 +56,9 @@ const typeOptions = [
 
 const filteredCases = computed(() => {
   return cases.value.filter((c: any) => {
-    const matchesSearch = !searchQuery.value ||
-      c.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      c.caseNumber.toLowerCase().includes(searchQuery.value.toLowerCase())
+    const matchesSearch = !searchQuery.value
+      || c.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+      || c.caseNumber.toLowerCase().includes(searchQuery.value.toLowerCase())
     const matchesStatus = selectedStatus.value === 'all' || c.status === selectedStatus.value
     const matchesType = selectedType.value === 'all' || c.type === selectedType.value
     return matchesSearch && matchesStatus && matchesType
@@ -113,8 +113,12 @@ async function onCaseCreated(caseData: any) {
                 <UIcon name="i-lucide-folder" class="size-5 text-primary" />
               </div>
               <div>
-                <p class="text-xs text-muted">Total Cases</p>
-                <p class="text-2xl font-bold">{{ stats.total }}</p>
+                <p class="text-xs text-muted">
+                  Total Cases
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.total }}
+                </p>
               </div>
             </div>
           </UCard>
@@ -125,8 +129,12 @@ async function onCaseCreated(caseData: any) {
                 <UIcon name="i-lucide-briefcase" class="size-5 text-success" />
               </div>
               <div>
-                <p class="text-xs text-muted">Active</p>
-                <p class="text-2xl font-bold">{{ stats.active }}</p>
+                <p class="text-xs text-muted">
+                  Active
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.active }}
+                </p>
               </div>
             </div>
           </UCard>
@@ -137,8 +145,12 @@ async function onCaseCreated(caseData: any) {
                 <UIcon name="i-lucide-clock" class="size-5 text-warning" />
               </div>
               <div>
-                <p class="text-xs text-muted">Pending</p>
-                <p class="text-2xl font-bold">{{ stats.pending }}</p>
+                <p class="text-xs text-muted">
+                  Pending
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.pending }}
+                </p>
               </div>
             </div>
           </UCard>
@@ -149,8 +161,12 @@ async function onCaseCreated(caseData: any) {
                 <UIcon name="i-lucide-check-circle" class="size-5 text-neutral" />
               </div>
               <div>
-                <p class="text-xs text-muted">Closed</p>
-                <p class="text-2xl font-bold">{{ stats.closed }}</p>
+                <p class="text-xs text-muted">
+                  Closed
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.closed }}
+                </p>
               </div>
             </div>
           </UCard>
@@ -161,8 +177,12 @@ async function onCaseCreated(caseData: any) {
                 <UIcon name="i-lucide-files" class="size-5 text-info" />
               </div>
               <div>
-                <p class="text-xs text-muted">Documents</p>
-                <p class="text-2xl font-bold">{{ stats.totalDocuments }}</p>
+                <p class="text-xs text-muted">
+                  Documents
+                </p>
+                <p class="text-2xl font-bold">
+                  {{ stats.totalDocuments }}
+                </p>
               </div>
             </div>
           </UCard>

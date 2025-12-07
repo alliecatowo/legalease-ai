@@ -74,7 +74,9 @@ function toggleSpeaker(speakerId: string) {
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-users" class="size-5 text-primary" />
-          <h3 class="font-semibold text-highlighted">Speakers</h3>
+          <h3 class="font-semibold text-highlighted">
+            Speakers
+          </h3>
           <UBadge :label="String(speakers.length)" size="sm" variant="soft" />
         </div>
         <UButton
@@ -84,7 +86,9 @@ function toggleSpeaker(speakerId: string) {
           @click="showAddSpeakerModal = true"
         />
       </div>
-      <p class="text-xs text-muted">Click to filter by speaker</p>
+      <p class="text-xs text-muted">
+        Click to filter by speaker
+      </p>
     </div>
 
     <!-- Speaker List -->
@@ -176,7 +180,9 @@ function toggleSpeaker(speakerId: string) {
       <!-- Empty State -->
       <div v-if="speakers.length === 0" class="text-center py-12">
         <UIcon name="i-lucide-users" class="size-12 text-muted mx-auto mb-4 opacity-30" />
-        <p class="text-sm text-muted mb-4">No speakers added yet</p>
+        <p class="text-sm text-muted mb-4">
+          No speakers added yet
+        </p>
         <UButton
           label="Add First Speaker"
           icon="i-lucide-plus"
@@ -190,11 +196,12 @@ function toggleSpeaker(speakerId: string) {
     <!-- Add Speaker Modal -->
     <UModal v-model:open="showAddSpeakerModal">
       <template #header>
-        <h3 class="font-semibold text-highlighted">Add Speaker</h3>
+        <h3 class="font-semibold text-highlighted">
+          Add Speaker
+        </h3>
       </template>
 
       <template #body>
-
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-muted mb-2">Name *</label>

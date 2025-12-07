@@ -9,6 +9,11 @@
  */
 
 // Re-export types
+// Factory function to create the appropriate provider
+import type { FirebaseStorage } from 'firebase/storage'
+import type { StorageProvider } from './provider'
+import { FirebaseStorageProvider } from './providers/firebase'
+
 export type {
   StorageScheme,
   StorageUri,
@@ -28,11 +33,6 @@ export type {
 
 // Provider implementations
 export { FirebaseStorageProvider } from './providers/firebase'
-
-// Factory function to create the appropriate provider
-import type { FirebaseStorage } from 'firebase/storage'
-import type { StorageProvider } from './provider'
-import { FirebaseStorageProvider } from './providers/firebase'
 
 /**
  * Create a storage provider instance

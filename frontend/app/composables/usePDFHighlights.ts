@@ -61,7 +61,7 @@ export function usePDFHighlights() {
     const boxes: BoundingBox[] = []
 
     // Add entity bounding boxes
-    entities.value.forEach(entity => {
+    entities.value.forEach((entity) => {
       entity.boundingBoxes
         .filter(box => box.page === currentPage.value)
         .forEach(box => boxes.push(box))

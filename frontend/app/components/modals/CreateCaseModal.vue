@@ -4,7 +4,7 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 
 const open = defineModel<boolean>('open')
 const emit = defineEmits<{
-  'created': [caseData: any]
+  created: [caseData: any]
 }>()
 
 const { createCase, getCase } = useCases()
@@ -54,12 +54,12 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       caseNumber: event.data.caseNumber,
       client: event.data.client
     }
-    
+
     // Only include matterType if it has a value
     if (event.data.matterType) {
       caseData.matterType = event.data.matterType
     }
-    
+
     const caseId = await createCase(caseData)
 
     const newCase = await getCase(caseId)
@@ -108,14 +108,23 @@ watch(open, (isOpen) => {
       <div class="flex items-center gap-3">
         <UIcon name="i-lucide-folder-plus" class="size-6 text-primary" />
         <div>
-          <h2 class="text-xl font-semibold">Create New Case</h2>
-          <p class="text-sm text-muted mt-0.5">Add a new case to your workspace</p>
+          <h2 class="text-xl font-semibold">
+            Create New Case
+          </h2>
+          <p class="text-sm text-muted mt-0.5">
+            Add a new case to your workspace
+          </p>
         </div>
       </div>
     </template>
 
     <template #body>
-      <UForm :schema="schema" :state="formData" class="space-y-4" @submit="onSubmit">
+      <UForm
+        :schema="schema"
+        :state="formData"
+        class="space-y-4"
+        @submit="onSubmit"
+      >
         <UFormField label="Case Name" name="name" required>
           <UInput
             v-model="formData.name"

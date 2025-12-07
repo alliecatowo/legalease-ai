@@ -50,8 +50,8 @@ export function useAI() {
     return (await fn(input)).data
   }
 
-  const indexDocument = async (input: IndexDocumentInput): Promise<{ success: boolean; pointId: string }> => {
-    const fn = httpsCallable<IndexDocumentInput, { success: boolean; pointId: string }>(ensureFunctions(), 'indexDocument')
+  const indexDocument = async (input: IndexDocumentInput): Promise<{ success: boolean, pointId: string }> => {
+    const fn = httpsCallable<IndexDocumentInput, { success: boolean, pointId: string }>(ensureFunctions(), 'indexDocument')
     return (await fn(input)).data
   }
 

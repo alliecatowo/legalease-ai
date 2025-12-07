@@ -19,7 +19,7 @@ const showAdvanced = ref(false)
 
 const localValue = computed({
   get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value)
+  set: value => emit('update:modelValue', value)
 })
 
 // Common languages for legal transcription
@@ -85,8 +85,12 @@ function updateMaxSpeakers(value: number) {
             <UIcon name="i-lucide-settings" class="size-5 text-primary" />
           </div>
           <div>
-            <h3 class="font-semibold text-lg">Transcription Options</h3>
-            <p class="text-sm text-muted">Configure how your audio will be transcribed</p>
+            <h3 class="font-semibold text-lg">
+              Transcription Options
+            </h3>
+            <p class="text-sm text-muted">
+              Configure how your audio will be transcribed
+            </p>
           </div>
         </div>
       </template>
@@ -128,8 +132,12 @@ function updateMaxSpeakers(value: number) {
           >
             <template #label="{ option }">
               <div>
-                <p class="font-medium">{{ option.label }}</p>
-                <p class="text-xs text-muted">{{ option.description }}</p>
+                <p class="font-medium">
+                  {{ option.label }}
+                </p>
+                <p class="text-xs text-muted">
+                  {{ option.description }}
+                </p>
               </div>
             </template>
           </URadioGroup>
@@ -144,9 +152,13 @@ function updateMaxSpeakers(value: number) {
           <div class="flex-1">
             <div class="flex items-center gap-2 mb-1">
               <UIcon name="i-lucide-users" class="size-4 text-primary" />
-              <p class="font-semibold">Speaker Identification</p>
+              <p class="font-semibold">
+                Speaker Identification
+              </p>
             </div>
-            <p class="text-sm text-muted">Automatically detect and label different speakers in the audio</p>
+            <p class="text-sm text-muted">
+              Automatically detect and label different speakers in the audio
+            </p>
           </div>
         </div>
 
@@ -154,9 +166,13 @@ function updateMaxSpeakers(value: number) {
         <div v-if="modelValue.enable_diarization" class="space-y-4 p-4 rounded-lg border border-default bg-primary/5">
           <div class="flex items-center gap-2 mb-2">
             <UIcon name="i-lucide-hash" class="size-4 text-primary" />
-            <p class="font-semibold">Speaker Count Hints</p>
+            <p class="font-semibold">
+              Speaker Count Hints
+            </p>
           </div>
-          <p class="text-sm text-muted mb-3">Guide the AI on how many speakers to expect for better accuracy</p>
+          <p class="text-sm text-muted mb-3">
+            Guide the AI on how many speakers to expect for better accuracy
+          </p>
 
           <!-- Min Speakers -->
           <UFormField label="Minimum Speakers" :help="`At least ${modelValue.min_speakers} speaker(s) expected`">
@@ -169,7 +185,7 @@ function updateMaxSpeakers(value: number) {
                 step="1"
                 class="flex-1"
                 @input="(e) => updateMinSpeakers(parseInt((e.target as HTMLInputElement).value))"
-              />
+              >
               <UBadge :label="String(modelValue.min_speakers)" color="primary" size="lg" />
             </div>
           </UFormField>
@@ -185,7 +201,7 @@ function updateMaxSpeakers(value: number) {
                 step="1"
                 class="flex-1"
                 @input="(e) => updateMaxSpeakers(parseInt((e.target as HTMLInputElement).value))"
-              />
+              >
               <UBadge :label="String(modelValue.max_speakers)" color="primary" size="lg" />
             </div>
           </UFormField>
@@ -225,7 +241,7 @@ function updateMaxSpeakers(value: number) {
                 step="0.1"
                 class="w-full"
                 @input="(e) => updateTemperature(parseFloat((e.target as HTMLInputElement).value))"
-              />
+              >
               <div class="flex justify-between text-xs text-muted">
                 <span>Deterministic</span>
                 <span>Balanced</span>
@@ -261,15 +277,32 @@ function updateMaxSpeakers(value: number) {
     <!-- Options Summary -->
     <UCard>
       <template #header>
-        <h3 class="font-semibold">Configuration Summary</h3>
+        <h3 class="font-semibold">
+          Configuration Summary
+        </h3>
       </template>
       <div class="flex flex-wrap gap-2">
         <UBadge :label="`Language: ${languageOptions.find(l => l.value === modelValue.language)?.label || 'Auto'}`" color="primary" variant="soft" />
         <UBadge :label="`Task: ${modelValue.task === 'transcribe' ? 'Transcribe' : 'Translate to English'}`" color="info" variant="soft" />
         <UBadge :label="`Speaker ID: ${modelValue.enable_diarization ? 'Enabled' : 'Disabled'}`" :color="modelValue.enable_diarization ? 'success' : 'neutral'" variant="soft" />
-        <UBadge v-if="modelValue.enable_diarization" :label="`Speakers: ${modelValue.min_speakers}-${modelValue.max_speakers}`" color="success" variant="soft" />
-        <UBadge v-if="modelValue.temperature > 0" :label="`Temperature: ${modelValue.temperature}`" color="warning" variant="soft" />
-        <UBadge v-if="modelValue.initial_prompt" label="Custom Prompt" color="secondary" variant="soft" />
+        <UBadge
+          v-if="modelValue.enable_diarization"
+          :label="`Speakers: ${modelValue.min_speakers}-${modelValue.max_speakers}`"
+          color="success"
+          variant="soft"
+        />
+        <UBadge
+          v-if="modelValue.temperature > 0"
+          :label="`Temperature: ${modelValue.temperature}`"
+          color="warning"
+          variant="soft"
+        />
+        <UBadge
+          v-if="modelValue.initial_prompt"
+          label="Custom Prompt"
+          color="secondary"
+          variant="soft"
+        />
       </div>
     </UCard>
   </div>

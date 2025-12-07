@@ -38,8 +38,8 @@ const selectedSearch = ref<SavedSearch | null>(null)
 const newSearchName = ref('')
 
 const emit = defineEmits<{
-  'apply': [search: SavedSearch]
-  'save': [name: string]
+  apply: [search: SavedSearch]
+  save: [name: string]
 }>()
 
 function applySearch(search: SavedSearch) {

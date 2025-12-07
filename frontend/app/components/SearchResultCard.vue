@@ -33,7 +33,7 @@ type ColorType = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'err
 
 // Document type configuration
 const typeConfig = computed(() => {
-  const configs: Record<string, { icon: string; color: ColorType; label: string }> = {
+  const configs: Record<string, { icon: string, color: ColorType, label: string }> = {
     contract: { icon: 'i-lucide-file-text', color: 'primary', label: 'Contract' },
     court_filing: { icon: 'i-lucide-gavel', color: 'error', label: 'Court Filing' },
     transcript: { icon: 'i-lucide-mic', color: 'warning', label: 'Transcript' },
@@ -143,7 +143,12 @@ const scoreColor = computed((): ColorType => {
               {{ result.title }}
             </h3>
             <div class="flex items-center gap-2 flex-wrap text-xs">
-              <UBadge :label="typeConfig.label" :color="typeConfig.color" variant="soft" size="sm" />
+              <UBadge
+                :label="typeConfig.label"
+                :color="typeConfig.color"
+                variant="soft"
+                size="sm"
+              />
 
               <!-- Transcript-specific metadata -->
               <template v-if="isTranscript">

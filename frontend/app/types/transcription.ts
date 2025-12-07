@@ -1,41 +1,41 @@
 // Shared transcription types - single source of truth
 
 export interface TranscriptSegment {
-  id: string     // Unique segment identifier
-  start: number  // seconds (legacy name, maps to startTime)
-  end: number    // seconds (legacy name, maps to endTime)
+  id: string // Unique segment identifier
+  start: number // seconds (legacy name, maps to startTime)
+  end: number // seconds (legacy name, maps to endTime)
   text: string
-  speaker?: string  // Speaker identifier (maps to speakerId)
+  speaker?: string // Speaker identifier (maps to speakerId)
   confidence?: number
 }
 
 export interface Speaker {
   id: string
-  inferredName?: string  // Provider-inferred name
-  name?: string          // User-customized name (frontend only)
-  role?: string          // User-assigned role (frontend only)
-  color?: string         // UI color (frontend only)
+  inferredName?: string // Provider-inferred name
+  name?: string // User-customized name (frontend only)
+  role?: string // User-assigned role (frontend only)
+  color?: string // UI color (frontend only)
 }
 
 /**
  * Provider capabilities - describes what a transcription provider supports
  */
 export interface ProviderCapabilities {
-  diarization: boolean      // Speaker identification
-  streaming: boolean        // Real-time transcription
+  diarization: boolean // Speaker identification
+  streaming: boolean // Real-time transcription
   languageDetection: boolean
   languageCount: number
-  directUrlInput: boolean   // Can transcribe from URLs directly
+  directUrlInput: boolean // Can transcribe from URLs directly
   maxDurationSeconds?: number
-  multimodal: boolean       // Video/visual context support
+  multimodal: boolean // Video/visual context support
 }
 
 /**
  * Available transcription provider info
  */
 export interface ProviderInfo {
-  name: string              // e.g., 'chirp'
-  displayName: string       // e.g., 'Google Chirp 3'
+  name: string // e.g., 'chirp'
+  displayName: string // e.g., 'Google Chirp 3'
   capabilities: ProviderCapabilities
 }
 
@@ -46,7 +46,7 @@ export interface TranscriptionInput {
   enableDiarization?: boolean
   enableSummary?: boolean
   maxSpeakers?: number
-  provider?: string  // Which provider to use (default: chirp)
+  provider?: string // Which provider to use (default: chirp)
 }
 
 export interface TranscriptionOutput {
@@ -57,7 +57,7 @@ export interface TranscriptionOutput {
   language?: string
   // Detailed summarization output (replaces legacy summary string)
   summarization?: SummarizationOutput
-  provider?: string  // Which provider was used
+  provider?: string // Which provider was used
 }
 
 // Summarization types

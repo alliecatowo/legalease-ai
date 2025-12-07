@@ -118,7 +118,9 @@ async function startTranscription(doc: any) {
       <div v-if="isLoading" class="flex items-center justify-center py-20">
         <div class="text-center space-y-4">
           <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
-          <p class="text-muted">Loading transcriptions...</p>
+          <p class="text-muted">
+            Loading transcriptions...
+          </p>
         </div>
       </div>
 
@@ -129,8 +131,12 @@ async function startTranscription(doc: any) {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-mic" class="size-8 text-primary" />
               <div>
-                <p class="text-2xl font-bold">{{ stats.total }}</p>
-                <p class="text-sm text-muted">Total</p>
+                <p class="text-2xl font-bold">
+                  {{ stats.total }}
+                </p>
+                <p class="text-sm text-muted">
+                  Total
+                </p>
               </div>
             </div>
           </UCard>
@@ -138,8 +144,12 @@ async function startTranscription(doc: any) {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-check-circle" class="size-8 text-success" />
               <div>
-                <p class="text-2xl font-bold">{{ stats.completed }}</p>
-                <p class="text-sm text-muted">Completed</p>
+                <p class="text-2xl font-bold">
+                  {{ stats.completed }}
+                </p>
+                <p class="text-sm text-muted">
+                  Completed
+                </p>
               </div>
             </div>
           </UCard>
@@ -147,8 +157,12 @@ async function startTranscription(doc: any) {
             <div class="flex items-center gap-3">
               <UIcon name="i-lucide-loader-circle" class="size-8 text-warning" :class="{ 'animate-spin': stats.processing > 0 }" />
               <div>
-                <p class="text-2xl font-bold">{{ stats.processing }}</p>
-                <p class="text-sm text-muted">Processing</p>
+                <p class="text-2xl font-bold">
+                  {{ stats.processing }}
+                </p>
+                <p class="text-sm text-muted">
+                  Processing
+                </p>
               </div>
             </div>
           </UCard>
@@ -166,7 +180,9 @@ async function startTranscription(doc: any) {
         <!-- Transcriptions List -->
         <UCard v-if="transcriptions.length">
           <template #header>
-            <h3 class="font-semibold">Audio/Video Files</h3>
+            <h3 class="font-semibold">
+              Audio/Video Files
+            </h3>
           </template>
 
           <div class="space-y-2">
@@ -191,7 +207,12 @@ async function startTranscription(doc: any) {
                   <p class="text-sm text-muted">{{ getCaseName(t.caseId) }} &bull; {{ formatBytes(t.fileSize) }}</p>
                 </div>
               </NuxtLink>
-              <UBadge :label="t.status" :color="statusColors[t.status] || 'neutral'" variant="soft" class="capitalize" />
+              <UBadge
+                :label="t.status"
+                :color="statusColors[t.status] || 'neutral'"
+                variant="soft"
+                class="capitalize"
+              />
               <span class="text-sm text-muted hidden sm:block">{{ formatDate(t.createdAt) }}</span>
               <UButton
                 v-if="t.status === 'failed'"
@@ -216,8 +237,12 @@ async function startTranscription(doc: any) {
         <!-- Empty State -->
         <div v-else class="text-center py-20">
           <UIcon name="i-lucide-mic" class="size-16 text-muted mx-auto mb-4 opacity-30" />
-          <h3 class="text-xl font-semibold mb-2">No audio/video files yet</h3>
-          <p class="text-muted mb-6">Upload audio or video files to transcribe</p>
+          <h3 class="text-xl font-semibold mb-2">
+            No audio/video files yet
+          </h3>
+          <p class="text-muted mb-6">
+            Upload audio or video files to transcribe
+          </p>
           <UButton label="Upload Transcription" icon="i-lucide-upload" @click="() => showUploadModal = true" />
         </div>
 

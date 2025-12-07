@@ -72,9 +72,9 @@ const chunkTypeOptions = [
 ]
 
 const hasActiveFilters = computed(() =>
-  props.selectedCases.length > 0 ||
-  props.selectedDocumentTypes.length > 0 ||
-  (props.selectedChunkTypes && props.selectedChunkTypes.length > 0)
+  props.selectedCases.length > 0
+  || props.selectedDocumentTypes.length > 0
+  || (props.selectedChunkTypes && props.selectedChunkTypes.length > 0)
 )
 
 const clearAllFilters = () => {

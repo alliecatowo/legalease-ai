@@ -1,4 +1,5 @@
-import {
+import type {
+  Timestamp,
   collection,
   doc,
   addDoc,
@@ -12,7 +13,6 @@ import {
   limit,
   onSnapshot,
   serverTimestamp,
-  Timestamp,
   increment,
   type QueryConstraint
 } from 'firebase/firestore'

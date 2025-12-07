@@ -231,7 +231,7 @@ export function useTranscription() {
 
     let text = `${currentTranscription.value.title}\n\n`
 
-    currentTranscription.value.segments.forEach(segment => {
+    currentTranscription.value.segments.forEach((segment) => {
       const speaker = currentTranscription.value!.speakers.find(s => s.id === segment.speaker)
       const speakerName = speaker?.name || 'Unknown'
       const timestamp = formatTime(segment.start)
@@ -267,7 +267,7 @@ export function useTranscription() {
 
     let vtt = 'WEBVTT\n\n'
 
-    currentTranscription.value.segments.forEach(segment => {
+    currentTranscription.value.segments.forEach((segment) => {
       const startTime = formatVTTTime(segment.start)
       const endTime = formatVTTTime(segment.end)
       const speaker = currentTranscription.value!.speakers.find(s => s.id === segment.speaker)

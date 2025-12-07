@@ -7,14 +7,14 @@ interface SearchResult {
   score: number
   text: string
   page_number?: number
-  bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
+  bboxes?: Array<BBox | { bbox: BBox, text?: string, page?: number }>
 }
 
 interface Props {
   documentId: number | string
   searchQuery?: string
-  bm25Results?: SearchResult[]  // BM25 keyword results (blue)
-  fusionResults?: SearchResult[]  // Fusion hybrid results (yellow)
+  bm25Results?: SearchResult[] // BM25 keyword results (blue)
+  fusionResults?: SearchResult[] // Fusion hybrid results (yellow)
   highlightBboxes?: BBox[]
   initialPage?: number
   chunkId?: number
@@ -83,7 +83,7 @@ const normalizeBBox = (bbox: BBox) => {
 
 // Collect boxes from page-level and item-level bboxes
 const collectBoxesForPage = (page: PageData) => {
-  const out: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+  const out: Array<{ x: number, y: number, width: number, height: number, text?: string }> = []
 
   // Page-level bboxes
   for (const pb of page.bboxes || []) {
@@ -106,8 +106,8 @@ const collectBoxesForPage = (page: PageData) => {
 
 // Get search result highlights - BM25 (blue) and Fusion (yellow) separately
 const allHighlights = computed(() => {
-  const bm25Boxes: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'bm25' | 'semantic'; score: number }> = []
-  const fusionBoxes: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'bm25' | 'semantic'; score: number }> = []
+  const bm25Boxes: Array<{ x: number, y: number, width: number, height: number, text?: string, page: number, type: 'bm25' | 'semantic', score: number }> = []
+  const fusionBoxes: Array<{ x: number, y: number, width: number, height: number, text?: string, page: number, type: 'bm25' | 'semantic', score: number }> = []
   const seenPositions = new Set<string>()
 
   // Collect BM25 boxes (blue) - up to 5 boxes
@@ -126,7 +126,7 @@ const allHighlights = computed(() => {
         x: nb.x, y: nb.y, width: nb.width, height: nb.height,
         text: (entry as any).text || result.text,
         page,
-        type: 'bm25',  // BLUE
+        type: 'bm25', // BLUE
         score: result.score
       })
       if (bm25Boxes.length >= 5) break
@@ -150,7 +150,7 @@ const allHighlights = computed(() => {
         x: nb.x, y: nb.y, width: nb.width, height: nb.height,
         text: (entry as any).text || result.text,
         page,
-        type: 'semantic',  // YELLOW
+        type: 'semantic', // YELLOW
         score: result.score
       })
       if (fusionBoxes.length >= 5) break
@@ -172,7 +172,7 @@ const textHighlights = computed(() => {
   const q = (props.searchQuery || '').toLowerCase().trim()
   if (!q) return []
 
-  const out: Array<{ x: number; y: number; width: number; height: number; text?: string; page: number; type: 'text' }> = []
+  const out: Array<{ x: number, y: number, width: number, height: number, text?: string, page: number, type: 'text' }> = []
 
   for (const page of documentContent.value.pages) {
     for (const item of page.items) {
@@ -201,7 +201,6 @@ const textHighlights = computed(() => {
   return out
 })
 
-
 // Just the highlights for the current page
 const pageHighlights = computed(() => {
   return allHighlights.value.filter(h => h.page === currentPage.value)
@@ -209,8 +208,8 @@ const pageHighlights = computed(() => {
 
 // Build highlight rectangles for current page from item.bboxes
 const currentPageHighlights = computed(() => {
-  if (!currentPageData.value) return [] as Array<{ x: number; y: number; width: number; height: number; text?: string }>
-  const results: Array<{ x: number; y: number; width: number; height: number; text?: string }> = []
+  if (!currentPageData.value) return [] as Array<{ x: number, y: number, width: number, height: number, text?: string }>
+  const results: Array<{ x: number, y: number, width: number, height: number, text?: string }> = []
   const q = (props.searchQuery || '').toLowerCase()
 
   const pushEntry = (entry: any, fallbackText?: string) => {
@@ -283,7 +282,6 @@ const fetchDocumentContent = async () => {
         totalPages.value = pdfViewerRef.value.totalPages
       }
     }, 1000)
-
   } catch (e: any) {
     console.error('Error fetching document content:', e)
     error.value = e.message || 'Failed to load document'
@@ -435,7 +433,6 @@ watch(() => props.documentId, () => {
           @click="fetchDocumentContent"
         />
       </div>
-
     </div>
 
     <!-- PDF Viewer Container -->
@@ -444,7 +441,9 @@ watch(() => props.documentId, () => {
       <div v-if="isLoading" class="flex items-center justify-center h-full">
         <div class="text-center space-y-4">
           <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto" />
-          <p class="text-muted">Loading document...</p>
+          <p class="text-muted">
+            Loading document...
+          </p>
         </div>
       </div>
 
@@ -453,8 +452,12 @@ watch(() => props.documentId, () => {
         <UCard class="max-w-md">
           <div class="text-center space-y-4">
             <UIcon name="i-lucide-alert-circle" class="size-12 text-error mx-auto" />
-            <h3 class="text-lg font-semibold">Failed to Load Document</h3>
-            <p class="text-muted">{{ error }}</p>
+            <h3 class="text-lg font-semibold">
+              Failed to Load Document
+            </h3>
+            <p class="text-muted">
+              {{ error }}
+            </p>
             <UButton
               label="Retry"
               icon="i-lucide-refresh-cw"
@@ -485,7 +488,6 @@ watch(() => props.documentId, () => {
           }))"
           @page-change="(p:number) => currentPage = p"
         />
-
       </div>
     </div>
 

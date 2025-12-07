@@ -24,7 +24,7 @@ export interface NormalizedBBox {
 export interface DocumentContentItem {
   text: string
   type: string
-  bboxes?: Array<BBox | { bbox: BBox; text?: string; page?: number }>
+  bboxes?: Array<BBox | { bbox: BBox, text?: string, page?: number }>
   chunk_id?: number
 }
 
@@ -77,10 +77,10 @@ export const useDocumentViewer = () => {
     const b2 = normalizeBBox(bbox2)
 
     return !(
-      b1.x + b1.width < b2.x ||
-      b2.x + b2.width < b1.x ||
-      b1.y + b1.height < b2.y ||
-      b2.y + b2.height < b1.y
+      b1.x + b1.width < b2.x
+      || b2.x + b2.width < b1.x
+      || b1.y + b1.height < b2.y
+      || b2.y + b2.height < b1.y
     )
   }
 
@@ -115,7 +115,7 @@ export const useDocumentViewer = () => {
 
     const lowerQuery = query.toLowerCase()
 
-    return items.filter(item => {
+    return items.filter((item) => {
       const hasMatch = item.text && item.text.toLowerCase().includes(lowerQuery)
       const hasBbox = !requireBbox || (item.bboxes && item.bboxes.length > 0)
       return hasMatch && hasBbox
@@ -132,7 +132,7 @@ export const useDocumentViewer = () => {
   ): DocumentContentItem[] => {
     if (!targetBboxes || targetBboxes.length === 0) return []
 
-    return items.filter(item => {
+    return items.filter((item) => {
       const boxes: BBox[] = []
       if (item.bboxes && item.bboxes.length) {
         for (const entry of item.bboxes) {
@@ -160,7 +160,7 @@ export const useDocumentViewer = () => {
     const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
     let highlighted = text
 
-    terms.forEach(term => {
+    terms.forEach((term) => {
       const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const regex = new RegExp(`(${escapedTerm})`, 'gi')
       highlighted = highlighted.replace(regex, `<mark class="${highlightClass}">$1</mark>`)
@@ -255,7 +255,7 @@ export const useDocumentViewer = () => {
   const groupItemsByPage = (items: DocumentContentItem[]): Map<number, DocumentContentItem[]> => {
     const grouped = new Map<number, DocumentContentItem[]>()
 
-    items.forEach(item => {
+    items.forEach((item) => {
       const pageNum = (item as any).page_number || 1
       if (!grouped.has(pageNum)) {
         grouped.set(pageNum, [])
