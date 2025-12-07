@@ -52,6 +52,7 @@ async function storeExtractionResult(
 
   // Update main document with extraction status
   await db.doc(`documents/${documentId}`).update({
+    status: 'indexed',
     extractionStatus: 'completed',
     pageCount: extraction.pageCount,
     chunkCount: extraction.chunks.length,
@@ -222,6 +223,7 @@ export const extractDocumentFlow = ai.defineFlow(
 
       // Update document with failure status
       await docRef.update({
+        status: 'failed',
         extractionStatus: 'failed',
         extractionError: error.message || 'Unknown extraction error',
         extractionFailedAt: FieldValue.serverTimestamp()

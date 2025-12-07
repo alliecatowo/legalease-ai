@@ -339,7 +339,7 @@ IMPORTANT: For keyMoments, use the actual timestamps from the transcript (e.g., 
  * 2. Stores pages and chunks in Firestore subcollections
  * 3. Indexes chunks in Qdrant vector store
  */
-export const startDocumentExtraction = onDocumentUpdated(
+export const startDocumentExtraction = onDocumentWritten(
   {
     document: 'documents/{documentId}',
     secrets: [googleAIApiKey, qdrantUrl, qdrantApiKey],
@@ -347,17 +347,22 @@ export const startDocumentExtraction = onDocumentUpdated(
     timeoutSeconds: 540 // 9 minutes for large documents
   },
   async (event) => {
-    const beforeData = event.data?.before.data()
-    const afterData = event.data?.after.data()
+    const beforeData = event.data?.before?.data()
+    const afterData = event.data?.after?.data()
     const documentId = event.params.documentId
 
-    // Only process when status changes to "processing"
-    if (!afterData || beforeData?.status === afterData.status) {
+    // Skip if document was deleted
+    if (!afterData) {
       return
     }
 
+    // Only process when status is "processing" and wasn't before
+    // This handles both new documents and status updates
     if (afterData.status !== 'processing') {
       return
+    }
+    if (beforeData?.status === 'processing') {
+      return // Already processing, don't restart
     }
 
     // Skip if not a document type that needs extraction
@@ -365,12 +370,22 @@ export const startDocumentExtraction = onDocumentUpdated(
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'text/html',
-      'text/markdown'
+      'text/markdown',
+      // Images - Docling does OCR
+      'image/png',
+      'image/jpeg',
+      'image/tiff'
     ]
 
     if (!extractableMimeTypes.includes(afterData.mimeType)) {
-      console.log(`[startDocumentExtraction] Skipping non-extractable document ${documentId} (${afterData.mimeType})`)
+      console.log(`[startDocumentExtraction] Unsupported document type ${documentId} (${afterData.mimeType})`)
+      const db = getFirestore()
+      await db.doc(`documents/${documentId}`).update({
+        status: 'failed',
+        error: `Unsupported file type: ${afterData.mimeType}. Supported: PDF, DOCX, PPTX, XLSX, HTML, Markdown, and images (PNG, JPG, TIFF).`
+      })
       return
     }
 

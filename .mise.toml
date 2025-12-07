@@ -4,7 +4,12 @@ pnpm = "latest"
 
 [env]
 _.path = ["{{config_root}}/node_modules/.bin", "{{config_root}}/frontend/node_modules/.bin"]
+# Local Qdrant (default for development)
+QDRANT_LOCAL = "true"
 QDRANT_URL = "http://localhost:6333"
+# For production Qdrant Cloud, set these as Firebase secrets:
+# firebase functions:secrets:set QDRANT_URL
+# firebase functions:secrets:set QDRANT_API_KEY
 
 # ============================================
 # Development

@@ -9,6 +9,8 @@
 
 import { Storage } from '@google-cloud/storage'
 import { GoogleAuth } from 'google-auth-library'
+import { isEmulator } from '../../../config.js'
+import { download as downloadFromStorage } from '../../../storage/index.js'
 import type { DocumentExtractionProvider, ProviderCapabilities } from '../provider.js'
 import type {
   ExtractionInput,
@@ -75,8 +77,11 @@ interface DoclingPage {
   }
 }
 
+// Pages can be an array or object keyed by page number
+type DoclingPages = DoclingPage[] | Record<string, { size: { width: number; height: number } }>
+
 interface DoclingDocument {
-  pages: DoclingPage[]
+  pages: DoclingPages
   texts: DoclingTextItem[]
   tables: DoclingTableItem[]
   pictures: DoclingPictureItem[]
@@ -209,23 +214,32 @@ export class DoclingProvider implements DocumentExtractionProvider {
 
   /**
    * Prepare the source for Docling API
+   * Returns either a source object (for /v1/convert/source) or a Buffer (for /v1/convert/file)
    */
-  private async prepareSource(input: ExtractionInput): Promise<{ kind: string; url?: string; base64?: string; mime_type?: string }> {
+  private async prepareSource(input: ExtractionInput): Promise<
+    | { type: 'source'; data: { kind: string; url?: string } }
+    | { type: 'file'; data: Buffer; filename: string }
+  > {
     switch (input.source.type) {
       case 'gcs': {
-        // Generate a signed URL that Docling can fetch
+        // In emulator mode, download directly and use file upload
+        // (signed URLs don't work without service account credentials)
+        if (isEmulator()) {
+          console.log('[Docling] Emulator mode: downloading file for direct upload')
+          const buffer = await downloadFromStorage(input.source.uri!)
+          return { type: 'file', data: buffer, filename: input.filename }
+        }
+        // Production: generate a signed URL that Docling can fetch
         const signedUrl = await this.generateSignedUrl(input.source.uri!)
-        return { kind: 'http', url: signedUrl }
+        return { type: 'source', data: { kind: 'http', url: signedUrl } }
       }
       case 'url': {
-        return { kind: 'http', url: input.source.uri! }
+        return { type: 'source', data: { kind: 'http', url: input.source.uri! } }
       }
       case 'base64': {
-        return {
-          kind: 'base64',
-          base64: input.source.data!,
-          mime_type: input.source.mimeType
-        }
+        // Convert base64 to buffer for file upload
+        const buffer = Buffer.from(input.source.data!, 'base64')
+        return { type: 'file', data: buffer, filename: input.filename }
       }
       default:
         throw new Error(`Unsupported source type: ${input.source.type}`)
@@ -258,25 +272,18 @@ export class DoclingProvider implements DocumentExtractionProvider {
 
   /**
    * Call Docling Cloud Run service
-   * Uses service account authentication via ID token
+   * Uses service account authentication via ID token (production only)
    */
   private async callDocling(
-    source: { kind: string; url?: string; base64?: string; mime_type?: string },
+    source: { type: 'source'; data: { kind: string; url?: string } } | { type: 'file'; data: Buffer; filename: string },
     options?: ExtractionInput['options']
   ): Promise<DoclingConvertResponse> {
-    // Get ID token for Cloud Run authentication
-    const client = await this.auth.getIdTokenClient(this.config.serviceUrl)
-    const headers = await client.getRequestHeaders()
-
-    const requestBody = {
-      sources: [source],
-      options: {
-        do_ocr: !options?.skipOcr && !this.config.skipOcr,
-        do_table_structure: !options?.skipTableStructure && !this.config.skipTableStructure,
-        // Request both document JSON and markdown
-        return_as_file: false,
-        include_md: true
-      }
+    // In emulator mode, call local Docling without authentication
+    // In production, get ID token for Cloud Run authentication
+    let authHeaders: Record<string, string> = {}
+    if (!isEmulator()) {
+      const client = await this.auth.getIdTokenClient(this.config.serviceUrl)
+      authHeaders = await client.getRequestHeaders()
     }
 
     const controller = new AbortController()
@@ -284,25 +291,79 @@ export class DoclingProvider implements DocumentExtractionProvider {
     const timeoutId = setTimeout(() => controller.abort(), timeout)
 
     try {
-      const response = await fetch(`${this.config.serviceUrl}/v1/convert/source`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...headers
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal
-      })
+      let response: Response
+
+      if (source.type === 'file') {
+        // Use multipart file upload endpoint
+        const formData = new FormData()
+        const blob = new Blob([source.data])
+        formData.append('files', blob, source.filename)
+        formData.append('to_formats', 'json')
+        formData.append('to_formats', 'md')
+        formData.append('do_ocr', String(!options?.skipOcr && !this.config.skipOcr))
+        formData.append('do_table_structure', String(!options?.skipTableStructure && !this.config.skipTableStructure))
+
+        response = await fetch(`${this.config.serviceUrl}/v1/convert/file`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: formData,
+          signal: controller.signal
+        })
+      } else {
+        // Use source URL endpoint
+        const requestBody = {
+          sources: [source.data],
+          options: {
+            do_ocr: !options?.skipOcr && !this.config.skipOcr,
+            do_table_structure: !options?.skipTableStructure && !this.config.skipTableStructure,
+            return_as_file: false,
+            include_md: true
+          }
+        }
+
+        response = await fetch(`${this.config.serviceUrl}/v1/convert/source`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        })
+      }
 
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Docling API error (${response.status}): ${errorText}`)
       }
 
-      const result = await response.json() as DoclingConvertResponse
+      const rawResult = await response.json()
 
-      if (result.error) {
-        throw new Error(`Docling extraction failed: ${result.error}`)
+      // Normalize response format - file endpoint has different structure
+      let result: DoclingConvertResponse
+      if (source.type === 'file') {
+        // File endpoint: { document: { json_content, md_content }, status, ... }
+        const fileResult = rawResult as {
+          document: { json_content?: DoclingDocument; md_content?: string }
+          status: string
+          errors?: Array<{ message: string }>
+        }
+        if (fileResult.errors?.length) {
+          throw new Error(`Docling extraction failed: ${fileResult.errors[0].message}`)
+        }
+        if (!fileResult.document.json_content) {
+          throw new Error('Docling returned no document content')
+        }
+        result = {
+          document: fileResult.document.json_content,
+          md: fileResult.document.md_content
+        }
+      } else {
+        // Source endpoint: { document, md, status, error }
+        result = rawResult as DoclingConvertResponse
+        if (result.error) {
+          throw new Error(`Docling extraction failed: ${result.error}`)
+        }
       }
 
       return result
@@ -320,10 +381,17 @@ export class DoclingProvider implements DocumentExtractionProvider {
     input: ExtractionInput,
     processingTimeMs: number
   ): ExtractionResult {
-    // Build page dimensions map
+    // Build page dimensions map - handle both array and object formats
     const pageDimensions = new Map<number, { width: number; height: number }>()
-    for (const page of doc.pages) {
-      pageDimensions.set(page.page_no, { width: page.size.width, height: page.size.height })
+    if (Array.isArray(doc.pages)) {
+      for (const page of doc.pages) {
+        pageDimensions.set(page.page_no, { width: page.size.width, height: page.size.height })
+      }
+    } else {
+      // Object format: { "1": { size: {...} }, "2": { size: {...} } }
+      for (const [pageNo, page] of Object.entries(doc.pages)) {
+        pageDimensions.set(parseInt(pageNo, 10), { width: page.size.width, height: page.size.height })
+      }
     }
 
     // Transform elements and group by page
@@ -444,7 +512,7 @@ export class DoclingProvider implements DocumentExtractionProvider {
       documentId: input.documentId,
       filename: input.filename,
       mimeType: doc.origin?.mimetype || 'application/pdf',
-      pageCount: doc.pages.length,
+      pageCount: Array.isArray(doc.pages) ? doc.pages.length : Object.keys(doc.pages).length,
       content: {
         markdown: markdown || fullText,
         text: fullText

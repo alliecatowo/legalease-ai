@@ -6,6 +6,7 @@
  */
 
 import { z } from 'genkit'
+import { randomUUID } from 'crypto'
 import { QdrantClient } from '@qdrant/js-client-rest'
 import { defineSecret } from 'firebase-functions/params'
 import { ai } from '../genkit.js'
@@ -59,9 +60,9 @@ const BboxSchema = z.object({
 // Search input schema
 export const SearchInput = z.object({
   query: z.string().describe('Search query'),
-  caseId: z.string().optional().describe('Filter by case ID'),
-  documentId: z.string().optional().describe('Filter by specific document'),
-  documentType: z.string().optional().describe('Filter by document type'),
+  caseId: z.string().nullable().optional().describe('Filter by case ID'),
+  documentId: z.string().nullable().optional().describe('Filter by specific document'),
+  documentType: z.string().nullable().optional().describe('Filter by document type'),
   chunkTypes: z.array(z.enum(['summary', 'section', 'paragraph'])).optional().describe('Filter by chunk types'),
   limit: z.number().default(20).describe('Max results'),
   scoreThreshold: z.number().default(0.5).describe('Minimum similarity score'),
@@ -292,9 +293,9 @@ export const indexDocumentChunksFlow = ai.defineFlow(
           batch.map(chunk => generateEmbedding(chunk.text))
         )
 
-        // Prepare points for upsert
+        // Prepare points for upsert (Qdrant requires UUID or integer IDs)
         const points = batch.map((chunk, idx) => ({
-          id: chunk.id,
+          id: randomUUID(),
           vector: embeddings[idx],
           payload: {
             documentId,
