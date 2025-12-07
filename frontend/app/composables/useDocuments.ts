@@ -82,6 +82,7 @@ export function useDocuments() {
       onProgress?: (progress: DocumentUploadProgress) => void
     } = {}
   ): Promise<string> {
+    if (import.meta.server) throw new Error('Cannot upload on server')
     if (!$firestore || !$storage) throw new Error('Firebase not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
@@ -167,6 +168,7 @@ export function useDocuments() {
     title?: string
     documentType?: DocumentDoc['documentType']
   }): Promise<string> {
+    if (import.meta.server) throw new Error('Cannot create document on server')
     if (!$firestore) throw new Error('Firestore not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
@@ -198,6 +200,7 @@ export function useDocuments() {
    * Get a document by ID
    */
   async function getDocument(id: string): Promise<DocumentDoc | null> {
+    if (import.meta.server) return null
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'documents', id)
@@ -220,6 +223,7 @@ export function useDocuments() {
     documentType?: DocumentDoc['documentType']
     limitCount?: number
   } = {}): Promise<DocumentDoc[]> {
+    if (import.meta.server) return []
     if (!$firestore) throw new Error('Firestore not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
@@ -277,6 +281,7 @@ export function useDocuments() {
    * Update a document
    */
   async function updateDocument(id: string, data: Partial<DocumentDoc>): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'documents', id)
@@ -300,6 +305,7 @@ export function useDocuments() {
    * Delete a document
    */
   async function deleteDocument(id: string): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore || !$storage) throw new Error('Firebase not initialized')
 
     // Get the document to find storage path and case ID

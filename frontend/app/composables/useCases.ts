@@ -69,6 +69,7 @@ export function useCases() {
    * Create a new case
    */
   async function createCase(data: CaseCreateInput): Promise<string> {
+    if (import.meta.server) throw new Error('Cannot create case on server')
     if (!$firestore) throw new Error('Firestore not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
@@ -91,6 +92,7 @@ export function useCases() {
    * Get a case by ID
    */
   async function getCase(id: string): Promise<CaseDoc | null> {
+    if (import.meta.server) return null
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'cases', id)
@@ -112,6 +114,7 @@ export function useCases() {
     status?: CaseDoc['status']
     limitCount?: number
   } = {}): Promise<CaseDoc[]> {
+    if (import.meta.server) return []
     if (!$firestore) throw new Error('Firestore not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
@@ -162,6 +165,7 @@ export function useCases() {
    * Update a case
    */
   async function updateCase(id: string, data: CaseUpdateInput): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'cases', id)
@@ -186,6 +190,7 @@ export function useCases() {
    * Delete a case
    */
   async function deleteCase(id: string): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'cases', id)
@@ -264,6 +269,7 @@ export function useCases() {
    * Increment document count for a case
    */
   async function incrementDocumentCount(caseId: string, delta: number = 1): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const caseDoc = await getCase(caseId)

@@ -52,6 +52,7 @@ export function useFirestore() {
    * Create a new transcription document
    */
   async function createTranscription(data: Omit<TranscriptionDoc, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    if (import.meta.server) throw new Error('Cannot create on server')
     if (!$firestore) throw new Error('Firestore not initialized')
     if (!user.value) throw new Error('User must be authenticated')
 
@@ -75,6 +76,7 @@ export function useFirestore() {
    * Get a transcription by ID
    */
   async function getTranscription(id: string): Promise<TranscriptionDoc | null> {
+    if (import.meta.server) return null
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'transcriptions', id)
@@ -92,6 +94,7 @@ export function useFirestore() {
    * Update a transcription document
    */
   async function updateTranscription(id: string, data: Partial<TranscriptionDoc>): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore) throw new Error('Firestore not initialized')
 
     // Filter out undefined values - Firestore doesn't allow them
@@ -115,6 +118,7 @@ export function useFirestore() {
     status?: TranscriptionDoc['status']
     limitCount?: number
   } = {}): Promise<TranscriptionDoc[]> {
+    if (import.meta.server) return []
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const constraints: QueryConstraint[] = []
@@ -179,6 +183,7 @@ export function useFirestore() {
    * Delete a transcription
    */
   async function deleteTranscription(id: string): Promise<void> {
+    if (import.meta.server) return
     if (!$firestore) throw new Error('Firestore not initialized')
 
     const docRef = doc($firestore, 'transcriptions', id)

@@ -22,7 +22,7 @@ export const TranscriptionInput = z.object({
   enableDiarization: z.boolean().default(true).describe('Enable speaker diarization'),
   enableSummary: z.boolean().default(false).describe('Generate summary with transcription'),
   maxSpeakers: z.number().default(6).describe('Maximum number of speakers to identify'),
-  provider: z.string().optional().describe('Transcription provider to use (default: chirp)')
+  provider: z.string().optional().describe('Transcription provider to use (default: gemini)')
 }).refine(data => data.gcsUri || data.url, {
   message: 'Either gcsUri or url must be provided'
 })
