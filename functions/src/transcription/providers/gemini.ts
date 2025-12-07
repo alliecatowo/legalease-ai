@@ -147,33 +147,43 @@ Output the transcription as structured JSON with segments, speakers, language, a
 }
 
 /**
+ * MIME type mapping by file extension
+ */
+const MIME_TYPES: Record<string, string> = {
+  // Audio formats
+  '.mp3': 'audio/mp3',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.aac': 'audio/aac',
+  '.m4a': 'audio/mp4',
+  '.wma': 'audio/x-ms-wma',
+  '.opus': 'audio/opus',
+  // Video formats
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.mkv': 'video/x-matroska',
+  '.wmv': 'video/x-ms-wmv',
+  '.flv': 'video/x-flv',
+  '.3gp': 'video/3gpp'
+}
+
+/**
  * Infer MIME type from URL or filename
  */
 function inferMimeType(url: string): string {
   const lower = url.toLowerCase()
+
   // YouTube URLs
   if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
     return 'video/mp4'
   }
-  // Audio formats
-  if (lower.endsWith('.mp3')) return 'audio/mp3'
-  if (lower.endsWith('.wav')) return 'audio/wav'
-  if (lower.endsWith('.flac')) return 'audio/flac'
-  if (lower.endsWith('.ogg')) return 'audio/ogg'
-  if (lower.endsWith('.aac')) return 'audio/aac'
-  if (lower.endsWith('.m4a')) return 'audio/mp4'
-  if (lower.endsWith('.wma')) return 'audio/x-ms-wma'
-  if (lower.endsWith('.opus')) return 'audio/opus'
-  // Video formats
-  if (lower.endsWith('.mp4')) return 'video/mp4'
-  if (lower.endsWith('.webm')) return 'video/webm'
-  if (lower.endsWith('.mov')) return 'video/quicktime'
-  if (lower.endsWith('.avi')) return 'video/x-msvideo'
-  if (lower.endsWith('.mkv')) return 'video/x-matroska'
-  if (lower.endsWith('.wmv')) return 'video/x-ms-wmv'
-  if (lower.endsWith('.flv')) return 'video/x-flv'
-  if (lower.endsWith('.3gp')) return 'video/3gpp'
-  return 'audio/mpeg' // Default for unknown extensions
+
+  // Look up by extension
+  const ext = Object.keys(MIME_TYPES).find(e => lower.endsWith(e))
+  return ext ? MIME_TYPES[ext] : 'audio/mpeg'
 }
 
 export class GeminiProvider implements TranscriptionProvider {
