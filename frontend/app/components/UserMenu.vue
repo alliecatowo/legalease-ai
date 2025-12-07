@@ -145,7 +145,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       }"
     />
 
-    <template #chip-leading="{ item }">
+    <template #chip-leading>
       <span
         class="ms-0.5 size-2 rounded-full bg-primary/50"
       />

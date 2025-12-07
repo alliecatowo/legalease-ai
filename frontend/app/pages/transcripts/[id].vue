@@ -425,8 +425,12 @@ function seekToSegment(segment: TranscriptSegment, fromWaveform = false) {
 
   if (fromWaveform) {
     flashSegmentId.value = segment.id
-    setTimeout(() => { flashSegmentId.value = null }, 1000)
-    if (!autoScrollEnabled.value) autoScrollEnabled.value = true
+    setTimeout(() => {
+      flashSegmentId.value = null
+    }, 1000)
+    if (!autoScrollEnabled.value) {
+      autoScrollEnabled.value = true
+    }
   }
 
   const index = filteredSegments.value.findIndex(s => s.id === segment.id)

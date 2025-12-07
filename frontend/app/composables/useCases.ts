@@ -1,5 +1,4 @@
-import type {
-  Timestamp,
+import {
   collection,
   doc,
   addDoc,
@@ -13,6 +12,7 @@ import type {
   limit,
   onSnapshot,
   serverTimestamp,
+  type Timestamp,
   type QueryConstraint
 } from 'firebase/firestore'
 
@@ -275,9 +275,8 @@ export function useCases() {
     const caseDoc = await getCase(caseId)
     if (!caseDoc) throw new Error('Case not found')
 
-    await updateCase(caseId, {
-      // @ts-ignore - we'll handle this with a proper increment
-    })
+    // TODO: Use FieldValue.increment() for proper atomic increments
+    await updateCase(caseId, {})
 
     // For now, we'll refetch to get the updated count
     // In production, use FieldValue.increment()

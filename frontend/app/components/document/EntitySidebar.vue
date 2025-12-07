@@ -188,7 +188,7 @@ function navigateToBox(boxId: string) {
               </p>
               <div class="space-y-1">
                 <button
-                  v-for="(box, idx) in entity.boundingBoxes"
+                  v-for="box in entity.boundingBoxes"
                   :key="box.id"
                   class="w-full text-left px-2 py-1 rounded text-xs hover:bg-elevated transition-colors flex items-center justify-between"
                   @click.stop="navigateToBox(box.id)"

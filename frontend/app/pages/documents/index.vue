@@ -305,7 +305,7 @@ async function handleBulkAction(action: string) {
         refresh()
       }
       break
-    case 'download':
+    case 'download': {
       // Download documents in parallel
       const docsToDownload = documents.value.filter(d => selectedIds.includes(String(d.id)))
       await Promise.all(docsToDownload.map(doc => downloadDocument(String(doc.id))))
@@ -315,6 +315,7 @@ async function handleBulkAction(action: string) {
         color: 'success'
       })
       break
+    }
     case 'tag':
       toast?.add({ title: 'Coming Soon', description: 'Tag functionality is not yet implemented', color: 'warning' })
       break

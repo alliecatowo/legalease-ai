@@ -1,5 +1,4 @@
-import type {
-  Timestamp,
+import {
   collection,
   doc,
   addDoc,
@@ -13,6 +12,7 @@ import type {
   limit,
   onSnapshot,
   serverTimestamp,
+  type Timestamp,
   type QueryConstraint
 } from 'firebase/firestore'
 import type { TranscriptSegment, Speaker, SummarizationOutput } from '~/types/transcription'

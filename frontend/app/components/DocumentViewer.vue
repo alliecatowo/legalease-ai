@@ -331,8 +331,12 @@ watch([() => props.searchQuery, documentContent], () => {
 })
 
 // Ensure we reset currentPage to initialPage on load or when props change
-watch(() => props.initialPage, (p) => { currentPage.value = p || 1 })
-watch(() => props.documentId, () => { currentPage.value = props.initialPage || 1 })
+watch(() => props.initialPage, (p) => {
+  currentPage.value = p || 1
+})
+watch(() => props.documentId, () => {
+  currentPage.value = props.initialPage || 1
+})
 
 // Initialize
 onMounted(() => {
