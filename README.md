@@ -243,24 +243,26 @@ This will:
 ### Individual Commands
 
 ```bash
-# Start only Docker services
-mise run services:start
+# Start only Docker services (Qdrant, Docling)
+mise run services:up
 
 # Start only Firebase emulators
-mise run dev:emulators
+firebase emulators:start --only functions,firestore,auth,storage
 
 # Start only frontend (assumes emulators running)
-mise run dev:frontend
+cd frontend && NUXT_PUBLIC_USE_EMULATORS=true pnpm dev
 
-# Create test user in running emulator
-mise run emulators:seed
+# Stop Docker services
+mise run services:down
 ```
 
 ### Test User
 
-The emulator seeds a test user automatically:
+The emulator data includes a pre-seeded test user:
 - **Email:** test@example.com
 - **Password:** password123
+
+Or create your own through the Firebase Auth emulator UI (http://localhost:4000).
 
 ### Configuration
 
@@ -278,11 +280,11 @@ You can mix local and cloud services:
 
 ### GPU Acceleration (Optional)
 
-If you have an NVIDIA GPU with nvidia-container-toolkit:
+If you have an NVIDIA GPU with nvidia-container-toolkit, edit `docker-compose.yml` to enable GPU for the Docling service, then restart:
 
 ```bash
-# Start Docling with GPU acceleration (~6x faster)
-mise run services:start:gpu
+mise run services:down
+mise run services:up
 ```
 
 ---
@@ -301,8 +303,8 @@ mise run dev
 # Functions only
 mise run deploy:functions
 
-# Security rules only
-mise run deploy:rules
+# Hosting only
+mise run deploy:hosting
 
 # Everything
 mise run deploy
