@@ -74,7 +74,7 @@ const TRANSCRIPTION_SCHEMA = {
           },
           name: {
             type: 'string',
-            description: 'Inferred name if mentioned in audio'
+            description: 'Speaker name inferred from conversational context'
           }
         },
         required: ['id']
@@ -127,7 +127,7 @@ function buildPrompt(opts: ReturnType<typeof applyDefaults>): string {
     : `The audio is in ${opts.language}.`
 
   const diarizationInstruction = opts.enableDiarization
-    ? `Identify distinct speakers (up to ${opts.maxSpeakers} speakers). Label them as "Speaker 1", "Speaker 2", etc. If a speaker's name is mentioned in the audio, include it in the speakers array.`
+    ? `Identify distinct speakers (up to ${opts.maxSpeakers} speakers). Label them as "Speaker 1", "Speaker 2", etc. Actively infer each speaker's name from conversational context and include it in the speakers array 'name' field.`
     : 'Do not perform speaker diarization. Use "Speaker 1" for all segments.'
 
   return `
