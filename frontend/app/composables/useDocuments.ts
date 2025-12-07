@@ -415,6 +415,85 @@ export function useDocuments() {
     return doc.downloadUrl
   }
 
+  /**
+   * Get pages for a document (stored by document extraction)
+   */
+  async function getDocumentPages(documentId: string): Promise<Array<{
+    pageNumber: number
+    width: number
+    height: number
+    elementCount: number
+    elements: Array<{
+      type: string
+      content: string
+      bbox: { x: number, y: number, width: number, height: number, pageNumber: number }
+      order: number
+      level?: number
+    }>
+  }>> {
+    if (import.meta.server) return []
+    if (!$firestore) throw new Error('Firestore not initialized')
+
+    const pagesRef = collection($firestore, `documents/${documentId}/pages`)
+    const querySnapshot = await getDocs(pagesRef)
+
+    const pages = querySnapshot.docs.map(doc => doc.data() as any)
+    return pages.sort((a, b) => a.pageNumber - b.pageNumber)
+  }
+
+  /**
+   * Get chunks for a document (stored by document extraction)
+   */
+  async function getDocumentChunks(documentId: string): Promise<Array<{
+    id: string
+    type: string
+    text: string
+    bboxes: Array<{ x: number, y: number, width: number, height: number, pageNumber: number }>
+    headings: string[]
+    pageNumbers: number[]
+    elementTypes: string[]
+  }>> {
+    if (import.meta.server) return []
+    if (!$firestore) throw new Error('Firestore not initialized')
+
+    const chunksRef = collection($firestore, `documents/${documentId}/chunks`)
+    const querySnapshot = await getDocs(chunksRef)
+
+    return querySnapshot.docs.map(doc => doc.data() as any)
+  }
+
+  /**
+   * Get related documents (same case)
+   */
+  async function getRelatedDocuments(caseId: string, excludeId?: string, limitCount = 5): Promise<DocumentDoc[]> {
+    if (import.meta.server) return []
+    if (!$firestore) throw new Error('Firestore not initialized')
+    if (!user.value) throw new Error('User must be authenticated')
+
+    const constraints: QueryConstraint[] = [
+      where('caseId', '==', caseId),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount + 1) // +1 to account for potentially excluding current doc
+    ]
+
+    if (currentTeam.value?.id) {
+      constraints.push(where('teamId', '==', currentTeam.value.id))
+    } else {
+      constraints.push(where('userId', '==', user.value.uid))
+    }
+
+    const documentsRef = collection($firestore, 'documents')
+    const q = query(documentsRef, ...constraints)
+    const querySnapshot = await getDocs(q)
+
+    const result = querySnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as DocumentDoc))
+      .filter(doc => doc.id !== excludeId)
+      .slice(0, limitCount)
+
+    return result
+  }
+
   return {
     // State
     documents,
@@ -431,6 +510,9 @@ export function useDocuments() {
     deleteDocument,
     subscribeToDocuments,
     subscribeToDocument,
-    getDownloadUrl
+    getDownloadUrl,
+    getDocumentPages,
+    getDocumentChunks,
+    getRelatedDocuments
   }
 }
