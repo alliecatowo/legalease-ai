@@ -77,12 +77,28 @@ async function performSearch() {
 // Debounced search
 const debouncedSearch = useDebounceFn(performSearch, 300)
 
+// Track if we need to refocus after view switch
+const needsRefocus = ref(false)
+
 // Watch for search changes
 watch([searchQuery, selectedCaseId, selectedDocumentType], () => {
   if (searchQuery.value.trim()) {
     isSearching.value = true
+    // Mark that we'll need to refocus after switching to compact view
+    if (!hasSearched.value) {
+      needsRefocus.value = true
+    }
   }
   debouncedSearch()
+})
+
+// Refocus compact input when switching from hero to results view
+watch(hasSearched, async (newVal) => {
+  if (newVal && needsRefocus.value) {
+    needsRefocus.value = false
+    await nextTick()
+    compactSearchInput.value?.inputRef?.focus()
+  }
 })
 
 function clearSearch() {
