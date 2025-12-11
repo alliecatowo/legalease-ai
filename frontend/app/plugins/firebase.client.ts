@@ -54,7 +54,7 @@ export default defineNuxtPlugin(async () => {
 
     try {
       connectFirestoreEmulator(firestore, 'localhost', 8080)
-      connectAuthEmulator(auth, 'http://localhost:9099')
+      connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true })
       connectFunctionsEmulator(functions, 'localhost', 5001)
 
       if (requiresProductionStorage) {

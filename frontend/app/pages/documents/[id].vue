@@ -8,6 +8,7 @@ const toast = useToast()
 const documentId = computed(() => route.params.id as string)
 const { getDocument, deleteDocument, getDocumentPages, getDocumentChunks, getRelatedDocuments } = useDocuments()
 const { getCase } = useCases()
+const { searchDocuments } = useAI()
 
 // Fetch document
 const loading = ref(true)
@@ -30,6 +31,117 @@ const pages = ref<any[]>([])
 const chunks = ref<any[]>([])
 const relatedDocs = ref<any[]>([])
 const loadingPages = ref(false)
+
+// Search within document
+const searchQuery = ref('')
+const searchResults = ref<any[]>([])
+const isSearching = ref(false)
+
+// PDF Viewer state
+const currentPage = ref(1)
+const zoom = ref(1.0)
+const highlightBoxes = ref<any[]>([])
+
+// Bounding box type for highlights
+interface BoundingBox {
+  id: string
+  page: number
+  x: number
+  y: number
+  width: number
+  height: number
+  text?: string
+  type: string
+  entityType: string
+}
+
+// Map search results to chunk bboxes for highlighting
+function mapResultsToBboxes(results: any[], documentChunks: any[]): BoundingBox[] {
+  const boxes: BoundingBox[] = []
+
+  for (const result of results) {
+    // Find matching chunk by text similarity
+    const resultTextStart = result.text?.substring(0, 50) || ''
+    const chunk = documentChunks.find(c =>
+      c.text?.includes(resultTextStart) || c.id === result.id
+    )
+
+    if (chunk?.bboxes?.length) {
+      for (const bbox of chunk.bboxes) {
+        boxes.push({
+          id: `${result.id}-${bbox.pageNumber || 1}`,
+          page: bbox.pageNumber || 1,
+          x: bbox.x || 0,
+          y: bbox.y || 0,
+          width: bbox.width || 0,
+          height: bbox.height || 0,
+          text: result.text,
+          type: 'SEMANTIC_MATCH',
+          entityType: 'SEMANTIC_MATCH'
+        })
+      }
+    }
+  }
+
+  return boxes
+}
+
+// Navigate to a search result's page
+function navigateToResult(result: any) {
+  // Try to find the page from the result or matching chunk
+  if (result.metadata?.pageNumbers?.length) {
+    currentPage.value = result.metadata.pageNumbers[0]
+    return
+  }
+
+  const resultTextStart = result.text?.substring(0, 50) || ''
+  const chunk = chunks.value.find(c => c.text?.includes(resultTextStart))
+  if (chunk?.pageNumbers?.[0]) {
+    currentPage.value = chunk.pageNumbers[0]
+  }
+}
+
+// Debounced search within document
+const debouncedSearch = useDebounceFn(async (query: string) => {
+  if (!query.trim()) {
+    searchResults.value = []
+    highlightBoxes.value = []
+    return
+  }
+  isSearching.value = true
+  try {
+    const response = await searchDocuments({
+      query,
+      documentId: documentId.value,
+      limit: 10,
+      scoreThreshold: 0.3
+    })
+    searchResults.value = response.results
+
+    // Map results to bboxes for PDF highlighting
+    highlightBoxes.value = mapResultsToBboxes(response.results, chunks.value)
+
+    // Auto-navigate to first result's page
+    if (response.results.length > 0) {
+      navigateToResult(response.results[0])
+    }
+  } catch (err) {
+    console.error('Search failed:', err)
+    searchResults.value = []
+    highlightBoxes.value = []
+  } finally {
+    isSearching.value = false
+  }
+}, 300)
+
+watch(searchQuery, (query) => {
+  if (!query.trim()) {
+    searchResults.value = []
+    highlightBoxes.value = []
+  } else {
+    debouncedSearch(query)
+  }
+})
 
 async function fetchData() {
   loading.value = true
@@ -230,7 +342,60 @@ function handleShare() {
         <!-- Tab Content -->
         <div class="flex-1 overflow-y-auto">
           <!-- Content Tab - PDF Viewer -->
-          <div v-if="activeTab === 'content'" class="p-4 max-w-7xl mx-auto">
+          <div v-if="activeTab === 'content'" class="p-4 max-w-7xl mx-auto space-y-4">
+            <!-- Search Within Document (only for indexed documents) -->
+            <div v-if="document.status === 'indexed' || document.status === 'completed'">
+              <UInput
+                v-model="searchQuery"
+                icon="i-lucide-search"
+                placeholder="Search within this document..."
+                :loading="isSearching"
+                size="lg"
+              >
+                <template #trailing>
+                  <UButton
+                    v-if="searchQuery"
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    @click="searchQuery = ''"
+                  />
+                </template>
+              </UInput>
+
+              <!-- Search Results -->
+              <div v-if="searchResults.length > 0" class="mt-4 space-y-2">
+                <p class="text-sm text-muted">{{ searchResults.length }} matches found</p>
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                  <UCard
+                    v-for="result in searchResults"
+                    :key="result.id"
+                    :ui="{ body: 'p-3' }"
+                    class="cursor-pointer hover:bg-muted/10 hover:ring-1 hover:ring-warning/50 transition-all"
+                    @click="navigateToResult(result)"
+                  >
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm line-clamp-2">{{ result.text }}</p>
+                        <div class="flex items-center gap-2 mt-1 text-xs text-muted">
+                          <span v-if="result.metadata?.pageNumbers?.length" class="flex items-center gap-1">
+                            <UIcon name="i-lucide-file" class="size-3" />
+                            Page {{ result.metadata.pageNumbers[0] }}
+                          </span>
+                          <UBadge v-if="result.chunkType" :label="result.chunkType" size="xs" color="info" variant="subtle" />
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <UBadge :label="`${Math.round(result.score * 100)}%`" size="xs" color="success" variant="soft" />
+                        <UIcon name="i-lucide-arrow-right" class="size-4 text-muted" />
+                      </div>
+                    </div>
+                  </UCard>
+                </div>
+              </div>
+            </div>
+
             <!-- Processing State -->
             <div v-if="document.status === 'processing'" class="text-center py-20">
               <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto mb-4" />
@@ -251,18 +416,57 @@ function handleShare() {
               <UCard class="overflow-hidden">
                 <template #header>
                   <div class="flex items-center justify-between">
-                    <h3 class="font-semibold">Document Preview</h3>
-                    <div class="flex items-center gap-2 text-sm text-muted">
-                      <span v-if="pages.length">{{ pages.length }} pages extracted</span>
-                      <span v-if="chunks.length">{{ chunks.length }} chunks indexed</span>
+                    <div class="flex items-center gap-3">
+                      <h3 class="font-semibold">Document Preview</h3>
+                      <div class="flex items-center gap-2 text-sm text-muted">
+                        <span v-if="pages.length">{{ pages.length }} pages</span>
+                        <span v-if="chunks.length">{{ chunks.length }} chunks</span>
+                      </div>
+                    </div>
+                    <!-- Toolbar Controls -->
+                    <div class="flex items-center gap-2">
+                      <UButton
+                        icon="i-lucide-zoom-out"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        :disabled="zoom <= 0.5"
+                        @click="zoom = Math.max(0.5, zoom - 0.25)"
+                      />
+                      <UButton
+                        :label="`${Math.round(zoom * 100)}%`"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        @click="zoom = 1.0"
+                      />
+                      <UButton
+                        icon="i-lucide-zoom-in"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        :disabled="zoom >= 3"
+                        @click="zoom = Math.min(3, zoom + 0.25)"
+                      />
+                      <USeparator orientation="vertical" class="h-4" />
+                      <span class="text-sm text-muted">Page {{ currentPage }}</span>
+                      <UBadge
+                        v-if="highlightBoxes.length > 0"
+                        :label="`${highlightBoxes.length} highlights`"
+                        color="warning"
+                        variant="soft"
+                        size="xs"
+                      />
                     </div>
                   </div>
                 </template>
-                <div class="aspect-[3/4] bg-muted/10">
-                  <iframe
-                    :src="document.downloadUrl"
-                    class="w-full h-full border-0"
-                    title="PDF Preview"
+                <div class="h-[700px] bg-muted/10">
+                  <DocumentPDFViewerWithHighlights
+                    :document-url="document.downloadUrl"
+                    :bounding-boxes="highlightBoxes"
+                    :page="currentPage"
+                    :zoom="zoom"
+                    @page-change="currentPage = $event"
                   />
                 </div>
               </UCard>

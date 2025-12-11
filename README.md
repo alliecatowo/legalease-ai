@@ -65,7 +65,7 @@ LegalEase is a cloud-native workspace for legal teams to organise case material,
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/AlliecatOwO/legalease-ai.git
+git clone https://github.com/alliecatowo/legalease-ai.git
 cd legalease-ai
 
 mise install      # installs all tools defined in .mise.toml
