@@ -38,13 +38,15 @@ spec:
         run.googleapis.com/gpu-zonal-redundancy: "disabled"
     spec:
       # Service account for storage access
-      serviceAccountName: docling-runner@legalease-420.iam.gserviceaccount.com
+      # Update with your project ID
+      serviceAccountName: docling-runner@your-firebase-project-id.iam.gserviceaccount.com
       # Single request per container (GPU is shared)
       containerConcurrency: 1
       # 15 minute timeout for large documents
       timeoutSeconds: 900
       containers:
-        - image: us-central1-docker.pkg.dev/legalease-420/docker-images/docling-serve:latest
+        # Update with your project ID
+        - image: us-central1-docker.pkg.dev/your-firebase-project-id/docker-images/docling-serve:latest
           ports:
             - containerPort: 5001
           resources:

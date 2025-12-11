@@ -14,8 +14,8 @@
 # Core Project Configuration
 # ============================================
 
-# GCP/Firebase Project ID
-export PROJECT_ID="legalease-420"
+# GCP/Firebase Project ID - set via environment or update this default
+export PROJECT_ID="${PROJECT_ID:-your-firebase-project-id}"
 
 # Default GCP region for Cloud Run, Cloud Functions, etc.
 export REGION="us-central1"
@@ -38,7 +38,8 @@ export DOCLING_SERVICE_NAME="docling-extraction"
 export DOCLING_SERVICE_ACCOUNT="docling-runner@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # Default compute service account (for Firebase Functions)
-export COMPUTE_SERVICE_ACCOUNT="1029046565992-compute@developer.gserviceaccount.com"
+# Update this with your project's compute service account number
+export COMPUTE_SERVICE_ACCOUNT="${COMPUTE_SA_NUMBER:-000000000000}-compute@developer.gserviceaccount.com"
 
 # Firebase Admin SDK service account
 export FIREBASE_ADMIN_SERVICE_ACCOUNT="firebase-adminsdk-fbsvc@${PROJECT_ID}.iam.gserviceaccount.com"

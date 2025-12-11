@@ -18,15 +18,21 @@ export function isEmulator(): boolean {
 }
 
 /**
- * Get the GCP project ID from environment or use default
+ * Get the GCP project ID from environment
  */
 export function getProjectId(): string {
-  return (
+  const projectId =
     process.env.GCLOUD_PROJECT ||
     process.env.GOOGLE_CLOUD_PROJECT ||
-    process.env.FIREBASE_PROJECT_ID ||
-    'legalease-420'
-  )
+    process.env.FIREBASE_PROJECT_ID
+
+  if (!projectId) {
+    throw new Error(
+      'Project ID not configured. Set GCLOUD_PROJECT, GOOGLE_CLOUD_PROJECT, or FIREBASE_PROJECT_ID environment variable.'
+    )
+  }
+
+  return projectId
 }
 
 /**

@@ -52,13 +52,14 @@ jobs:
       - name: Build
         run: pnpm run build
         env:
-          NUXT_PUBLIC_API_BASE: https://legalease-api-legalease-420.run.app
-          FIREBASE_PROJECT_ID: legalease-420
-          FIREBASE_AUTH_DOMAIN: legalease-420.firebaseapp.com
-          FIREBASE_STORAGE_BUCKET: legalease-420.firebasestorage.app
-          FIREBASE_MESSAGING_SENDER_ID: '1029046565992'
-          FIREBASE_APP_ID: '1:1029046565992:web:7c178d11823b0988744fdd'
-          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          # CI uses placeholder values - actual values set via GitHub secrets for deployments
+          NUXT_PUBLIC_API_BASE: https://placeholder-api.run.app
+          FIREBASE_PROJECT_ID: placeholder-project
+          FIREBASE_AUTH_DOMAIN: placeholder-project.firebaseapp.com
+          FIREBASE_STORAGE_BUCKET: placeholder-project.firebasestorage.app
+          FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          FIREBASE_APP_ID: '1:000000000000:web:placeholder'
+          FIREBASE_API_KEY: placeholder-api-key
 
   functions:
     name: Functions CI
