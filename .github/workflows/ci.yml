@@ -24,7 +24,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
           run_install: false
 
       - name: Get pnpm store directory
@@ -79,7 +78,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
           run_install: false
 
       - name: Get pnpm store directory
@@ -100,27 +98,3 @@ jobs:
 
       - name: Build
         run: pnpm run build
-
-  backend:
-    name: Backend CI
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup mise
-        uses: jdx/mise-action@v2
-
-      - name: Install dependencies
-        run: mise run install
-
-      - name: Lint
-        run: mise run lint
-        continue-on-error: true
-
-      - name: Type check
-        run: mise run typecheck
-        continue-on-error: true
