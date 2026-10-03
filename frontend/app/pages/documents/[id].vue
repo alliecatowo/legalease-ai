@@ -156,7 +156,7 @@ async function fetchData() {
       caseData.value = await getCase(document.value.caseId)
       // Fetch related documents in background
       getRelatedDocuments(document.value.caseId, documentId.value, 5)
-        .then(docs => { relatedDocs.value = docs })
+        .then((docs) => { relatedDocs.value = docs })
         .catch(() => { /* ignore */ })
     }
     // Fetch pages/chunks if document is indexed
@@ -305,7 +305,12 @@ function handleShare() {
                 {{ document.title || document.filename }}
               </h1>
               <div class="flex items-center gap-3 mt-1 flex-wrap">
-                <UBadge :label="document.status || 'pending'" :color="statusColors[document.status] || 'neutral'" variant="soft" size="sm" />
+                <UBadge
+                  :label="document.status || 'pending'"
+                  :color="statusColors[document.status] || 'neutral'"
+                  variant="soft"
+                  size="sm"
+                />
                 <span class="text-sm text-muted">{{ formatBytes(document.fileSize) }}</span>
                 <span v-if="document.pageCount" class="text-sm text-muted">{{ document.pageCount }} pages</span>
                 <span v-if="caseData" class="text-sm">
@@ -366,7 +371,9 @@ function handleShare() {
 
               <!-- Search Results -->
               <div v-if="searchResults.length > 0" class="mt-4 space-y-2">
-                <p class="text-sm text-muted">{{ searchResults.length }} matches found</p>
+                <p class="text-sm text-muted">
+                  {{ searchResults.length }} matches found
+                </p>
                 <div class="space-y-2 max-h-64 overflow-y-auto">
                   <UCard
                     v-for="result in searchResults"
@@ -377,17 +384,30 @@ function handleShare() {
                   >
                     <div class="flex items-start justify-between gap-2">
                       <div class="flex-1 min-w-0">
-                        <p class="text-sm line-clamp-2">{{ result.text }}</p>
+                        <p class="text-sm line-clamp-2">
+                          {{ result.text }}
+                        </p>
                         <div class="flex items-center gap-2 mt-1 text-xs text-muted">
                           <span v-if="result.metadata?.pageNumbers?.length" class="flex items-center gap-1">
                             <UIcon name="i-lucide-file" class="size-3" />
                             Page {{ result.metadata.pageNumbers[0] }}
                           </span>
-                          <UBadge v-if="result.chunkType" :label="result.chunkType" size="xs" color="info" variant="subtle" />
+                          <UBadge
+                            v-if="result.chunkType"
+                            :label="result.chunkType"
+                            size="xs"
+                            color="info"
+                            variant="subtle"
+                          />
                         </div>
                       </div>
                       <div class="flex items-center gap-1">
-                        <UBadge :label="`${Math.round(result.score * 100)}%`" size="xs" color="success" variant="soft" />
+                        <UBadge
+                          :label="`${Math.round(result.score * 100)}%`"
+                          size="xs"
+                          color="success"
+                          variant="soft"
+                        />
                         <UIcon name="i-lucide-arrow-right" class="size-4 text-muted" />
                       </div>
                     </div>
@@ -399,15 +419,23 @@ function handleShare() {
             <!-- Processing State -->
             <div v-if="document.status === 'processing'" class="text-center py-20">
               <UIcon name="i-lucide-loader-circle" class="size-12 text-primary animate-spin mx-auto mb-4" />
-              <h3 class="text-lg font-semibold mb-2">Processing Document</h3>
-              <p class="text-muted">Extracting content and generating embeddings...</p>
+              <h3 class="text-lg font-semibold mb-2">
+                Processing Document
+              </h3>
+              <p class="text-muted">
+                Extracting content and generating embeddings...
+              </p>
             </div>
 
             <!-- Failed State -->
             <div v-else-if="document.status === 'failed'" class="text-center py-20">
               <UIcon name="i-lucide-alert-circle" class="size-12 text-error mx-auto mb-4 opacity-50" />
-              <h3 class="text-lg font-semibold mb-2">Extraction Failed</h3>
-              <p class="text-muted mb-4">{{ document.error || 'Failed to process document' }}</p>
+              <h3 class="text-lg font-semibold mb-2">
+                Extraction Failed
+              </h3>
+              <p class="text-muted mb-4">
+                {{ document.error || 'Failed to process document' }}
+              </p>
               <UButton label="Download Original" icon="i-lucide-download" @click="handleDownload" />
             </div>
 
@@ -417,7 +445,9 @@ function handleShare() {
                 <template #header>
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                      <h3 class="font-semibold">Document Preview</h3>
+                      <h3 class="font-semibold">
+                        Document Preview
+                      </h3>
                       <div class="flex items-center gap-2 text-sm text-muted">
                         <span v-if="pages.length">{{ pages.length }} pages</span>
                         <span v-if="chunks.length">{{ chunks.length }} chunks</span>
@@ -476,7 +506,9 @@ function handleShare() {
             <div v-else-if="document.markdownPreview" class="prose prose-sm dark:prose-invert max-w-none">
               <UCard>
                 <template #header>
-                  <h3 class="font-semibold">Extracted Content</h3>
+                  <h3 class="font-semibold">
+                    Extracted Content
+                  </h3>
                 </template>
                 <div class="whitespace-pre-wrap text-sm text-muted">
                   {{ document.markdownPreview }}
@@ -487,8 +519,12 @@ function handleShare() {
             <!-- Fallback: Download only -->
             <div v-else class="text-center py-20">
               <UIcon name="i-lucide-file" class="size-16 text-muted mx-auto mb-4 opacity-30" />
-              <h3 class="text-lg font-semibold mb-2">Preview Not Available</h3>
-              <p class="text-muted mb-4">This document type cannot be previewed in the browser.</p>
+              <h3 class="text-lg font-semibold mb-2">
+                Preview Not Available
+              </h3>
+              <p class="text-muted mb-4">
+                This document type cannot be previewed in the browser.
+              </p>
               <UButton label="Download Document" icon="i-lucide-download" @click="handleDownload" />
             </div>
           </div>
@@ -497,43 +533,75 @@ function handleShare() {
           <div v-else-if="activeTab === 'metadata'" class="p-4 max-w-3xl mx-auto space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <UCard :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Filename</p>
-                <p class="font-medium truncate">{{ document.filename }}</p>
+                <p class="text-xs text-muted mb-1">
+                  Filename
+                </p>
+                <p class="font-medium truncate">
+                  {{ document.filename }}
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Uploaded</p>
-                <p class="font-medium">{{ formatDate(document.createdAt) }}</p>
+                <p class="text-xs text-muted mb-1">
+                  Uploaded
+                </p>
+                <p class="font-medium">
+                  {{ formatDate(document.createdAt) }}
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Type</p>
-                <p class="font-medium capitalize">{{ document.documentType || 'General' }}</p>
+                <p class="text-xs text-muted mb-1">
+                  Type
+                </p>
+                <p class="font-medium capitalize">
+                  {{ document.documentType || 'General' }}
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Size</p>
-                <p class="font-medium">{{ formatBytes(document.fileSize) }}</p>
+                <p class="text-xs text-muted mb-1">
+                  Size
+                </p>
+                <p class="font-medium">
+                  {{ formatBytes(document.fileSize) }}
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">MIME Type</p>
-                <p class="font-medium">{{ document.mimeType }}</p>
+                <p class="text-xs text-muted mb-1">
+                  MIME Type
+                </p>
+                <p class="font-medium">
+                  {{ document.mimeType }}
+                </p>
               </UCard>
               <UCard :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Status</p>
+                <p class="text-xs text-muted mb-1">
+                  Status
+                </p>
                 <UBadge :label="document.status" :color="statusColors[document.status] || 'neutral'" />
               </UCard>
               <UCard v-if="document.pageCount" :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Pages</p>
-                <p class="font-medium">{{ document.pageCount }}</p>
+                <p class="text-xs text-muted mb-1">
+                  Pages
+                </p>
+                <p class="font-medium">
+                  {{ document.pageCount }}
+                </p>
               </UCard>
               <UCard v-if="document.chunkCount" :ui="{ body: 'p-4' }">
-                <p class="text-xs text-muted mb-1">Indexed Chunks</p>
-                <p class="font-medium">{{ document.chunkCount }}</p>
+                <p class="text-xs text-muted mb-1">
+                  Indexed Chunks
+                </p>
+                <p class="font-medium">
+                  {{ document.chunkCount }}
+                </p>
               </UCard>
             </div>
 
             <!-- Extraction Info -->
             <UCard v-if="document.extraction">
               <template #header>
-                <h3 class="font-semibold">Extraction Details</h3>
+                <h3 class="font-semibold">
+                  Extraction Details
+                </h3>
               </template>
               <div class="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -558,20 +626,42 @@ function handleShare() {
             <!-- Summary -->
             <UCard v-if="document.summary">
               <template #header>
-                <h3 class="font-semibold">Summary</h3>
+                <h3 class="font-semibold">
+                  Summary
+                </h3>
               </template>
-              <p class="text-muted">{{ document.summary }}</p>
+              <p class="text-muted">
+                {{ document.summary }}
+              </p>
             </UCard>
 
             <!-- Actions -->
             <UCard>
               <template #header>
-                <h3 class="font-semibold">Actions</h3>
+                <h3 class="font-semibold">
+                  Actions
+                </h3>
               </template>
               <div class="flex flex-wrap gap-2">
-                <UButton label="Download" icon="i-lucide-download" variant="soft" @click="handleDownload" />
-                <UButton v-if="document.caseId" label="View Case" icon="i-lucide-folder" variant="outline" :to="`/cases/${document.caseId}`" />
-                <UButton label="Share Link" icon="i-lucide-share" variant="outline" @click="handleShare" />
+                <UButton
+                  label="Download"
+                  icon="i-lucide-download"
+                  variant="soft"
+                  @click="handleDownload"
+                />
+                <UButton
+                  v-if="document.caseId"
+                  label="View Case"
+                  icon="i-lucide-folder"
+                  variant="outline"
+                  :to="`/cases/${document.caseId}`"
+                />
+                <UButton
+                  label="Share Link"
+                  icon="i-lucide-share"
+                  variant="outline"
+                  @click="handleShare"
+                />
               </div>
             </UCard>
           </div>
@@ -580,18 +670,28 @@ function handleShare() {
           <div v-else-if="activeTab === 'related'" class="p-4 max-w-3xl mx-auto space-y-4">
             <div v-if="!document.caseId" class="text-center py-12">
               <UIcon name="i-lucide-folder-x" class="size-12 text-muted mx-auto mb-4 opacity-30" />
-              <h3 class="text-lg font-semibold mb-2">No Case Assigned</h3>
-              <p class="text-muted">This document is not associated with a case.</p>
+              <h3 class="text-lg font-semibold mb-2">
+                No Case Assigned
+              </h3>
+              <p class="text-muted">
+                This document is not associated with a case.
+              </p>
             </div>
 
             <div v-else-if="relatedDocs.length === 0" class="text-center py-12">
               <UIcon name="i-lucide-files" class="size-12 text-muted mx-auto mb-4 opacity-30" />
-              <h3 class="text-lg font-semibold mb-2">No Related Documents</h3>
-              <p class="text-muted">There are no other documents in this case.</p>
+              <h3 class="text-lg font-semibold mb-2">
+                No Related Documents
+              </h3>
+              <p class="text-muted">
+                There are no other documents in this case.
+              </p>
             </div>
 
             <template v-else>
-              <p class="text-sm text-muted">Other documents in {{ caseData?.name || 'this case' }}:</p>
+              <p class="text-sm text-muted">
+                Other documents in {{ caseData?.name || 'this case' }}:
+              </p>
               <div class="space-y-2">
                 <UCard
                   v-for="doc in relatedDocs"
@@ -602,7 +702,9 @@ function handleShare() {
                   <div class="flex items-center gap-3">
                     <UIcon name="i-lucide-file-text" class="size-5 text-muted shrink-0" />
                     <div class="flex-1 min-w-0">
-                      <p class="font-medium truncate">{{ doc.filename }}</p>
+                      <p class="font-medium truncate">
+                        {{ doc.filename }}
+                      </p>
                       <div class="flex items-center gap-2 text-xs text-muted">
                         <span>{{ formatBytes(doc.fileSize) }}</span>
                         <UBadge :label="doc.status" :color="statusColors[doc.status] || 'neutral'" size="xs" />
