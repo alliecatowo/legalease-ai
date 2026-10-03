@@ -310,6 +310,45 @@ mise run deploy:hosting
 mise run deploy
 ```
 
+### Prerequisites for first deploy
+
+Before deploying to production, ensure these are configured:
+
+1. **Firebase project** — Blaze (pay-as-you-go) plan required for Cloud Functions
+2. **GCP APIs enabled** — Speech-to-Text, Storage, Firestore
+3. **Secrets set** — Run `mise run firebase -- functions:secrets:set GOOGLE_GENAI_API_KEY` (and other secrets from `.env.example`)
+4. **Qdrant Cloud** — Create a free cluster at [cloud.qdrant.io](https://cloud.qdrant.io), set `QDRANT_URL` and `QDRANT_API_KEY`
+5. **Service account** — Download the Firebase Admin SDK key for CI/CD pipelines
+
+### Environment variables for production
+
+Set Firebase Functions secrets (not environment variables) for production:
+
+```bash
+firebase functions:secrets:set GOOGLE_GENAI_API_KEY
+firebase functions:secrets:set QDRANT_API_KEY
+firebase functions:secrets:set QDRANT_URL
+```
+
+Frontend config is set in `frontend/.env` (or Vercel/Netlify environment settings).
+See `.env.example` for the full list of required variables.
+
+---
+
+## Known Limitations / Roadmap
+
+The following features are stubbed or partially implemented and tracked for upcoming releases:
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Waveform player | ⚠️ In progress | UI component needs backend sync |
+| Export (DOCX, SRT, VTT) | ⚠️ In progress | Export flows not yet wired |
+| PDF highlights backend sync | 🔜 Planned | Currently local-only |
+| Notifications endpoint | 🔜 Planned | `/api/notifications` stub present |
+| Settings preferences persistence | 🔜 Planned | UI complete, backend save needed |
+| AI search via Qdrant | 🔜 Planned | Vector indexing works; search UI in progress |
+| Atomic Firestore counters | 🔜 Planned | Using non-atomic increments temporarily |
+
 ---
 
 ## Feature Status
