@@ -60,3 +60,9 @@ ui-debug.log
 
 # Docker volumes (if mounted locally)
 .docker-data/
+
+# Nuxt content database, local env, local tool config
+.data/
+.env.*
+!.env.example
+.mcp.json

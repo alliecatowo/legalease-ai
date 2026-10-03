@@ -1,5 +1,6 @@
 {
   "name": "legalease",
+  "license": "MIT",
   "version": "1.0.0",
   "description": "Legal document analysis platform",
   "private": true,
