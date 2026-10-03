@@ -11,7 +11,16 @@ import { QdrantClient } from '@qdrant/js-client-rest'
 import { defineSecret } from 'firebase-functions/params'
 import { ai } from '../genkit.js'
 import { getEmbedder, getModelConfig } from '../ai/index.js'
+import { HttpsError } from 'firebase-functions/https'
+import { getFirestore } from 'firebase-admin/firestore'
 import config from '../config.js'
+import {
+  authorizeDocument,
+  resolveActor,
+  scopedFilter,
+  ownerPayload,
+  type Owner
+} from '../security/access.js'
 
 // Secrets (used when not using local Qdrant)
 const qdrantUrl = defineSecret('QDRANT_URL')
@@ -119,8 +128,11 @@ export const searchDocumentsFlow = ai.defineFlow(
     inputSchema: SearchInput,
     outputSchema: SearchOutput
   },
-  async (input) => {
+  async (input, { context }) => {
     const { query, caseId, documentId, documentType, chunkTypes, limit, scoreThreshold, includeBboxes } = input
+
+    // Caller identity comes from the verified auth context only.
+    const actor = await resolveActor(getFirestore(), context)
 
     const startTime = Date.now()
 
@@ -168,7 +180,8 @@ export const searchDocumentsFlow = ai.defineFlow(
       vector: queryEmbedding,
       limit,
       score_threshold: scoreThreshold,
-      filter: mustConditions.length > 0 ? { must: mustConditions } : undefined,
+      // Always scoped to points owned by the caller or shared via their teams
+      filter: scopedFilter(actor, mustConditions),
       with_payload: true
     })
     const searchTime = Date.now() - searchStart
@@ -244,94 +257,109 @@ export const IndexDocumentChunksOutput = z.object({
   processingTimeMs: z.number()
 })
 
-// Index document chunks flow (replaces old indexDocumentFlow)
+/**
+ * Index chunks for a document whose owner has already been established
+ * server-side (from Firestore, never from client input).
+ */
+export async function indexChunksForOwner(
+  owner: Owner,
+  input: { documentId: string; caseId: string | null; filename?: string; documentType?: string; chunks: IndexDocumentChunksInputType['chunks'] },
+  deps: { client?: QdrantClient; embed?: (text: string) => Promise<number[]> } = {}
+): Promise<z.infer<typeof IndexDocumentChunksOutput>> {
+  const { documentId, caseId, filename, documentType, chunks } = input
+  const startTime = Date.now()
+
+  if (chunks.length === 0) {
+    return {
+      success: true,
+      indexedCount: 0,
+      failedCount: 0,
+      processingTimeMs: Date.now() - startTime
+    }
+  }
+
+  const client = deps.client ?? getQdrantClient()
+  const embed = deps.embed ?? generateEmbedding
+
+  // Ensure collection exists
+  try {
+    await client.getCollection(COLLECTION_NAME)
+  } catch {
+    await client.createCollection(COLLECTION_NAME, {
+      vectors: {
+        size: EMBEDDING_DIMENSION,
+        distance: 'Cosine'
+      }
+    })
+  }
+
+  // Process chunks in batches for better performance
+  const BATCH_SIZE = 10
+  let indexedCount = 0
+  let failedCount = 0
+
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE)
+
+    try {
+      const embeddings = await Promise.all(batch.map(chunk => embed(chunk.text)))
+
+      // Qdrant requires UUID or integer IDs
+      const points = batch.map((chunk, idx) => ({
+        id: randomUUID(),
+        vector: embeddings[idx],
+        payload: {
+          documentId,
+          caseId,
+          ...ownerPayload(owner),
+          filename,
+          documentType,
+          chunkId: chunk.id,
+          chunkType: chunk.type,
+          text: chunk.text,
+          headings: chunk.headings,
+          pageNumbers: chunk.pageNumbers,
+          elementTypes: chunk.elementTypes,
+          bboxesJson: chunk.bboxesJson,
+          indexedAt: new Date().toISOString()
+        }
+      }))
+
+      await client.upsert(COLLECTION_NAME, { wait: true, points })
+      indexedCount += batch.length
+    } catch (error) {
+      console.error(`[indexDocumentChunks] Batch ${i / BATCH_SIZE} failed:`, error)
+      failedCount += batch.length
+    }
+  }
+
+  return {
+    success: failedCount === 0,
+    indexedCount,
+    failedCount,
+    processingTimeMs: Date.now() - startTime
+  }
+}
+
+// Index document chunks flow (client-callable; ownership verified server-side)
 export const indexDocumentChunksFlow = ai.defineFlow(
   {
     name: 'indexDocumentChunks',
     inputSchema: IndexDocumentChunksInput,
     outputSchema: IndexDocumentChunksOutput
   },
-  async (input) => {
-    const { documentId, caseId, filename, documentType, chunks } = input
-    const startTime = Date.now()
-
-    if (chunks.length === 0) {
-      return {
-        success: true,
-        indexedCount: 0,
-        failedCount: 0,
-        processingTimeMs: Date.now() - startTime
-      }
+  async (input, { context }) => {
+    const db = getFirestore()
+    const actor = await resolveActor(db, context)
+    // Owner/team/case are taken from the Firestore document, not the request.
+    const doc = await authorizeDocument(db, actor, input.documentId)
+    if (input.caseId != null && input.caseId !== doc.caseId) {
+      throw new HttpsError('permission-denied', 'caseId does not match the document')
     }
-
-    // Initialize Qdrant client (local or cloud based on environment)
-    const client = getQdrantClient()
-
-    // Ensure collection exists
-    try {
-      await client.getCollection(COLLECTION_NAME)
-    } catch {
-      await client.createCollection(COLLECTION_NAME, {
-        vectors: {
-          size: EMBEDDING_DIMENSION,
-          distance: 'Cosine'
-        }
-      })
-    }
-
-    // Process chunks in batches for better performance
-    const BATCH_SIZE = 10
-    let indexedCount = 0
-    let failedCount = 0
-
-    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batch = chunks.slice(i, i + BATCH_SIZE)
-
-      try {
-        // Generate embeddings for all chunks in batch
-        const embeddings = await Promise.all(
-          batch.map(chunk => generateEmbedding(chunk.text))
-        )
-
-        // Prepare points for upsert (Qdrant requires UUID or integer IDs)
-        const points = batch.map((chunk, idx) => ({
-          id: randomUUID(),
-          vector: embeddings[idx],
-          payload: {
-            documentId,
-            caseId,
-            filename,
-            documentType,
-            chunkId: chunk.id,
-            chunkType: chunk.type,
-            text: chunk.text,
-            headings: chunk.headings,
-            pageNumbers: chunk.pageNumbers,
-            elementTypes: chunk.elementTypes,
-            bboxesJson: chunk.bboxesJson,
-            indexedAt: new Date().toISOString()
-          }
-        }))
-
-        // Upsert batch
-        await client.upsert(COLLECTION_NAME, {
-          wait: true,
-          points
-        })
-
-        indexedCount += batch.length
-      } catch (error) {
-        console.error(`[indexDocumentChunks] Batch ${i / BATCH_SIZE} failed:`, error)
-        failedCount += batch.length
-      }
-    }
-
-    return {
-      success: failedCount === 0,
-      indexedCount,
-      failedCount,
-      processingTimeMs: Date.now() - startTime
-    }
+    return indexChunksForOwner(
+      { userId: doc.userId, teamId: doc.teamId },
+      { ...input, caseId: doc.caseId }
+    )
   }
 )
 
@@ -346,21 +374,18 @@ export const deleteDocumentChunksFlow = ai.defineFlow(
     inputSchema: DeleteDocumentChunksInput,
     outputSchema: z.object({ success: z.boolean(), deletedCount: z.number() })
   },
-  async (input) => {
+  async (input, { context }) => {
     const { documentId } = input
+    const actor = await resolveActor(getFirestore(), context)
 
     // Initialize Qdrant client (local or cloud based on environment)
     const client = getQdrantClient()
 
     try {
-      // Delete all points with matching documentId
+      // Only points matching the documentId AND owned by the caller (or their
+      // teams) can be deleted, so this works even after the Firestore doc is gone.
       const result = await client.delete(COLLECTION_NAME, {
-        filter: {
-          must: [{
-            key: 'documentId',
-            match: { value: documentId }
-          }]
-        },
+        filter: scopedFilter(actor, [{ key: 'documentId', match: { value: documentId } }]),
         wait: true
       })
 

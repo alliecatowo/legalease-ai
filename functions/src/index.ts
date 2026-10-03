@@ -22,7 +22,7 @@ import {
   DeleteDocumentChunksInput
 } from './flows/search.js'
 import { generateWaveformFlow, WaveformInput } from './flows/waveform.js'
-import { extractDocumentFlow, ExtractDocumentInput } from './flows/document-extraction.js'
+import { runExtraction, extractDocumentFlow, ExtractDocumentInput } from './flows/document-extraction.js'
 import { transcribe } from './transcription/index.js'
 import { download } from './storage/index.js'
 import { ai } from './genkit.js'
@@ -391,21 +391,22 @@ export const startDocumentExtraction = onDocumentWritten(
 
     console.log(`[startDocumentExtraction] Starting extraction for ${documentId}`)
 
-    const gcsUri = `gs://${config.storageBucket}/${afterData.storagePath}`
-
     try {
-      // Call the extraction flow
-      const result = await extractDocumentFlow({
-        documentId,
-        gcsUri,
-        filename: afterData.filename,
-        caseId: afterData.caseId,
-        options: {
-          skipOcr: false,
-          skipTableStructure: false,
-          skipIndexing: false
-        }
-      })
+      // Owner fields on the record are pinned by Firestore rules (userId ==
+      // creator, teamId must be a team they belong to). Extraction derives
+      // the source path from the record and requires documents/{userId}/ prefix.
+      const result = await runExtraction(
+        {
+          documentId,
+          collection: 'documents',
+          userId: afterData.userId,
+          teamId: typeof afterData.teamId === 'string' ? afterData.teamId : null,
+          caseId: typeof afterData.caseId === 'string' ? afterData.caseId : null,
+          filename: afterData.filename ?? null,
+          storagePath: afterData.storagePath ?? null
+        },
+        { skipOcr: false, skipTableStructure: false, skipIndexing: false }
+      )
 
       if (!result.success) {
         throw new Error(result.error || 'Extraction failed')

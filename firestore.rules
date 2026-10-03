@@ -26,17 +26,45 @@ service cloud.firestore {
         get(/databases/$(database)/documents/teams/$(teamId)).data.ownerId == request.auth.uid;
     }
 
-    // Users collection - user profiles
+    // Owner-field helpers (userId / teamId on cases, documents, transcriptions)
+    function ownsOrSharesVia(data) {
+      return isAuthenticated() && (
+        data.userId == request.auth.uid ||
+        (data.get('teamId', null) != null && isTeamMember(data.teamId))
+      );
+    }
+
+    // On create: userId must be the caller; teamId must be null/absent or a team they belong to
+    function ownerFieldsValidOnCreate() {
+      return isAuthenticated() &&
+        request.resource.data.get('userId', null) == request.auth.uid &&
+        (request.resource.data.get('teamId', null) == null ||
+          isTeamMember(request.resource.data.teamId));
+    }
+
+    // On update: userId and teamId must not change
+    function ownerFieldsUnchanged() {
+      return request.resource.data.get('userId', null) == resource.data.get('userId', null) &&
+        request.resource.data.get('teamId', null) == resource.data.get('teamId', null);
+    }
+
+    // A referenced case must be one the caller can access
+    function caseAccessibleOrNull(caseId) {
+      return caseId == null ||
+        ownsOrSharesVia(get(/databases/$(database)/documents/cases/$(caseId)).data);
+    }
+
+    // Users collection - user profiles (private to the owner)
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
+      allow read, write: if isOwner(userId);
     }
 
     // Teams collection - workspaces/organizations
     match /teams/{teamId} {
       allow read: if isTeamMember(teamId);
-      allow create: if isAuthenticated();
-      allow update: if isTeamAdmin(teamId) || isTeamOwner(teamId);
+      allow create: if isAuthenticated() && request.resource.data.get('ownerId', null) == request.auth.uid;
+      allow update: if (isTeamAdmin(teamId) || isTeamOwner(teamId)) &&
+        request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null);
       allow delete: if isTeamOwner(teamId);
 
       // Team members subcollection
@@ -65,11 +93,9 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid ||
         (resource.data.teamId != null && isTeamMember(resource.data.teamId))
       );
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid ||
-        (resource.data.teamId != null && isTeamMember(resource.data.teamId))
-      );
+      allow create: if ownerFieldsValidOnCreate();
+      allow update: if ownsOrSharesVia(resource.data) && ownerFieldsUnchanged();
+      allow delete: if ownsOrSharesVia(resource.data);
 
       // Documents subcollection
       match /documents/{documentId} {
@@ -88,11 +114,8 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid ||
         (resource.data.teamId != null && isTeamMember(resource.data.teamId))
       );
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid ||
-        (resource.data.teamId != null && isTeamMember(resource.data.teamId))
-      );
+      allow create: if ownerFieldsValidOnCreate();
+      allow update: if ownsOrSharesVia(resource.data) && ownerFieldsUnchanged();
       allow delete: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||
         (resource.data.teamId != null && isTeamAdmin(resource.data.teamId))
@@ -106,11 +129,10 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid ||
         (resource.data.teamId != null && isTeamMember(resource.data.teamId))
       );
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid ||
-        (resource.data.teamId != null && isTeamMember(resource.data.teamId))
-      );
+      allow create: if ownerFieldsValidOnCreate() &&
+        caseAccessibleOrNull(request.resource.data.get('caseId', null));
+      allow update: if ownsOrSharesVia(resource.data) && ownerFieldsUnchanged() &&
+        request.resource.data.get('caseId', null) == resource.data.get('caseId', null);
       allow delete: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||
         (resource.data.teamId != null && isTeamAdmin(resource.data.teamId))
