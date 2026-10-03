@@ -36,6 +36,14 @@ const error = ref<string | null>(null)
 
 // Playback state
 const currentTime = ref(0)
+
+// Video files get the video player; everything else uses the audio waveform player
+const isVideoFile = computed(() => {
+  const mime = ((transcript.value as any)?.mimeType || '').toLowerCase()
+  if (mime) return mime.startsWith('video/')
+  const name = (transcript.value?.title || '').toLowerCase()
+  return /\.(mp4|mov|avi|mkv|webm|flv|m4v|wmv)$/.test(name)
+})
 const isPlaying = ref(false)
 const selectedSegment = ref<TranscriptSegment | null>(null)
 
@@ -690,7 +698,8 @@ async function loadTranscript() {
       createdAt: doc.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       caseId: doc.caseId,
       status: doc.status,
-      waveformPeaks: doc.waveformPeaks || null
+      waveformPeaks: doc.waveformPeaks || null,
+      mimeType: doc.mimeType || ''
     } as any
 
     // Load stored summarization if available
@@ -862,9 +871,25 @@ onMounted(async () => {
 
       <!-- Main Content -->
       <div v-else-if="transcript" class="space-y-6">
+        <!-- Video Player (video files) -->
+        <LazyVideoPlayer
+          v-if="transcript.audioUrl && isVideoFile"
+          :media-url="transcript.audioUrl"
+          media-type="video"
+          :peaks="transcript.waveformPeaks"
+          :current-time="currentTime"
+          :segments="transcript.segments"
+          :selected-segment-id="selectedSegment?.id"
+          :key-moments="keyMoments"
+          @update:current-time="currentTime = $event"
+          @update:is-playing="isPlaying = $event"
+          @segment-click="seekToSegment"
+          @waveform-click="handleWaveformClick"
+        />
+
         <!-- Audio Player -->
         <LazyWaveformPlayer
-          v-if="transcript.audioUrl"
+          v-else-if="transcript.audioUrl"
           :audio-url="transcript.audioUrl"
           :transcription-id="transcript.id"
           :peaks="transcript.waveformPeaks"
