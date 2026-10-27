@@ -21,7 +21,7 @@
     "@standard-schema/spec": "^1.0.0",
     "@vueuse/nuxt": "^15.0.0",
     "better-sqlite3": "^12.4.1",
-    "nuxt": "^4.5.1",
+    "nuxt": "^4.6.2",
     "nuxt-og-image": "^6.2.5",
     "satori": "^0.35.0",
     "zod": "^4.1.12"
