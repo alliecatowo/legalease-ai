@@ -24,7 +24,7 @@
     "nuxt": "^4.6.2",
     "nuxt-og-image": "^6.2.5",
     "satori": "^0.35.0",
-    "zod": "^4.1.12"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.9.0",
