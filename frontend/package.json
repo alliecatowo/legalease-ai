@@ -23,7 +23,7 @@
     "cytoscape": "^3.33.1",
     "date-fns": "^4.1.0",
     "firebase": "^12.6.0",
-    "nuxt": "^4.1.3",
+    "nuxt": "^4.6.4",
     "vue-pdf-embed": "^2.1.3",
     "wavesurfer.js": "^8.0.1",
     "zod": "^4.1.12"
